@@ -1,0 +1,78 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { colors } from '../theme/index.js';
+
+/**
+ * design.md §12 — one icon set, geometric, inheriting the text colour.
+ *
+ * The set is Ionicons (bundled with Expo — no extra native module), behind the
+ * app's own names: call sites say `gear` and `ranks`, never `settings-outline`,
+ * so swapping the pack again is one file. The View-drawn originals served
+ * until real glyphs were warranted; at this fidelity they were the thing
+ * making every header look homemade.
+ */
+const GLYPHS = {
+  // ── Navigation ──────────────────────────────────────────────────────────
+  home: 'home',
+  grid: 'grid-outline',
+  ranks: 'podium',
+  friends: 'people',
+  user: 'person',
+  plus: 'add',
+  close: 'close',
+  check: 'checkmark',
+  search: 'search',
+  bell: 'notifications-outline',
+  gear: 'settings-sharp',
+  share: 'share-social',
+  back: 'arrow-back',
+  chevronLeft: 'chevron-back',
+  chevronRight: 'chevron-forward',
+  chevronDown: 'chevron-down',
+  arrowRight: 'arrow-forward',
+
+  // ── Subjects and states ─────────────────────────────────────────────────
+  clock: 'time-outline',
+  calendar: 'calendar-outline',
+  flag: 'flag',
+  book: 'book',
+  target: 'locate',
+  alert: 'alert-circle',
+  sparkle: 'sparkles',
+  bolt: 'flash',
+  /** The seal on an unopened reward — the takeover's chest. */
+  gift: 'gift',
+  /** The dock's one action. Filled, because it does something. */
+  play: 'game-controller',
+  /** Editing your own details — a pencil, not a second gear. */
+  edit: 'create-outline',
+  lock: 'lock-closed',
+  /** Leaving the account, not the screen — the console's one destructive row. */
+  logout: 'log-out-outline',
+
+  /**
+   * ── Subject glyphs ──────────────────────────────────────────────────────
+   * One per category, drawn rather than photographed. Stock cover photos were
+   * doing real damage: the Python topic wore a picture of an Arduino board,
+   * which is a different subject entirely, and a grid of unrelated photographs
+   * has no visual system holding it together. A glyph is always about its
+   * subject, always legible at 24px, and costs nothing to download.
+   */
+  code: 'code-slash',
+  calculator: 'calculator',
+  flask: 'flask',
+  film: 'film',
+  trophy: 'trophy',
+  medal: 'medal',
+  hourglass: 'hourglass',
+  globe: 'earth',
+  music: 'musical-notes',
+  brush: 'color-palette',
+  leaf: 'leaf',
+  /** The lamp, for mythology — the one subject no object stands in for. */
+  flame: 'flame',
+};
+
+export default function Icon({ name, size = 22, color = colors.ink }) {
+  const glyph = GLYPHS[name] ?? 'help-circle-outline';
+  return <Ionicons name={glyph} size={size} color={color} />;
+}
