@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  FlatList,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -21,7 +29,8 @@ import Icon from '../../src/components/Icon.jsx';
 import CoinBalance from '../../src/components/CoinBalance.jsx';
 import TopicCard from '../../src/components/TopicCard.jsx';
 import TopicPlaySheet from '../../src/components/TopicPlaySheet.jsx';
-import { withAlpha } from '../../src/components/TopicMedallion.jsx';
+import TopicMedallion, { withAlpha, resolveTopicFace } from '../../src/components/TopicMedallion.jsx';
+import { resolveBanner } from '../../src/lib/banner.js';
 import { LeagueBadge } from '../../src/components/League.jsx';
 import SpaceHome from '../../src/components/SpaceHome.jsx';
 import { leagueFor } from '../../src/lib/league.js';
@@ -164,6 +173,47 @@ export default function Home() {
     const rows = feed?.rows ?? [];
     return rows.flatMap((r) => r.topics ?? [])[0] ?? null;
   }, [feed, recent]);
+
+  /**
+   * The slides behind the Arena card, one per reason.
+   *
+   * The card used to be a single poster showing one topic — whatever you played
+   * last — which is the right default and a poor way to spend the largest object
+   * on the screen. A player who did not want that one topic had a link to a
+   * catalogue and nothing in between.
+   *
+   * So it takes the FIRST topic from each shelf the server sent, and wears that
+   * shelf's own title as its eyebrow: Jump back in, For you, Trending, Friends
+   * are playing. Every slide is therefore there for a different reason and can
+   * say what the reason is — which is the whole argument for a carousel over a
+   * row of four identical tiles. The order is the server's, so "jump back in"
+   * stays first when it exists and a new account opens on "start here".
+   */
+  const heroes = useMemo(() => {
+    const rows = feed?.rows ?? [];
+    const seen = new Set();
+    const out = [];
+
+    for (const row of rows) {
+      if (out.length >= 4) break;
+      const topic = (row.topics ?? []).find((t) => t?.id && !seen.has(t.id));
+      if (!topic) continue;
+      seen.add(topic.id);
+      out.push({ topic, eyebrow: (row.title ?? 'Arena').toUpperCase() });
+    }
+
+    // A world with one shelf would otherwise produce a one-slide carousel,
+    // which is a poster with a dot under it. Fill from what is left.
+    if (out.length < 3) {
+      for (const topic of rows.flatMap((r) => r.topics ?? [])) {
+        if (out.length >= 3) break;
+        if (!topic?.id || seen.has(topic.id)) continue;
+        seen.add(topic.id);
+        out.push({ topic, eyebrow: 'ARENA' });
+      }
+    }
+    return out;
+  }, [feed]);
 
   /**
    * Straight into a match, at the stake already chosen. The Arena card and the
@@ -346,7 +396,12 @@ export default function Home() {
           />
         }
       >
-        <PlayCard topic={target} onPlay={() => play(target)} onBrowse={() => router.push('/play')} />
+        <HeroCarousel
+          heroes={heroes}
+          fallback={target}
+          onPlay={play}
+          onBrowse={() => router.push('/play')}
+        />
 
         <StreakCard streak={user?.streak} />
 
@@ -449,85 +504,203 @@ function BellButton({ unread, onPress }) {
 }
 
 /**
+ * The Arena card, as a deck you can flick through.
+ *
+ * One card per shelf, each naming its own reason — see `heroes` above. It is
+ * NOT auto-advancing: a banner that moves on its own takes the card out from
+ * under a thumb already reaching for it, and design.md §7 spends the motion
+ * budget inside the match rather than on the dashboard. It moves when a finger
+ * moves it.
+ *
+ * `snapToInterval` rather than `pagingEnabled`, because the cards are inset by
+ * the gutter and paging snaps to whole screen widths — which would leave every
+ * card after the first sitting a gutter's width off centre.
+ */
+function HeroCarousel({ heroes, fallback, onPlay, onBrowse }) {
+  const { width } = useWindowDimensions();
+  const [index, setIndex] = useState(0);
+
+  const cardWidth = width - layout.gutter * 2;
+  const stride = cardWidth + layout.cardGap;
+
+  const onMomentumEnd = useCallback(
+    (e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / stride)),
+    [stride],
+  );
+
+  const renderCard = useCallback(
+    ({ item }) => (
+      <PlayCard
+        topic={item.topic}
+        eyebrow={item.eyebrow}
+        width={cardWidth}
+        onPlay={() => onPlay(item.topic)}
+        onBrowse={onBrowse}
+      />
+    ),
+    [cardWidth, onPlay, onBrowse],
+  );
+
+  // Nothing to deal: one card, which knows how to say "browse" when it has no
+  // topic either. It keeps the poster's own margins, so it needs no wrapper.
+  if (heroes.length === 0) {
+    return <PlayCard topic={fallback} onPlay={() => onPlay(fallback)} onBrowse={onBrowse} />;
+  }
+
+  return (
+    <View style={styles.deck}>
+      <FlatList
+        data={heroes}
+        keyExtractor={(h) => h.topic.id}
+        renderItem={renderCard}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={stride}
+        decelerationRate="fast"
+        onMomentumScrollEnd={onMomentumEnd}
+        contentContainerStyle={styles.deckContent}
+        getItemLayout={(_, i) => ({ length: stride, offset: stride * i, index: i })}
+      />
+
+      {/* Where you are in the deck. Drawn only when there is more than one, so
+          a single card is never given a lone dot to explain it. */}
+      {heroes.length > 1 ? (
+        <View style={styles.dots} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          {heroes.map((h, i) => (
+            <View key={h.topic.id} style={[styles.dot, i === index && styles.dotOn]} />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/**
  * The front door — a poster, and the one thing this screen is for.
  *
  * It names the topic rather than saying "Play now". A match is always about
- * something (the queue is keyed on a topic), and the version that said "Play
+ * something (the queue is keyed on a topic), and a card that just said "Play
  * now" had to send the player to a list to answer a question the app already
  * knew the answer to: whatever you played last. Naming it turns two taps and a
  * decision into one tap and no decision, and the small print under the button
  * is there for the day the answer is wrong.
  *
- * ── Why it earns artwork when nothing else here does ─────────────────────────
+ * ── Every card wears its own topic ───────────────────────────────────────────
  *
- * design.md §12.2 argues against shipped illustration, and every argument still
- * holds for the places it was written about — the onboarding scenes are the
- * app's own components at size, which is better than a drawing of people being
- * happy near a product.
+ * The first version of the deck drew the SAME shipped illustration on all four
+ * slides. That was defensible while there was one card — design.md §12.2 allows
+ * exactly one illustration on one screen, for the one object trying to make
+ * somebody do something — but four identical pictures is the opposite of a
+ * deck: it makes flicking through them feel like nothing is happening, and the
+ * only thing distinguishing the cards is a line of type.
  *
- * This is the exception, for one reason: it is the only object on the screen
- * that is trying to make someone do something. Everything around it reports
- * (level, streak, rank, history) and reporting is what flat night is good at.
- * A card that has to be *wanted* needs a face on it, and two kids playing
- * against each other is exactly what the button does.
+ * So the backdrop is the TOPIC's, in this order:
  *
- * The art is a cut-out on transparency, laid on the card's own night with a
- * gradient carrying it back to nothing before the copy starts — so the card is
- * still the app's surface with a picture on it, not a picture with type over
- * it. One illustration, one screen. The moment there are two, this argument is
- * gone.
+ *   1. its cover image, if an operator uploaded one
+ *   2. otherwise a preset banner picked from the topic's name — the same
+ *      abstract patterns players wear, resolved by the same seed-from-a-string
+ *      trick, so a topic gets the same backdrop on every launch and two topics
+ *      almost never collide
+ *
+ * A pattern is the right fallback rather than a flat colour: a flat panel of
+ * hue on a dark field reads as an error state, and these are already drawn to
+ * sit under type.
+ *
+ * The medallion rides on top so the SUBJECT is identifiable at a glance, which
+ * a pattern alone cannot do.
+ *
+ * ── The button is a full-width foot, not a floating chip ─────────────────────
+ *
+ * It used to hug its label and sit in a body squeezed to 54% of the card by a
+ * `paddingRight` reserving room for the artwork. That left the primary action
+ * as a small tab adrift in the middle-left of a large card, with a different
+ * amount of space around it on every screen width. It is the widest thing on
+ * the card now, at the foot, with the browse link centred underneath — the
+ * shape a call to action has everywhere else in this app.
  */
-function PlayCard({ topic, onPlay, onBrowse }) {
+function PlayCard({ topic, eyebrow = 'ARENA', width, onPlay, onBrowse }) {
+  const face = topic ? resolveTopicFace(topic.coverUrl, topic.name) : null;
+  // A real cover if there is one; a preset pattern seeded from the name if not.
+  // `resolveBanner(null, seed)` is the same stable-from-a-string pick the
+  // profile uses, so a topic keeps its backdrop between launches.
+  const backdrop =
+    face?.kind === 'image' ? { uri: face.uri } : topic ? resolveBanner(null, topic.name) : null;
+
   return (
-    <View style={[styles.poster, elevation.raised]}>
-      {/* Bottom-anchored and clipped by the card: the crop puts the two of them
-          in the lower right, sitting on the card's floor rather than floating
-          in the middle of it. */}
-      <Image
-        source={DUO_PLAY}
-        style={styles.posterArt}
-        contentFit="contain"
-        contentPosition="bottom right"
-        pointerEvents="none"
-      />
-      {/* Night → nothing, left to right. The copy needs a flat ground and the
-          art needs an edge that is not a line.
-          The clear stop is the card's own colour at zero alpha, never the
-          keyword `transparent` — Android interpolates that through black and
-          leaves a dirty band across the middle of the card. */}
+    <View
+      style={[
+        styles.poster,
+        width ? { width, marginHorizontal: 0, marginBottom: 0 } : null,
+        elevation.raised,
+      ]}
+    >
+      {backdrop ? (
+        <Image source={backdrop} style={StyleSheet.absoluteFill} contentFit="cover" transition={160} />
+      ) : (
+        /* No topic at all — the shipped illustration keeps the one card that
+           has nothing of its own to wear from being an empty rectangle. */
+        <Image
+          source={DUO_PLAY}
+          style={styles.posterArt}
+          contentFit="contain"
+          contentPosition="top right"
+          pointerEvents="none"
+        />
+      )}
+
+      {/**
+        * Night, bottom-heavy. The copy sits on the lower two thirds, so the
+        * scrim is opaque there and lets the pattern through at the top.
+        *
+        * The clear stop is the card's own colour at zero alpha, never the
+        * keyword `transparent` — Android interpolates that through black and
+        * leaves a dirty band across the middle of the card.
+        */}
       <LinearGradient
-        colors={[colors.nightRaised, 'rgba(39, 34, 54, 0.94)', 'rgba(39, 34, 54, 0)']}
-        start={{ x: 0, y: 0.5 }}
-        end={{ x: 1, y: 0.5 }}
-        locations={[0, 0.42, 0.86]}
+        colors={['rgba(23, 20, 34, 0.25)', 'rgba(23, 20, 34, 0.86)', 'rgba(23, 20, 34, 0.97)']}
+        locations={[0, 0.5, 1]}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
 
       <View style={styles.posterBody}>
-        <View style={styles.eyebrowRow}>
-          <View style={styles.eyebrowRule} />
-          <Text variant="tiny" color={colors.accent} style={styles.eyebrow}>
-            ARENA
-          </Text>
+        <View style={styles.posterHead}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={styles.eyebrowRow}>
+              <View style={styles.eyebrowRule} />
+              {/* The shelf this card came off, in its own words. */}
+              <Text variant="tiny" color={colors.accent} style={styles.eyebrow} numberOfLines={1}>
+                {eyebrow}
+              </Text>
+            </View>
+
+            <Text variant="display" color={colors.onColor} numberOfLines={2} style={styles.posterTitle}>
+              {topic?.name ?? 'Find a rival now'}
+            </Text>
+
+            <Text variant="meta" color="rgba(255,255,255,0.78)" numberOfLines={1}>
+              {topic
+                ? [
+                    topic.viewer ? `Level ${topic.viewer.level}` : null,
+                    topic.categoryName,
+                    'Seven questions',
+                  ]
+                    .filter(Boolean)
+                    .join('  ·  ')
+                : 'Seven questions. Ten seconds each.'}
+            </Text>
+          </View>
+
+          {/* The subject, so a pattern is never the only thing identifying the
+              card. Circular, the same emblem the topic wears in every list. */}
+          {topic ? (
+            <TopicMedallion coverUrl={topic.coverUrl} name={topic.name} size={54} />
+          ) : null}
         </View>
-
-        {/* No forced line break — the body's width does the wrapping, so the
-            card survives Dynamic Type instead of tearing at a hard newline. */}
-        <Text variant="display" style={styles.posterTitle}>
-          Find a rival now
-        </Text>
-
-        <Text variant="meta" color={colors.inkMuted} numberOfLines={2} style={styles.posterLine}>
-          {topic
-            ? `${topic.name}${topic.viewer ? `  ·  Level ${topic.viewer.level}` : ''}`
-            : 'Seven questions. Ten seconds each.'}
-        </Text>
 
         <Button
           label={topic ? 'Play now' : 'Browse topics'}
           iconRight="arrowRight"
-          fullWidth={false}
           onPress={topic ? onPlay : onBrowse}
           style={styles.posterButton}
         />
@@ -539,7 +712,7 @@ function PlayCard({ topic, onPlay, onBrowse }) {
             accessibilityRole="button"
             style={({ pressed }) => [styles.posterAlt, pressed && { opacity: 0.6 }]}
           >
-            <Text variant="tiny" color={colors.inkFaint}>
+            <Text variant="tiny" color="rgba(255,255,255,0.6)">
               Choose a different topic
             </Text>
           </Pressable>
@@ -807,6 +980,13 @@ const styles = StyleSheet.create({
   switcherDot: { width: 10, height: 10, borderRadius: 5 },
   content: { paddingBottom: layout.dockClearance },
 
+  // ── The deck ─────────────────────────────────────────────────────────────
+  deck: { marginBottom: space.lg },
+  deckContent: { paddingHorizontal: layout.gutter, gap: layout.cardGap },
+  dots: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: space.md },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.hairline },
+  dotOn: { backgroundColor: colors.accent, width: 18 },
+
   // ── The poster ───────────────────────────────────────────────────────────
   poster: {
     backgroundColor: colors.nightRaised,
@@ -818,21 +998,27 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   /**
-   * Bottom-right and clipped by the card, so the two of them sit on its floor.
-   * Pulled a few points past the right edge because the cut-out has air on that
-   * side that would otherwise read as a margin the copy does not share.
+   * Only the topic-less fallback card now — see `PlayCard`.
+   *
+   * Top-right, not bottom-right. It used to sit on the card's floor beside a
+   * copy column inset to 54%, and both of those are gone: the copy is
+   * bottom-anchored across the full width and the button is the widest thing
+   * on the card, so anything on the floor is underneath the primary action.
+   * The upper band is the part of the card the content no longer uses.
    */
-  posterArt: { position: 'absolute', right: -8, bottom: 0, width: '52%', height: '94%' },
+  posterArt: { position: 'absolute', right: -8, top: 0, width: '46%', height: '58%' },
   /**
-   * `paddingRight` in per cent, not points: the copy column has to stay clear
-   * of the art on a 360dp phone and on a tablet, and the art is sized in per
-   * cent too. Two fixed numbers would agree on exactly one screen width.
+   * The full width, with a minimum height so a short topic name and a long one
+   * produce the same card — a deck whose slides are different heights jumps as
+   * you flick through it.
    */
-  posterBody: { padding: space.lg, paddingRight: '46%', gap: 3 },
-  posterTitle: { marginTop: 2 },
-  posterLine: { marginBottom: space.md },
-  posterButton: { alignSelf: 'flex-start', paddingHorizontal: space.lg },
-  posterAlt: { marginTop: space.sm, minHeight: 26, justifyContent: 'center' },
+  posterBody: { padding: space.lg, gap: space.sm, minHeight: 196, justifyContent: 'flex-end' },
+  /** Copy on the left, the subject emblem on the right. */
+  posterHead: { flexDirection: 'row', alignItems: 'flex-end', gap: space.md, flex: 1 },
+  posterTitle: { marginTop: space.sm, marginBottom: 2 },
+  /** The widest thing on the card, at its foot. */
+  posterButton: { marginTop: space.md },
+  posterAlt: { marginTop: space.sm, minHeight: 30, alignItems: 'center', justifyContent: 'center' },
 
   eyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginBottom: 2 },
   /** The one stroke of accent at the head of the card — a rule, not a fill. */

@@ -15,7 +15,23 @@ const oid = (v) => new mongoose.Types.ObjectId(String(v));
  * they open the app, they simply are not woken up for it.
  */
 
-export async function notify(userId, { type, prefKey, title, body, data, spaceId, force = false }) {
+/**
+ * `push: false` writes the row and sends nothing.
+ *
+ * For events the player is already watching happen. A level-up, a title or an
+ * achievement lands the instant a match ends, while the result screen is on
+ * screen celebrating that exact thing — a heads-up banner on top of it would be
+ * the app telling you something you are currently looking at. The row still
+ * belongs in the inbox, because that is the only place the history of them
+ * exists.
+ *
+ * Distinct from the pref toggle: a pref is the user's choice, this is a
+ * property of the event.
+ */
+export async function notify(
+  userId,
+  { type, prefKey, title, body, data, spaceId, force = false, push = true },
+) {
   const user = await User.findById(oid(userId), {
     notificationPrefs: 1,
     pushTokens: 1,
@@ -32,7 +48,7 @@ export async function notify(userId, { type, prefKey, title, body, data, spaceId
     spaceId: spaceId ? oid(spaceId) : undefined,
   });
 
-  const allowed = force || shouldPush(user, prefKey);
+  const allowed = push && (force || shouldPush(user, prefKey));
   if (!allowed) return record;
 
   const sent = await sendPush(user, { title, body, data: { ...data, type } });

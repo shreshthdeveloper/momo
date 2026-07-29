@@ -198,6 +198,8 @@ const FACES = {
   friend_request: { icon: 'friends', tint: colors.optionA },
   friend_accepted: { icon: 'friends', tint: colors.correct },
   challenge: { icon: 'bolt', tint: colors.accent },
+  achievement: { icon: 'medal', tint: colors.gold },
+  level_up: { icon: 'sparkle', tint: colors.accent },
   contest_open: { icon: 'trophy', tint: colors.gold },
   contest_starting: { icon: 'trophy', tint: colors.gold },
   contest_result: { icon: 'medal', tint: colors.gold },
@@ -235,6 +237,17 @@ function destinationFor(item) {
       return '/shop';
     case 'streak_at_risk':
       return '/play';
+    case 'achievement':
+      return '/achievements';
+    /**
+     * Edit profile, because what a level hands over is a title and a cosmetic
+     * and that is the screen where they get WORN. There is no level-rewards
+     * screen to send this to — levels are celebrated on the result screen and
+     * nowhere else — so the useful destination is the one place the unlock
+     * becomes something you can act on rather than read about.
+     */
+    case 'level_up':
+      return '/customize';
     default:
       return null;
   }

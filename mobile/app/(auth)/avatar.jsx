@@ -41,12 +41,31 @@ export default function AvatarStep() {
   const columns = width >= 414 ? 5 : 4;
   const cell = Math.floor((width - layout.gutter * 2 - space.md * (columns - 1)) / columns);
 
-  // The free set is configuration, so the default has to come from it rather
-  // than from a name compiled into this screen — an operator who renames the
-  // starters must not leave the picker pointing at a face that is gone.
+  /**
+   * The pre-selected face, derived from the player rather than fixed at [0].
+   *
+   * It used to land on `faces[0]` for everybody, and most people tap Continue
+   * without touching the grid — so the app filled up with accounts wearing the
+   * identical flower. On the friends list and the leaderboard, where the avatar
+   * is the only thing distinguishing one row from the next at a glance, every
+   * row looked like the same person.
+   *
+   * The seed is the display name, which is the same trick `resolveAvatar` uses
+   * for its colour fallback: stable for a given player, different between
+   * players, and no `Math.random` — a random default would change under the
+   * user's thumb on every re-render of this screen.
+   *
+   * The free set is configuration, so the default still has to be an index into
+   * it rather than a name compiled into this screen — an operator who renames
+   * the starters must not leave the picker pointing at a face that is gone.
+   */
   useEffect(() => {
-    if (!face && faces.length) setFace(faces[0]);
-  }, [face, faces]);
+    if (face || !faces.length) return;
+    const seed = (user?.displayName ?? '')
+      .split('')
+      .reduce((total, c) => total + c.charCodeAt(0), 0);
+    setFace(faces[seed % faces.length]);
+  }, [face, faces, user?.displayName]);
 
   useEffect(() => {
     if (reduced || !face) return;

@@ -41,20 +41,53 @@ export function allowedOriginsFor(topic) {
   return origins.filter(Boolean);
 }
 
-/** Question ids these players have seen recently, so matches do not repeat. */
-export async function recentlySeenQuestionIds(userIds, days = 30) {
-  if (!userIds?.length) return [];
+/**
+ * When these players last saw each question — `questionId` → epoch ms.
+ *
+ * A Map rather than a Set, and that is the point. The exclusion below only ever
+ * needs the keys, but the FALLBACK needs the values: once a topic's pool is
+ * exhausted the exclusion cannot be honoured, and the only thing that makes the
+ * repeat bearable is serving the question nobody has seen for longest. A Set
+ * cannot answer that question, so the old version fell back to a uniform draw
+ * in which a question from ten minutes ago was exactly as likely as one from
+ * four weeks ago.
+ *
+ * `sort({ createdAt: -1 })` is not decoration. Without it the `limit(120)`
+ * takes whatever 120 rows the chosen plan happens to emit first — the compound
+ * index makes that newest-first *in practice*, but a plan change would silently
+ * turn this into "the oldest 120 matches", which is the worst possible window
+ * to exclude and would fail no test.
+ */
+export async function recentlySeenAt(userIds, days = 30) {
+  if (!userIds?.length) return new Map();
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const rows = await Match.find(
     { 'players.userId': { $in: userIds.map((id) => new mongoose.Types.ObjectId(String(id))) },
       createdAt: { $gte: since } },
-    { questionIds: 1 },
+    { questionIds: 1, createdAt: 1 },
   )
+    .sort({ createdAt: -1 })
     .limit(120)
     .lean();
-  const seen = new Set();
-  for (const row of rows) for (const q of row.questionIds ?? []) seen.add(String(q));
-  return [...seen].map((id) => new mongoose.Types.ObjectId(id));
+
+  const seen = new Map();
+  for (const row of rows) {
+    const at = new Date(row.createdAt).getTime();
+    for (const q of row.questionIds ?? []) {
+      const key = String(q);
+      // Rows arrive newest-first, so the first sighting of a key is the most
+      // recent one. Keeping the max anyway costs nothing and survives a
+      // caller that passes them in another order.
+      if (!seen.has(key) || seen.get(key) < at) seen.set(key, at);
+    }
+  }
+  return seen;
+}
+
+/** Question ids these players have seen recently, so matches do not repeat. */
+export async function recentlySeenQuestionIds(userIds, days = 30) {
+  const seen = await recentlySeenAt(userIds, days);
+  return [...seen.keys()].map((id) => new mongoose.Types.ObjectId(id));
 }
 
 async function sampleByDifficulty({ topicId, origins, difficulty, count, exclude, language }) {
@@ -91,7 +124,8 @@ export async function selectQuestions(topic, players, options = {}) {
   const topicId = new mongoose.Types.ObjectId(String(topic._id));
   const userIds = (players ?? []).filter((p) => p?.userId && !p.isGhost).map((p) => p.userId);
 
-  const seen = excludeSeen ? await recentlySeenQuestionIds(userIds, 30) : [];
+  const seenAt = excludeSeen ? await recentlySeenAt(userIds, 30) : new Map();
+  const seen = [...seenAt.keys()].map((id) => new mongoose.Types.ObjectId(id));
   const avgRating = players?.length
     ? players.reduce((sum, p) => sum + (p.rating ?? 1200), 0) / players.length
     : 1200;
@@ -142,23 +176,48 @@ export async function selectQuestions(topic, players, options = {}) {
     );
   }
 
-  // tech.md §9.1 — if exclusion leaves too few, relax it rather than fail the
-  // match. A repeated question is far better than no match.
+  /**
+   * tech.md §9.1 — if exclusion leaves too few, relax it rather than fail the
+   * match. A repeated question is far better than no match.
+   *
+   * ── Which repeat, though ─────────────────────────────────────────────────
+   *
+   * This step used to `$sample` uniformly over everything, which made a
+   * question served ten minutes ago exactly as likely as one served four weeks
+   * ago. That is why repeats were so noticeable: a topic holds fifty questions
+   * and a match spends seven, so the pool is exhausted after about seven plays
+   * and EVERY match after that was drawn from this branch — at which point the
+   * app was, in effect, choosing at random from everything the player had just
+   * finished seeing.
+   *
+   * It now prefers whatever has gone longest unseen. Not strictly oldest-first,
+   * which would make consecutive exhausted matches near-identical: the oldest
+   * half of the candidates is shuffled and drawn from, so the choice is still
+   * unpredictable while the recent handful stays out of it.
+   */
   if (picked.length < count) {
-    take(
-      await Question.aggregate([
-        {
-          $match: {
-            topicIds: topicId,
-            origin: { $in: origins },
-            status: QUESTION_STATUS.PUBLISHED,
-            [`content.${language}`]: { $exists: true },
-            _id: { $nin: [...pickedIds].map((id) => new mongoose.Types.ObjectId(id)) },
-          },
-        },
-        { $sample: { size: count - picked.length } },
-      ]),
+    const need = count - picked.length;
+    const candidates = await Question.find(
+      {
+        topicIds: topicId,
+        origin: { $in: origins },
+        status: QUESTION_STATUS.PUBLISHED,
+        [`content.${language}`]: { $exists: true },
+        _id: { $nin: [...pickedIds].map((id) => new mongoose.Types.ObjectId(id)) },
+      },
+      // Sorted in memory below, so the whole document is not needed to rank —
+      // but it IS needed to serve, and a topic's pool is tens of rows, not
+      // thousands. A projection plus a second fetch would cost more.
+      null,
+    ).lean();
+
+    // Never seen sorts first (`-Infinity`), then oldest to newest.
+    const ranked = candidates.sort(
+      (a, b) =>
+        (seenAt.get(String(a._id)) ?? -Infinity) - (seenAt.get(String(b._id)) ?? -Infinity),
     );
+    const staleHalf = ranked.slice(0, Math.max(need, Math.ceil(ranked.length / 2)));
+    take(shuffle(staleHalf).slice(0, need));
   }
 
   return shuffle(picked).slice(0, count);

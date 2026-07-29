@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 import { Match, Replay, Question, Topic, User } from '../models/index.js';
 import { applyMatchOutcome, applyRankedOutcome, rankedRatingsFor } from './ratingService.js';
-import { advanceStreak, evaluateAchievements } from './achievementService.js';
+import { advanceStreak, evaluateAchievements, ACHIEVEMENT_BY_KEY } from './achievementService.js';
+import { notify } from './notificationService.js';
 import { recordEntryResult, contestPlacementFor } from './contestService.js';
 import { applyMatchToAssignments } from './assignmentService.js';
 import { outcomeFor, verdictFor } from '../shared/scoring.js';
@@ -206,7 +207,6 @@ export async function finalizeMatch(summary) {
         });
         if (won.length) {
           outcome.chestsWon = won.map((c) => ({ key: c.key, name: c.name, triggerLabel: c.triggerLabel }));
-          const { notify } = await import('./notificationService.js');
           for (const chest of won) {
             await notify(player.userId, {
               type: 'chest',
@@ -436,6 +436,13 @@ async function updatePlayerProfile({ summary, player, verdict, outcome, opponent
     );
   }
 
+  await notifyProgress(player.userId, {
+    earned,
+    accountLevelBefore,
+    accountLevel,
+    levelRewards,
+  });
+
   /**
    * `unlocked` is what the result screen celebrates, and it is now the titles
    * and the drops together — the two things a level actually hands over. The
@@ -454,6 +461,63 @@ async function updatePlayerProfile({ summary, player, verdict, outcome, opponent
     nextUnlock: nextUnlock(catalogue, accountLevel),
     totalXpAfter,
   };
+}
+
+/**
+ * What this match handed over, written to the inbox.
+ *
+ * ── Why these are written but never pushed ───────────────────────────────────
+ *
+ * Every one of them is already on the result screen, animating, at the exact
+ * moment this runs. A push would be a banner over the celebration it duplicates.
+ * What the row buys is the thing the result screen cannot: it is still there
+ * tomorrow. A player who closed the app on the level-up, or who was reading the
+ * score and missed the badge, has somewhere to find it — and until now there was
+ * nowhere, because achievements and titles were announced once, in an animation,
+ * and then only ever existed as a silent count on the profile.
+ *
+ * Failures are swallowed. A notification must never take down the write that
+ * banked the XP which earned it.
+ */
+async function notifyProgress(userId, { earned, accountLevelBefore, accountLevel, levelRewards }) {
+  try {
+    for (const key of earned) {
+      const achievement = ACHIEVEMENT_BY_KEY[key];
+      if (!achievement) continue;
+      await notify(userId, {
+        type: 'achievement',
+        push: false,
+        title: `Achievement unlocked — ${achievement.title}`,
+        body: achievement.detail,
+        data: { achievement: key },
+      });
+    }
+
+    if (accountLevel > accountLevelBefore) {
+      /**
+       * One row for the level, naming what it opened, rather than a row per
+       * thing. Levelling from 6 to 7 with a title and a drop is ONE event to a
+       * player — three rows would read as three separate pieces of news.
+       */
+      const titles = levelRewards.titles.map((t) => t.name).filter(Boolean);
+      const drops = levelRewards.drops.map((d) => d.name).filter(Boolean);
+      const opened = [...titles, ...drops];
+
+      await notify(userId, {
+        type: 'level_up',
+        push: false,
+        title: `You reached level ${accountLevel}`,
+        body: opened.length
+          ? `${opened.join(' and ')} unlocked.`
+          : levelRewards.coins > 0
+            ? `${levelRewards.coins} coins banked.`
+            : undefined,
+        data: { level: accountLevel, titles: levelRewards.titles.map((t) => t.key) },
+      });
+    }
+  } catch (err) {
+    logger.error({ err, userId }, 'progress notification failed');
+  }
 }
 
 /**

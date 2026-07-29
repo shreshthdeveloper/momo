@@ -120,9 +120,22 @@ export default function ChestCarousel({ slots = [], rarities, spinning = false, 
       getItemLayout={getItemLayout}
       horizontal
       showsHorizontalScrollIndicator={false}
+      /**
+       * A wheel you can actually throw.
+       *
+       * This was `decelerationRate="fast"` plus `disableIntervalMomentum`, and
+       * the second one is the whole problem: it pins the scroll to the NEXT
+       * item on release regardless of how hard the gesture was. A flick and a
+       * shove did the same thing — advance one — so twenty slots took twenty
+       * deliberate swipes and the wheel felt geared rather than spun.
+       *
+       * Dropping it restores momentum, and `normal` deceleration lets a hard
+       * throw coast several slots before it settles. `snapToInterval` still has
+       * the last word, so wherever it runs out of speed it lands centred on a
+       * slot — the fling is free, the resting place is not.
+       */
       snapToInterval={STRIDE}
-      decelerationRate="fast"
-      disableIntervalMomentum
+      decelerationRate="normal"
       /** A finger on the wheel mid-throw fights the animation and wins badly. */
       scrollEnabled={!spinning}
       onScroll={onScroll}

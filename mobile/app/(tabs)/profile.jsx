@@ -15,7 +15,6 @@ import {
   ProgressBar,
   SectionHeader,
   IconButton,
-  Badge,
   Skeleton,
 } from '../../src/components/ui.jsx';
 import { ProfileBodySkeleton } from '../../src/components/Skeletons.jsx';
@@ -28,7 +27,10 @@ import CoinBalance from '../../src/components/CoinBalance.jsx';
 import { ACHIEVEMENTS } from '../../src/shared/achievements.js';
 import { useAdminSpace, useIsSuperadmin } from '../../src/lib/admin.js';
 import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
-import { masteryProgress } from '../../src/shared/mastery.js';
+import { TopicProgressRow, MatchHistoryRow } from '../../src/components/ProfileRows.jsx';
+
+/** How many of each list the profile shows before handing over to its own page. */
+const PREVIEW = 5;
 
 /**
  * One past result, as a mark.
@@ -90,6 +92,12 @@ export default function Profile() {
   const [refreshing, setRefreshing] = useState(false);
   const [confirmingSignOut, setConfirmingSignOut] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+
+  const topTopics = stats?.topTopics ?? [];
+
+  /** Stable identities, so the memoised rows stay memoised across a refresh. */
+  const openTopic = useCallback((topicId) => router.push(`/topic/${topicId}`), [router]);
+  const openReview = useCallback((matchId) => router.push(`/review/${matchId}`), [router]);
 
   const load = useCallback(async () => {
     try {
@@ -323,11 +331,30 @@ export default function Profile() {
             * it: the colour makes the shape of a run readable at a glance, and
             * the letter makes a single result readable at all.
             */}
+          {/**
+            * Two rows, not one.
+            *
+            * The captions used to sit either side of the dots on a single line,
+            * and the arithmetic never worked: ten 20pt marks plus their gaps
+            * need about 236 points, the two captions another hundred, and the
+            * card offers roughly 320. `flex: 1` shrank the CONTAINER, which does
+            * nothing when its children are a fixed size — so the marks spilled
+            * out of it and printed straight over the words at both ends.
+            *
+            * Stacked, the marks get the full width and the row survives a long
+            * match count, a narrow phone and Dynamic Type. `space-between`
+            * rather than a fixed gap so they spread to whatever is there.
+            */}
           {matches.length > 0 ? (
             <View style={styles.formRow}>
-              <Text variant="meta" color={colors.inkFaint}>
-                Last 10
-              </Text>
+              <View style={styles.formHead}>
+                <Text variant="meta" color={colors.inkFaint}>
+                  Last {Math.min(matches.length, 10)}
+                </Text>
+                <Text variant="meta" color={colors.inkFaint}>
+                  {stats?.matchesPlayed ?? 0} played
+                </Text>
+              </View>
               <View style={styles.formDots}>
                 {matches.slice(0, 10).map((m) => {
                   const mark = FORM_MARK[m.verdict] ?? FORM_MARK.drew;
@@ -344,9 +371,6 @@ export default function Profile() {
                   );
                 })}
               </View>
-              <Text variant="meta" color={colors.inkFaint}>
-                {stats?.matchesPlayed ?? 0} played
-              </Text>
             </View>
           ) : null}
         </View>
@@ -429,131 +453,47 @@ export default function Profile() {
                 <Icon name="chevronRight" size={16} color={colors.inkMuted} />
               </Pressable>
 
-              {/* Everything in this section is PER TOPIC — the level, the
-                  rating and the bar all belong to the one subject named on the
-                  row, and none of them is the account level or the ranked
-                  rating above. The old row put "Level 3" and "rating 1216" in
-                  the same breath with no scope on either, which reads as one
-                  number and its badge. So: the badge is the level, the rating
-                  moves to its own line under its own words, and the bar gets a
-                  readout, because an unlabelled sliver of accent tells nobody
-                  what it is measuring or how much is left. */}
-              {stats.topTopics?.length > 0 ? (
+              {/**
+                * Five, and a door to the rest.
+                *
+                * Both of these lists used to render everything the server sent
+                * — ten topics and ten matches — which on an active account was
+                * a profile you scrolled past rather than read, and on a very
+                * active one was still a silent truncation at ten with nothing
+                * saying so. Five is a glance; "See all" is the answer to the
+                * question the glance raises.
+                */}
+              {topTopics.length > 0 ? (
                 <View style={styles.section}>
-                  <SectionHeader title="Your topics" />
-                  {stats.topTopics.map((t) => {
-                    const m = masteryProgress(t.xp);
-                    return (
-                      <Pressable
-                        key={t.topicId}
-                        style={({ pressed }) => [styles.topic, pressed && styles.pressed]}
-                        onPress={() => router.push(`/topic/${t.topicId}`)}
-                      >
-                        <View style={styles.between}>
-                          <Text variant="label" numberOfLines={1} style={{ flex: 1 }}>
-                            {t.name}
-                          </Text>
-                          <Badge label={`Level ${m.level}`} tone="soft" />
-                        </View>
-                        <Text variant="meta" color={colors.inkFaint} style={{ marginTop: space.sm }}>
-                          {/* Brighter than the tallies around it, and a line
-                              away from the badge, so the two never merge into
-                              "Level 3, 1216 of something". */}
-                          <Text variant="meta" color={colors.inkMuted}>
-                            Topic rating {t.rating}
-                          </Text>
-                          {`  ·  ${t.wins}W ${t.losses}L`}
-                          {t.accuracy !== null ? `  ·  ${Math.round(t.accuracy * 100)}% correct` : ''}
-                        </Text>
-                        <View style={styles.topicMeter}>
-                          <View style={{ flex: 1 }}>
-                            <ProgressBar value={m.xpIntoLevel} max={m.xpForNextLevel || 1} height={6} />
-                          </View>
-                          <Text variant="tiny" color={colors.inkFaint}>
-                            {m.xpForNextLevel
-                              ? `${m.xpForNextLevel - m.xpIntoLevel} XP to level ${m.level + 1}`
-                              : 'Top level reached'}
-                          </Text>
-                        </View>
-                      </Pressable>
-                    );
-                  })}
+                  <SectionHeader
+                    title="Your topics"
+                    action={topTopics.length > PREVIEW ? 'See all' : undefined}
+                    onAction={
+                      topTopics.length > PREVIEW ? () => router.push('/my-topics') : undefined
+                    }
+                  />
+                  {topTopics.slice(0, PREVIEW).map((t) => (
+                    <TopicProgressRow key={t.topicId} topic={t} onPress={openTopic} />
+                  ))}
                 </View>
               ) : null}
 
               {matches.length > 0 ? (
                 <View style={styles.section}>
-                  <SectionHeader title="Recent matches" />
-                  {/* The right-hand column is a score over a rating move, and
-                      a green "+16" beside a score reads as points won unless
-                      something says otherwise. It is said once, over the
-                      column, rather than on every row — and it names the topic
-                      rating, which is the number /matches actually reports. */}
+                  <SectionHeader
+                    title="Recent matches"
+                    action={matches.length > PREVIEW ? 'See all' : undefined}
+                    onAction={matches.length > PREVIEW ? () => router.push('/history') : undefined}
+                  />
+                  {/* The right-hand column is a score over a rating move, and a
+                      green "+16" beside a score reads as points won unless
+                      something says otherwise. It is said once, over the column,
+                      rather than on every row. */}
                   <Text variant="tiny" color={colors.inkFaint} style={styles.legend}>
                     Score, and the ranked rating it moved
                   </Text>
-                  {matches.map((m) => (
-                    <Pressable
-                      key={m.id}
-                      style={({ pressed }) => [styles.match, pressed && styles.pressed]}
-                      onPress={() => router.push(`/review/${m.id}`)}
-                    >
-                      <View
-                        style={[
-                          styles.verdict,
-                          {
-                            backgroundColor:
-                              m.verdict === 'won'
-                                ? colors.correctSoft
-                                : m.verdict === 'lost'
-                                  ? colors.wrongSoft
-                                  : colors.sunken,
-                          },
-                        ]}
-                      >
-                        <Text
-                          variant="tiny"
-                          color={
-                            m.verdict === 'won'
-                              ? colors.correct
-                              : m.verdict === 'lost'
-                                ? colors.wrong
-                                : colors.inkMuted
-                          }
-                        >
-                          {m.verdict === 'won' ? 'Won' : m.verdict === 'lost' ? 'Lost' : 'Draw'}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text variant="label" numberOfLines={1}>
-                          {m.topic?.name}
-                        </Text>
-                        <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
-                          vs {m.opponent?.displayName ?? 'opponent'}
-                        </Text>
-                      </View>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={[type.label, { color: colors.ink }]}>
-                          {m.you?.score}–{m.opponent?.score}
-                        </Text>
-                        {/* The ladder move, not the topic Elo: this list spans
-                            every topic, so the number a player recognises from
-                            the header is the ranked one. Quick play shows
-                            nothing, because nothing moved. */}
-                        {m.you?.rankedDelta ? (
-                          <Text
-                            variant="meta"
-                            color={m.you.rankedDelta > 0 ? colors.correct : colors.wrong}
-                          >
-                            {m.you.rankedDelta > 0 ? `+${m.you.rankedDelta}` : m.you.rankedDelta}
-                          </Text>
-                        ) : m.ranked === false ? (
-                          <Text variant="meta" color={colors.inkFaint}>
-                            Quick
-                          </Text>
-                        ) : null}
-                      </View>
-                    </Pressable>
+                  {matches.slice(0, PREVIEW).map((m) => (
+                    <MatchHistoryRow key={m.id} match={m} onPress={openReview} />
                   ))}
                 </View>
               ) : null}
@@ -814,16 +754,25 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   formRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
+    gap: space.sm,
     marginTop: space.lg,
     paddingTop: space.md,
     paddingHorizontal: space.sm,
     borderTopWidth: 1,
     borderTopColor: colors.hairline,
   },
-  formDots: { flex: 1, flexDirection: 'row', gap: 4, justifyContent: 'center' },
+  formHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  /**
+   * `space-between` with a minimum gap: ten marks spread to the card on a
+   * 393dp phone, and on a 320dp one they close up to 4pt rather than
+   * overlapping. `flexWrap` is the last resort if a mark ever grows.
+   */
+  formDots: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
   formDot: {
     width: 20,
     height: 20,
@@ -871,27 +820,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.md,
     paddingVertical: space.sm,
   },
-  topic: {
-    marginBottom: space.md,
-    padding: space.md,
-    borderRadius: layout.radiusInput,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-  },
   between: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.sm },
-  // The bar and its readout are one object: the number is what tells you which
-  // level the sliver belongs to and how much of it is left.
-  topicMeter: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.md },
   legend: { textAlign: 'right', marginTop: -space.sm, marginBottom: space.sm },
-  match: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
-    minHeight: 60,
-    paddingHorizontal: space.sm,
-    borderRadius: layout.radiusInput,
-  },
-  verdict: { width: 46, alignItems: 'center', paddingVertical: 4, borderRadius: layout.radiusPill },
   pressed: { backgroundColor: colors.sunken },
   account: {
     marginTop: space.md,

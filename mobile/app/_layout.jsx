@@ -109,6 +109,9 @@ function RootNavigator() {
       <Stack.Screen name="leaderboard" />
       {/* prd.md §6.9 — the in-app list, reached from the bell on Home. */}
       <Stack.Screen name="notifications" />
+      {/* The two lists the profile previews five of. */}
+      <Stack.Screen name="my-topics" />
+      <Stack.Screen name="history" />
       <Stack.Screen name="join" options={{ presentation: 'modal' }} />
     </Stack>
   );

@@ -193,6 +193,41 @@ export default async function meRoutes(app) {
   });
 
   /**
+   * Every topic this player has played, strongest first.
+   *
+   * `/me/stats` carries ten of these for the profile, which is right for a
+   * screen that also has to hold a header, four tiles and a match list — but a
+   * player with thirty topics had no way to reach the other twenty, and the
+   * profile silently stopped at ten with nothing saying so. This is the full
+   * list, for the screen that shows it.
+   */
+  app.get(
+    '/me/topics',
+    { schema: { querystring: { type: 'object', properties: { limit: { type: 'string' } } } } },
+    async (request) => {
+      const rows = await topTopicsFor(request.user._id, Math.min(Number(request.query.limit) || 100, 200));
+      return ok({
+        items: rows
+          .filter((r) => r.topicId)
+          .map((r) => ({
+            topicId: String(r.topicId._id),
+            name: r.topicId.name,
+            coverUrl: r.topicId.coverUrl,
+            rating: r.rating,
+            peakRating: r.peakRating,
+            level: r.level ?? levelForXp(r.xp),
+            xp: r.xp,
+            matchesPlayed: r.matchesPlayed,
+            wins: r.wins,
+            losses: r.losses,
+            draws: r.draws,
+            accuracy: r.totalAnswers ? Number((r.correctAnswers / r.totalAnswers).toFixed(3)) : null,
+          })),
+      });
+    },
+  );
+
+  /**
    * leagues-and-progression.md §7 — the rewards screen: what is unlocked, what
    * is next, and what equips. One request, because it is one screen, and the
    * shelves carry locked items too — seeing what is coming is the point.

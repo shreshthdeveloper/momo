@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -11,7 +11,6 @@ import {
   EmptyState,
   Header,
   Segmented,
-  Chip,
   RankTile,
 } from '../src/components/ui.jsx';
 import { LeagueBadge } from '../src/components/League.jsx';
@@ -28,7 +27,7 @@ import { colors, elevation, layout, space, type } from '../src/theme/index.js';
  * piece of ceremony on the screen — everything below them is just an ordering,
  * and renders as quiet rows.
  *
- * Everything lives in ONE vertical ScrollView. The previous layout stacked a
+ * Everything lives in ONE vertical ScrollView. An earlier layout stacked a
  * horizontal chips ScrollView and the list ScrollView as flex siblings, and the
  * two negotiated the column height between them — which is what made the
  * filters and rows collapse into each other on smaller screens.
@@ -36,15 +35,39 @@ import { colors, elevation, layout, space, type } from '../src/theme/index.js';
  * prd.md F6.6.4 — the viewer's own row is pinned to the bottom edge when
  * outside the visible range.
  */
-const SCOPES = [
+/**
+ * ── Two scopes, one period ───────────────────────────────────────────────────
+ *
+ * This screen used to offer three scopes and three periods — nine boards, from
+ * two rows of controls stacked above the podium, on a product whose whole
+ * ranking story is one number. Most of the nine were empty or near-identical,
+ * and the two rows cost about a hundred points above the fold on a phone.
+ *
+ * What is left is the two questions anybody actually asks: where do I stand in
+ * the world, and where do I stand among the people I know.
+ *
+ * **City went** because it is the one scope a player cannot fix from here — it
+ * needs a city set on the profile, and until then it is a permanently empty
+ * board with an instruction on it. It is also the least interesting of the
+ * three: a city ladder is a global ladder with most of the people removed.
+ *
+ * **The periods went** because the season already resets, so "all time" is a
+ * month in practice — two more chips to say the same thing three ways. Dropping
+ * them also removes a real trap: a period board ranks POINTS EARNED, which no
+ * league is computed from, so the badges on it were describing a different
+ * number from the one in the column beside them.
+ *
+ * The server still serves every scope and period; `/leaderboards/overall`
+ * defaults `period` to `all`, so this simply stops asking for the rest.
+ */
+const ARENA_SCOPES = [
   { value: 'global', label: 'Global' },
-  { value: 'city', label: 'City' },
   { value: 'friends', label: 'Friends' },
 ];
-const PERIODS = [
-  { value: 'all', label: 'All time' },
-  { value: 'month', label: 'This month' },
-  { value: 'week', label: 'This week' },
+/** Inside an organization the world IS the organization, so it replaces global. */
+const SPACE_SCOPES = [
+  { value: 'space', label: 'Organization' },
+  { value: 'friends', label: 'Friends' },
 ];
 
 /** Gold, silver, bronze. Gold is the palette's; the other two are metals
@@ -55,15 +78,11 @@ export default function Leaderboard() {
   const router = useRouter();
   const { activeSpaceId, isPublicArena, user } = useAuth();
   const [scope, setScope] = useState(isPublicArena ? 'global' : 'space');
-  const [period, setPeriod] = useState('all');
   const [board, setBoard] = useState(null);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const scopes = useMemo(
-    () => (isPublicArena ? SCOPES : [{ value: 'space', label: 'Organization' }, ...SCOPES.slice(2)]),
-    [isPublicArena],
-  );
+  const scopes = isPublicArena ? ARENA_SCOPES : SPACE_SCOPES;
 
   /**
    * The two worlds do not offer the same scopes — `space` exists only inside an
@@ -80,12 +99,14 @@ export default function Leaderboard() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const data = await api.get('/leaderboards/overall', { spaceId: activeSpaceId, scope, period });
+      // No `period`: the server defaults it to `all`, which is the only one
+      // this screen offers now.
+      const data = await api.get('/leaderboards/overall', { spaceId: activeSpaceId, scope });
       setBoard(data);
     } catch (err) {
       setError(err);
     }
-  }, [activeSpaceId, scope, period]);
+  }, [activeSpaceId, scope]);
 
   useEffect(() => {
     setBoard(null);
@@ -93,15 +114,13 @@ export default function Leaderboard() {
   }, [load]);
 
   /**
-   * The value column means two different things, and the chips are what
-   * decides which. All time is the global RANKED rating, so it can wear a
-   * league badge; a period board is points earned inside that period, which
-   * no league reads from — a badge there would describe the wrong number.
-   * Either way the line under the title says which one is on screen.
+   * One column, one meaning: the ranked rating. That is what the league badges
+   * beside it are computed from, so the badge and the number always describe
+   * the same thing — which was not true while a period board could put POINTS
+   * in this column under a league earned from a rating.
    */
-  const isPeriod = period !== 'all';
-  const valueOf = (e) => (isPeriod ? e.points : e.rating);
-  const leagueOf = (e) => (!isPeriod && Number.isFinite(e?.rating) ? e.rating : null);
+  const valueOf = (e) => e.rating;
+  const leagueOf = (e) => (Number.isFinite(e?.rating) ? e.rating : null);
 
   const entries = board?.entries ?? [];
   // The podium needs three fully-loaded places; with fewer, ceremony would
@@ -118,17 +137,11 @@ export default function Leaderboard() {
           ranking by is not something a title can carry. */}
       <Header
         title="Ranks"
-        subtitle={isPeriod ? 'Points earned in the period' : 'Ranked rating and league, all time'}
+        subtitle="Ranked rating and league"
         onBack={() => router.back()}
       />
 
       <Segmented options={scopes} value={scope} onChange={setScope} style={styles.segmented} />
-
-      <View style={styles.periods}>
-        {PERIODS.map((p) => (
-          <Chip key={p.value} label={p.label} active={period === p.value} onPress={() => setPeriod(p.value)} />
-        ))}
-      </View>
 
       <ErrorNotice error={error} onRetry={load} />
 
@@ -141,9 +154,7 @@ export default function Leaderboard() {
           body={
             scope === 'friends'
               ? 'Add friends to see how you compare.'
-              : scope === 'city'
-                ? 'Set your city in your profile to join the city board.'
-                : 'Play a match to appear on this board.'
+              : 'Play a match to appear on this board.'
           }
         />
       ) : (
@@ -330,13 +341,7 @@ function Row({ entry, value, ranked }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
   head: { paddingHorizontal: layout.gutter, paddingTop: space.md, gap: 2 },
-  segmented: { marginHorizontal: layout.gutter, marginTop: space.lg },
-  periods: {
-    flexDirection: 'row',
-    gap: space.sm,
-    paddingHorizontal: layout.gutter,
-    paddingVertical: space.md,
-  },
+  segmented: { marginHorizontal: layout.gutter, marginTop: space.lg, marginBottom: space.lg },
   list: { paddingHorizontal: layout.gutter, paddingBottom: space.xxxl },
 
   podium: {

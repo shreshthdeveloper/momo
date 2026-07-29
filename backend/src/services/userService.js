@@ -261,13 +261,38 @@ export async function friendshipBetween(a, b) {
 }
 
 /** prd.md F6.8.2 — find friends by username. */
+/**
+ * Find a player by name.
+ *
+ * ── Anywhere in the name, not just the start ─────────────────────────────────
+ *
+ * This was anchored — `^bella` — which meant a search only ever worked if you
+ * already knew how somebody's name BEGAN. "ella" found nothing for Bella,
+ * "singh" found nobody called Priya Singh, and since a surname is the half
+ * people are most likely to type, the feature read as broken rather than as
+ * strict. prd.md F6.2.3 asks for typo tolerance on topic search; a name search
+ * that cannot match a surname is a long way short of that.
+ *
+ * It is a substring match now — the same shape the admin console has always
+ * used for the same job — with the results ordered so the anchored matches
+ * still come first. That is the part worth keeping from the old behaviour:
+ * someone typing "bel" almost certainly means the name starting with it, and a
+ * plain substring query would bury Bella under Annabelle.
+ *
+ * ── Why a regex and not a text index ─────────────────────────────────────────
+ *
+ * An unanchored regex cannot use the `displayNameLower` index, so this is a
+ * collection scan. That is a deliberate trade at this size and a real ceiling:
+ * past a few hundred thousand accounts it wants an n-gram or `$text` index.
+ * The `limit` caps the documents returned, not the documents examined.
+ */
 export async function searchUsers(query, viewer, { limit = 20 } = {}) {
   const q = String(query ?? '').trim();
   if (q.length < 2) return [];
-  const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').toLowerCase();
 
   const users = await User.find({
-    displayNameLower: { $regex: `^${safe.toLowerCase()}`, $options: '' },
+    displayNameLower: { $regex: safe },
     status: 'active',
     _id: { $ne: viewer?._id },
     // prd.md §13 — minors are excluded from discovery entirely.
@@ -277,7 +302,16 @@ export async function searchUsers(query, viewer, { limit = 20 } = {}) {
     .limit(Math.min(limit, 30))
     .lean();
 
-  return users.map((u) => ({
+  // Starts-with first, then alphabetically, so the ordering is stable rather
+  // than whatever order the scan happened to visit them in.
+  const ranked = users.sort((a, b) => {
+    const aStarts = (a.displayNameLower ?? '').startsWith(safe);
+    const bStarts = (b.displayNameLower ?? '').startsWith(safe);
+    if (aStarts !== bStarts) return aStarts ? -1 : 1;
+    return String(a.displayName ?? '').localeCompare(String(b.displayName ?? ''));
+  });
+
+  return ranked.map((u) => ({
     id: String(u._id),
     displayName: u.displayName,
     avatarUrl: u.avatarUrl,

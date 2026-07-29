@@ -88,6 +88,10 @@ export default function Settings() {
             value={prefs.friendReaction !== false}
             onChange={(v) => savePrefs({ friendReaction: v })}
           />
+          {/* Achievements and level-ups are deliberately absent. They are
+              written to the in-app list and never pushed (see `notifyProgress`),
+              and a pref only governs pushing — prd.md §6.9 keeps the row either
+              way — so a switch here would be a control that does nothing. */}
           <Toggle
             icon="ranks"
             tint={colors.optionC}
