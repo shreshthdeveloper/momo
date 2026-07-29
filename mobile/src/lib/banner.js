@@ -70,6 +70,28 @@ export const BANNERS = {
 
 export const BANNER_NAMES = Object.keys(BANNERS);
 
+/**
+ * Banners added by a superadmin after this build shipped, key → image URL.
+ *
+ * Avatars have had this since uploads existed; banners never did, so an
+ * uploaded banner was dropped from the shop shelf, rendered as an empty token
+ * in a chest, and — if a player somehow came to be wearing one — fell through
+ * to the name-seeded fallback below, which shows everybody an unrelated
+ * pattern and looks for all the world like the banner they chose was ignored.
+ */
+let remoteBanners = {};
+
+export function setRemoteBanners(map) {
+  remoteBanners = map ?? {};
+}
+
+/** What to draw for a banner key: a bundled asset, or an uploaded image. */
+export function bannerSource(name) {
+  if (BANNERS[name]) return BANNERS[name];
+  if (remoteBanners[name]) return { uri: remoteBanners[name] };
+  return null;
+}
+
 export function bannerUri(name) {
   return `${SCHEME}${name}`;
 }
@@ -77,7 +99,7 @@ export function bannerUri(name) {
 export function bannerName(value) {
   if (typeof value !== 'string' || !value.startsWith(SCHEME)) return null;
   const name = value.slice(SCHEME.length);
-  return BANNERS[name] ? name : null;
+  return BANNERS[name] || remoteBanners[name] ? name : null;
 }
 
 /**
@@ -88,7 +110,7 @@ export function bannerName(value) {
  */
 export function resolveBanner(value, seedName) {
   const name = bannerName(value);
-  if (name) return BANNERS[name];
+  if (name) return bannerSource(name);
   if (typeof value === 'string' && /^https?:\/\//.test(value)) return { uri: value };
   const seed = (seedName ?? '').split('').reduce((total, c) => total + c.charCodeAt(0), 0);
   return BANNERS[BANNER_NAMES[seed % BANNER_NAMES.length]];

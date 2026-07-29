@@ -354,7 +354,10 @@ async function updatePlayerProfile({ summary, player, verdict, outcome, opponent
   if (!user) return undefined;
 
   const streak = advanceStreak(user.streak, new Date(summary.completedAt));
-  const maxSpeedAnswer = myAnswers.some((a) => a.points === MAX_ROUND_SCORE);
+  // At or above, not equal to: the bonus round pays double, so a perfect
+  // answer on the closing round scores 80 and an equality test misses the
+  // fastest answer in the match.
+  const maxSpeedAnswer = myAnswers.some((a) => a.points >= MAX_ROUND_SCORE);
 
   /**
    * Both levels are read from the XP total, before and after this match's
@@ -385,7 +388,17 @@ async function updatePlayerProfile({ summary, player, verdict, outcome, opponent
     after: accountLevel,
     granted: user.grantedPerks ?? [],
   });
-  const matchCoins = coinsForMatch({ verdict, mode: summary.mode });
+  /**
+   * A void match pays nothing.
+   *
+   * When both players drop, ratings do not move and `match:end` reports the
+   * match as unranked — but coins were still computed from a ranked DRAW, so a
+   * match that officially did not count credited both accounts 25. Beyond the
+   * inconsistency it is farmable: two accounts dropping together, repeatedly,
+   * is free money. Now this case is reachable at all (the void branch used to
+   * be dead), it has to be right.
+   */
+  const matchCoins = summary.isVoid ? 0 : coinsForMatch({ verdict, mode: summary.mode });
   const coinsEarned = matchCoins + levelRewards.coins + (outcome.promotion?.coins ?? 0);
 
   const earned = await evaluateAchievements({
@@ -396,6 +409,8 @@ async function updatePlayerProfile({ summary, player, verdict, outcome, opponent
     ratingBefore: outcome.ratingBefore,
     level: outcome.level ?? 1,
     maxSpeedAnswer,
+    // The streak this match just made, not the one it started with.
+    streak,
   });
 
   await User.updateOne(
@@ -795,7 +810,18 @@ export async function getMatchForReview(matchId, viewerId) {
 export async function headToHead(userA, userB) {
   const matches = await Match.find(
     {
-      status: 'complete',
+      /**
+       * A forfeit counts. It is stored as `abandoned` rather than `complete`,
+       * and filtering on `complete` alone quietly dropped every match decided
+       * that way — while the verdict, the ratings and the match history all
+       * count them, so the versus screen would announce "First meeting"
+       * against a rival the player had already beaten.
+       *
+       * Void matches (both players dropped) are excluded on purpose: nothing
+       * moved for either side, so there is no result to record.
+       */
+      status: { $in: ['complete', 'abandoned'] },
+      isVoid: { $ne: true },
       'players.userId': { $all: [oid(userA), oid(userB)] },
     },
     { players: 1, winnerId: 1, isDraw: 1 },

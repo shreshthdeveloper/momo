@@ -13,6 +13,7 @@ import {
 import { C2S, S2C, ROUND_START_ALLOWED_KEYS } from '../src/shared/protocol.js';
 import { Match, Replay, Rating } from '../src/models/index.js';
 import { ROUNDS_PER_MATCH, MAX_MATCH_SCORE, BASE_POINTS } from '../src/shared/constants.js';
+import { roundMultiplier } from '../src/shared/scoring.js';
 
 /**
  * tech.md §13: "The socket test that plays a complete match end to end is the
@@ -130,8 +131,10 @@ test('two clients play a complete 7-round match', async () => {
   assert.equal(endA.payload.winnerId, alice.id);
   assert.equal(endA.payload.isDraw, false);
   assert.equal(endA.payload.rounds.length, ROUNDS_PER_MATCH);
+  // Points dropped against a perfect run, counted per round so the bonus
+  // round's doubled ceiling is compared against a doubled ceiling.
   assert.equal(endA.payload.scores.you, MAX_MATCH_SCORE - endA.payload.rounds.reduce(
-    (lost, r) => lost + (40 - r.you.points), 0,
+    (lost, r, i) => lost + (40 * roundMultiplier(i, ROUNDS_PER_MATCH) - r.you.points), 0,
   ));
 
   // prd.md F6.4.18 — the result screen needs the rating change.

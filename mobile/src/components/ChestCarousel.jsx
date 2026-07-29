@@ -3,7 +3,7 @@ import { Animated, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { Text } from './ui.jsx';
 import { faceSource } from '../lib/avatar.js';
-import { BANNERS } from '../lib/banner.js';
+import { bannerSource } from '../lib/banner.js';
 import { coins as fmtCoins, rarityTone } from '../lib/rarity.js';
 import { useReducedMotion } from '../lib/motion.js';
 import { colors, fonts, layout, space } from '../theme/index.js';
@@ -208,8 +208,8 @@ const Slot = memo(function Slot({ slot, index, scrollX, rarities, reduced }) {
           </Text>
         ) : slot.type === 'avatar' && faceSource(slot.key) ? (
           <Image source={faceSource(slot.key)} style={styles.fill} contentFit="cover" />
-        ) : BANNERS[slot.key] ? (
-          <Image source={BANNERS[slot.key]} style={styles.fill} contentFit="cover" />
+        ) : bannerSource(slot.key) ? (
+          <Image source={bannerSource(slot.key)} style={styles.fill} contentFit="cover" />
         ) : null}
       </View>
 

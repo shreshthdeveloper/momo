@@ -8,7 +8,7 @@ import ConsoleHeader from '../../src/components/ConsoleHeader.jsx';
 import { Text, ErrorNotice, EmptyState } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
-import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * The organization's control room, in the app — the same features the web portal
@@ -26,6 +26,9 @@ const SECTIONS = [
   { href: '/admin/import', icon: 'plus', tint: colors.optionC, title: 'Import questions', sub: 'Bring a CSV bank in' },
   { href: '/admin/contests', icon: 'clock', tint: colors.optionC, title: 'Contests', sub: 'Schedule, monitor, finalise' },
   { href: '/admin/assignments', icon: 'flag', tint: colors.optionB, title: 'Assignments', sub: 'Set work, track completion' },
+  { href: '/admin/batches', icon: 'grid', tint: colors.optionB, title: 'Batches', sub: 'Classes and year groups' },
+  { href: '/admin/moderation', icon: 'shield', tint: colors.wrong, title: 'Reported questions', sub: 'What players flagged, and what to do' },
+  { href: '/admin/drafts', icon: 'robot', tint: colors.optionA, title: 'AI drafts', sub: 'Ask for questions, review them after' },
   { href: '/admin/invite', icon: 'share', tint: colors.accent, title: 'Invite code', sub: 'Bring students in' },
   { href: '/admin/settings', icon: 'gear', tint: colors.optionD, title: 'Organization settings', sub: 'Branding, joining, plan, admin team' },
 ];
@@ -177,7 +180,11 @@ function hrefFor(key) {
     case 'thin_topics':
       return '/admin/topics';
     case 'reports':
-      return '/admin/questions';
+      // The queue where a report can actually be read and cleared. This used
+      // to open the question bank, which shows a count per row and offers no
+      // way to see a reason or resolve anything — so the alert could never be
+      // cleared from inside the app.
+      return '/admin/moderation';
     default:
       return '/admin';
   }
@@ -198,7 +205,7 @@ function Metric({ value, label }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  content: { padding: layout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
+  content: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
   stats: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -25,6 +25,8 @@ const GLYPHS = {
   gear: 'settings-sharp',
   share: 'share-social',
   back: 'arrow-back',
+  /** The console sidebar's handle. */
+  menu: 'menu',
   chevronLeft: 'chevron-back',
   chevronRight: 'chevron-forward',
   chevronDown: 'chevron-down',
@@ -70,6 +72,24 @@ const GLYPHS = {
   leaf: 'leaf',
   /** The lamp, for mythology — the one subject no object stands in for. */
   flame: 'flame',
+
+  // ── Console sections ────────────────────────────────────────────────────
+  /** Moderation and anything that carries authority over an account. */
+  shield: 'shield-checkmark',
+  /** A broadcast to everybody. */
+  megaphone: 'megaphone',
+  /** The audit trail: what was done, by whom. */
+  history: 'time',
+  /** Tenants — an organization as a thing on a shelf. */
+  building: 'business',
+  /** Machine-drafted questions. */
+  robot: 'hardware-chip',
+  /** Numbers, as a page rather than a subject. */
+  chart: 'bar-chart',
+  /** A file leaving the product. */
+  download: 'download-outline',
+  /** The platform itself. */
+  server: 'server',
 };
 
 export default function Icon({ name, size = 22, color = colors.ink }) {

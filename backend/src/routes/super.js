@@ -30,6 +30,7 @@ import { NotFoundError, BadRequestError } from '../lib/errors.js';
 import {
   ACCOUNT_MAX_LEVEL,
   CHEST_SLOT_COUNT,
+  CHEST_RECURRENCES,
   CHEST_TRIGGERS,
   COSMETIC_TYPES,
   QUESTION_STATUS,
@@ -81,7 +82,14 @@ export default async function superRoutes(app) {
   app.get('/spaces', async (request) => {
     const filter = { isPublic: false };
     if (request.query.status) filter.status = request.query.status;
-    if (request.query.q) filter.name = { $regex: String(request.query.q), $options: 'i' };
+    if (request.query.q) {
+      // Escaped, exactly as /super/users does it: an unescaped "(" typed into
+      // the search field is an invalid regex, and Mongo throws rather than
+      // matching nothing — the list blanked behind an error until the
+      // character was deleted.
+      const safe = String(request.query.q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.name = { $regex: safe, $options: 'i' };
+    }
 
     const spaces = await Space.find(filter).sort({ createdAt: -1 }).limit(200).lean();
     const counts = await SpaceMember.aggregate([
@@ -386,6 +394,26 @@ export default async function superRoutes(app) {
       const report = await Report.findById(request.params.id);
       if (!report) throw new NotFoundError('That report does not exist.');
 
+      /**
+       * The action has to match what was reported.
+       *
+       * Nothing checked, so `suspend_user` on a QUESTION report ran an update
+       * against a question's id, matched no user, changed nothing — and the
+       * report was still marked resolved with that resolution recorded. The
+       * queue emptied and the enforcement never happened.
+       */
+      const allowed = {
+        question: ['archive_question', 'dismiss'],
+        user: ['suspend_user', 'ban_user', 'warn_user', 'dismiss'],
+        displayName: ['warn_user', 'suspend_user', 'ban_user', 'dismiss'],
+      }[report.targetType] ?? ['dismiss'];
+      if (!allowed.includes(request.body.action)) {
+        throw new BadRequestError(
+          `A ${report.targetType} report cannot be resolved with "${request.body.action}".`,
+          'WRONG_ACTION',
+        );
+      }
+
       switch (request.body.action) {
         case 'archive_question':
           await Question.updateOne(
@@ -458,18 +486,43 @@ export default async function superRoutes(app) {
       ];
     }
     if (request.query.status) filter.status = request.query.status;
+    /**
+     * Everybody who has joined one organization.
+     *
+     * `spaceMemberships` is denormalised onto the user for exactly this kind
+     * of question, so "show me this org's players" is one indexed read rather
+     * than a join through SpaceMember.
+     */
+    if (request.query.spaceId) filter.spaceMemberships = oid(request.query.spaceId);
 
-    const users = await User.find(filter).sort({ createdAt: -1 }).limit(100).lean();
+    const page = Number(request.query.page) || 0;
+    const pageSize = Math.min(Number(request.query.pageSize) || 50, 100);
+
+    const [users, total] = await Promise.all([
+      User.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(page * pageSize)
+        .limit(pageSize)
+        .lean(),
+      User.countDocuments(filter),
+    ]);
     return ok({
+      total,
+      page,
+      pageSize,
       items: users.map((u) => ({
         id: String(u._id),
         displayName: u.displayName,
+        avatarUrl: u.avatarUrl,
         phone: u.phone,
         status: u.status,
         role: u.role,
         matchesPlayed: u.matchesPlayed,
         overallRating: u.overallRating,
+        rankedRating: u.rankedRating,
         cheatFlags: u.cheatFlags,
+        /** How many organizations they belong to — the operator's first question. */
+        organizations: (u.spaceMemberships ?? []).length,
         createdAt: u.createdAt,
         lastActiveAt: u.lastActiveAt,
       })),
@@ -520,9 +573,20 @@ export default async function superRoutes(app) {
       Match.countDocuments({ status: 'live' }),
       Match.countDocuments({ createdAt: { $gte: new Date(Date.now() - 86_400_000) } }),
     ]);
+    /**
+     * A record the DATABASE thinks is live that the engine is not running.
+     *
+     * This used to report every live match, so the "stale records — attention"
+     * alarm fired constantly during perfectly normal play and the one alert
+     * built to catch matches orphaned by a crash became the one an operator
+     * learns to ignore. Clamped at zero: the registry can briefly lead the
+     * database, and a negative count is not a thing to show anybody.
+     */
+    const stats = registry.stats();
+    const stale = Math.max(0, liveMatches - (stats.liveMatches ?? 0));
     return ok({
-      game: registry.stats(),
-      staleLiveRecords: liveMatches,
+      game: stats,
+      staleLiveRecords: stale,
       matchesToday,
       memory: {
         rssMb: Math.round(mem.rss / 1024 / 1024),
@@ -752,6 +816,8 @@ export default async function superRoutes(app) {
             triggerKind: { type: 'string', enum: CHEST_TRIGGERS },
             triggerRating: { type: ['number', 'null'] },
             triggerLeague: { type: ['string', 'null'], maxLength: 24 },
+            /** Monthly is the two built-in chests only; anything made here is once. */
+            recurrence: { type: 'string', enum: CHEST_RECURRENCES },
             /**
              * The slots, up to the twenty a chest holds. A slot is a cosmetic
              * or an amount of coins — opening draws one of them, so this list

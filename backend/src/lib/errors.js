@@ -68,7 +68,15 @@ export function toErrorResponse(err) {
           code: 'VALIDATION_FAILED',
           message: 'Check the values you sent.',
           details: err.validation.map((v) => ({
-            field: (v.instancePath || v.params?.missingProperty || '').replace(/^\//, ''),
+            /**
+             * ajv reports a JSON pointer (`/options/0`); every consumer — the
+             * question editor's inline field map above all — speaks the dotted
+             * form the services already use (`options.0`). Normalising here
+             * means one shape reaches the client whichever layer rejected it.
+             */
+            field: (v.instancePath || v.params?.missingProperty || '')
+              .replace(/^\//, '')
+              .replace(/\//g, '.'),
             problem: v.message,
           })),
         },

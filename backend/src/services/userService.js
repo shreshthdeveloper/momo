@@ -226,7 +226,12 @@ export async function getPublicProfile(targetId, viewer) {
     title: titleNameFor(target.title),
     isSelf,
     friendship: areFriends
-      ? { status: areFriends.status, requestedByMe: String(areFriends.requestedBy) === String(viewer._id) }
+      ? {
+          /** The row's id, so an incoming request can be accepted from here. */
+          id: String(areFriends._id),
+          status: areFriends.status,
+          requestedByMe: String(areFriends.requestedBy) === String(viewer._id),
+        }
       : null,
     /** prd.md F6.8.3 — the head-to-head record sits directly under their name. */
     headToHead: h2h,
@@ -298,6 +303,13 @@ export async function searchUsers(query, viewer, { limit = 20 } = {}) {
     // prd.md §13 — minors are excluded from discovery entirely.
     isMinor: { $ne: true },
     'privacy.profileVisibility': { $ne: 'private' },
+    /**
+     * The setting that says "let people find me by name" has to actually do
+     * it. Settings has offered this switch all along and nothing read it, so
+     * turning discovery off changed precisely nothing and the player went on
+     * appearing in every search. Absent means on, which is the default.
+     */
+    'privacy.contactDiscovery': { $ne: false },
   })
     .limit(Math.min(limit, 30))
     .lean();
@@ -317,6 +329,13 @@ export async function searchUsers(query, viewer, { limit = 20 } = {}) {
     avatarUrl: u.avatarUrl,
     city: u.city,
     overallRating: u.overallRating,
+    /**
+     * The same field the suggestion rows carry. `PersonRow` draws a league
+     * badge from it, so leaving it out meant the identical row rendered with a
+     * badge under Suggestions and without one under Search — the same person,
+     * twice, differently.
+     */
+    rankedRating: u.rankedRating,
   }));
 }
 

@@ -384,6 +384,26 @@ export const ART = {
  * URL, so an uploaded photograph still works and a stale key degrades to a
  * fetch rather than to a crash — the contract `resolveTopicFace` honours.
  */
+/**
+ * Every drawn emblem's key, so the question editor can offer the same set the
+ * match screen can draw. Without it an admin could only ever upload a
+ * photograph, and the seeded picture questions — which all use these keys —
+ * were uneditable without replacing their art.
+ */
+export const ART_KEYS = Object.keys(ART);
+
+/** The drawn key in a stored value, or null when it is an uploaded URL. */
+export function artKeyOf(imageUrl) {
+  if (typeof imageUrl !== 'string' || !imageUrl.startsWith(ART_SCHEME)) return null;
+  const key = imageUrl.slice(ART_SCHEME.length);
+  return ART[key] ? key : null;
+}
+
+/** The wire value for a drawn key. */
+export function artUri(key) {
+  return `${ART_SCHEME}${key}`;
+}
+
 export function resolveQuestionArt(imageUrl) {
   if (typeof imageUrl !== 'string' || !imageUrl) return null;
   if (imageUrl.startsWith(ART_SCHEME)) {

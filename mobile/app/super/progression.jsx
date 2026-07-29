@@ -31,8 +31,8 @@ import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import { faceSource } from '../../src/lib/avatar.js';
 import { BANNERS } from '../../src/lib/banner.js';
-import { LEAGUE_METALS, SPACE_ACCENTS } from '../../src/shared/constants.js';
-import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
+import { CHEST_SLOT_COUNT, LEAGUE_METALS, SPACE_ACCENTS } from '../../src/shared/constants.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * The ladder, as an operator sees it (leagues-and-progression.md §9).
@@ -112,6 +112,7 @@ export default function SuperProgression() {
           </View>
 
           <ScrollView
+        automaticallyAdjustKeyboardInsets
             contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -255,6 +256,14 @@ const UNLOCK_KINDS = [
 ];
 
 /**
+ * A title is earned, never bought — the shop says so on its own titles shelf,
+ * a title carries no price, and `ownsCosmetic` has no way for a shop title to
+ * become owned. Offering "Shop" for one produced an item that saved cleanly
+ * and could never be obtained by anybody, with no warning on either side.
+ */
+const TITLE_UNLOCK_KINDS = UNLOCK_KINDS.filter((k) => k.value !== 'shop');
+
+/**
  * The four tiers, with the band each one's price is expected to sit in.
  *
  * The band is a HINT, not a rule: the server takes any price, because an
@@ -395,7 +404,11 @@ function CosmeticEditor({ row, leagues, maxLevel, onClose, onSaved }) {
       ) : null}
 
       <Field label="Unlocked by">
-        <Segmented options={UNLOCK_KINDS} value={unlockKind} onChange={setUnlockKind} />
+        <Segmented
+          options={row.type === 'title' ? TITLE_UNLOCK_KINDS : UNLOCK_KINDS}
+          value={unlockKind}
+          onChange={setUnlockKind}
+        />
       </Field>
 
       {unlockKind === 'shop' && row.type !== 'title' ? (
@@ -417,7 +430,7 @@ function CosmeticEditor({ row, leagues, maxLevel, onClose, onSaved }) {
           <TextInput
             style={styles.input}
             value={unlockLevel}
-            onChangeText={(v) => setUnlockLevel(v.replace(/\D/g, '').slice(0, 2))}
+            onChangeText={(v) => setUnlockLevel(v.replace(/\D/g, '').slice(0, 3))}
             keyboardType="number-pad"
             accessibilityLabel="Unlock level"
           />
@@ -706,8 +719,9 @@ function ChestsTab({ data, onSaved }) {
     <>
       <SectionHeader title="Chests" />
       <Text variant="meta" color={colors.inkFaint} style={styles.note}>
-        A chest opens on a rating or on a league, and waits on the player’s rewards screen until
-        they open it. Won once, kept forever — a demotion never takes back what was inside.
+        A chest waits on the player’s rewards screen until they open it, and a demotion never takes
+        back what was inside. The two monthly chests re-roll on the 1st and are re-earned each
+        month; anything you make here is an EVENT chest — won once and kept, never re-awarded.
       </Text>
 
       <Pressable
@@ -716,7 +730,7 @@ function ChestsTab({ data, onSaved }) {
             key: '',
             name: '',
             description: '',
-            triggerKind: 'league',
+            triggerKind: 'event',
             triggerLeague: data.leagues[1]?.key ?? data.leagues[0]?.key,
             triggerRating: 1400,
             rewards: [],
@@ -776,6 +790,7 @@ function ChestsTab({ data, onSaved }) {
 }
 
 const TRIGGERS = [
+  { value: 'event', label: 'Everyone' },
   { value: 'league', label: 'League' },
   { value: 'rating', label: 'Rating' },
 ];
@@ -788,7 +803,7 @@ function ChestEditor({ chest, data, onClose, onSaved }) {
   const [key, setKey] = useState(chest.key ?? '');
   const [name, setName] = useState(chest.name ?? '');
   const [description, setDescription] = useState(chest.description ?? '');
-  const [triggerKind, setTriggerKind] = useState(chest.triggerKind ?? 'league');
+  const [triggerKind, setTriggerKind] = useState(chest.triggerKind ?? 'event');
   const [triggerLeague, setTriggerLeague] = useState(chest.triggerLeague ?? data.leagues[0]?.key);
   const [triggerRating, setTriggerRating] = useState(String(chest.triggerRating ?? 1400));
   const [rewards, setRewards] = useState(chest.rewards ?? []);
@@ -808,6 +823,8 @@ function ChestEditor({ chest, data, onClose, onSaved }) {
         triggerKind,
         triggerLeague: triggerKind === 'league' ? triggerLeague : null,
         triggerRating: triggerKind === 'rating' ? Number(triggerRating) || 0 : null,
+        // Operator-made chests are one-offs; only the two built-in ones recur.
+        recurrence: 'once',
         rewards,
         enabled,
       });
@@ -877,7 +894,12 @@ function ChestEditor({ chest, data, onClose, onSaved }) {
         <Segmented options={TRIGGERS} value={triggerKind} onChange={setTriggerKind} />
       </Field>
 
-      {triggerKind === 'league' ? (
+      {triggerKind === 'event' ? (
+        <Text variant="meta" color={colors.inkFaint} style={styles.note}>
+          Every player gets this one as soon as it is enabled, and can open it once. Nothing to
+          reach — the event is the occasion.
+        </Text>
+      ) : triggerKind === 'league' ? (
         <View style={styles.chipRow}>
           {data.leagues.map((l) => (
             <Chip
@@ -933,7 +955,9 @@ function ChestEditor({ chest, data, onClose, onSaved }) {
               label={`+${amount} coins`}
               onPress={() =>
                 setRewards((prev) =>
-                  prev.length >= 20 ? prev : [...prev, { type: 'coins', amount, key: null }],
+                  prev.length >= CHEST_SLOT_COUNT
+                    ? prev
+                    : [...prev, { type: 'coins', amount, key: null }],
                 )
               }
             />
@@ -970,6 +994,7 @@ function ChestEditor({ chest, data, onClose, onSaved }) {
                   active={rewards.some((r) => r.type === c.type && r.key === c.key)}
                   onPress={() => {
                     setRewards((prev) =>
+                      prev.length >= CHEST_SLOT_COUNT ||
                       prev.some((r) => r.type === c.type && r.key === c.key)
                         ? prev
                         : [...prev, { type: c.type, key: c.key }],
@@ -1039,9 +1064,9 @@ function triggerOf(chest, leagues) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  tabs: { paddingHorizontal: layout.gutter, paddingBottom: space.sm },
+  tabs: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.sm },
   subTabs: { paddingBottom: space.md },
-  content: { padding: layout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
+  content: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
   note: { marginBottom: space.md },
   okNote: {
     flexDirection: 'row',
@@ -1120,11 +1145,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    paddingHorizontal: layout.gutter,
+    paddingHorizontal: consoleLayout.gutter,
     paddingTop: space.lg,
     paddingBottom: space.md,
   },
-  sheetBody: { paddingHorizontal: layout.gutter, paddingBottom: space.xxxl, gap: space.md },
+  sheetBody: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl, gap: space.md },
   field: { gap: space.sm },
   input: {
     ...type.option,

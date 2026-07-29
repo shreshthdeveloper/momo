@@ -18,7 +18,19 @@ export const VERSUS_COUNTDOWN_MS = 5_500;
 export const BASE_POINTS = 20;
 export const SPEED_MAX = 20;
 export const MAX_ROUND_SCORE = BASE_POINTS + SPEED_MAX; // 40
-export const MAX_MATCH_SCORE = MAX_ROUND_SCORE * ROUNDS_PER_MATCH; // 280
+/**
+ * The last round of every match is the bonus round, and it pays double.
+ *
+ * The match screen has announced this since the night restaging ("BONUS ROUND —
+ * double or nothing on speed") while every round in fact scored the same, so
+ * the closing round of a match the player was told to push on was worth exactly
+ * what the opener was. The multiplier is applied in `scoreAnswer`, which both
+ * ends run, so the prediction under a tap and the server's authoritative points
+ * cannot disagree about it.
+ */
+export const BONUS_ROUND_MULTIPLIER = 2;
+export const MAX_MATCH_SCORE =
+  MAX_ROUND_SCORE * (ROUNDS_PER_MATCH - 1 + BONUS_ROUND_MULTIPLIER); // 320
 
 // ── Timing tolerances (tech.md §9.4) ───────────────────────────────────────
 /** Transit allowance so a slow connection is not punished for latency. */
@@ -27,6 +39,14 @@ export const NETWORK_GRACE_MS = 250;
 export const HUMAN_FLOOR_MS = 300;
 /** Reconnect window before a live match is forfeited. */
 export const DISCONNECT_GRACE_MS = 10_000;
+/**
+ * How long a rematch invitation stands before it lapses.
+ *
+ * Both sides have to ask, so this is how long the first asker waits. The
+ * client's own watchdog is set slightly longer than this, so the server's
+ * answer always arrives first and the timeout is only ever a backstop.
+ */
+export const REMATCH_WINDOW_MS = 30_000;
 
 // ── Matchmaking (tech.md §8) ───────────────────────────────────────────────
 /**
@@ -153,8 +173,39 @@ export const UNLOCK_KIND = {
 export const UNLOCK_KINDS = Object.values(UNLOCK_KIND);
 
 /** A chest opens on a ranked rating threshold or on entering a league. */
-export const CHEST_TRIGGER = { RATING: 'rating', LEAGUE: 'league' };
+export const CHEST_TRIGGER = {
+  RATING: 'rating',
+  LEAGUE: 'league',
+  /**
+   * Everyone, the moment it is switched on — a Christmas or New Year chest.
+   * There is nothing to reach: the event IS the qualification.
+   */
+  EVENT: 'event',
+};
 export const CHEST_TRIGGERS = Object.values(CHEST_TRIGGER);
+
+/**
+ * How often a chest can be won.
+ *
+ * The two built-in chests are MONTHLY: re-rolled on the 1st, re-earned against
+ * the fresh ratings, and cleared if left unopened — that loop is the reason to
+ * come back. Anything an operator creates is ONCE by default, because an event
+ * chest is an event: a Christmas chest that quietly re-awarded itself every
+ * month afterwards, and deleted itself from the shelf of anyone who had not
+ * opened it by the 1st, is neither of the things its name promises.
+ */
+export const CHEST_RECURRENCE = { MONTHLY: 'monthly', ONCE: 'once' };
+export const CHEST_RECURRENCES = Object.values(CHEST_RECURRENCE);
+
+/**
+ * The period stamped on a grant from a one-time chest.
+ *
+ * Grants are unique on (userId, chestKey, period), so a constant here is what
+ * makes a one-time chest once-ever rather than once-a-month — and the monthly
+ * sweep skips this value, which is what makes it kept-for-ever rather than
+ * cleared on the 1st.
+ */
+export const CHEST_PERIOD_ONCE = 'once';
 
 // ── Rarity (coins-and-cosmetics.md §2) ─────────────────────────────────────
 

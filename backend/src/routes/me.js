@@ -22,10 +22,10 @@ import { revokeAllSessions } from '../services/authService.js';
 import { listInterestCandidates } from '../services/topicService.js';
 import { levelForXp, accountProgress } from '../shared/mastery.js';
 import { leagueFor } from '../shared/league.js';
-import { shelfFor, nextUnlock } from '../shared/perks.js';
+import { shelfFor, nextUnlock, ownedKeys } from '../shared/perks.js';
 import { achievementShelf } from '../shared/achievements.js';
 import { progression, buyCosmetic } from '../services/progressionService.js';
-import { chestsFor, claimChest, unopenedChestCount } from '../services/chestService.js';
+import { awardChests, chestsFor, claimChest, unopenedChestCount } from '../services/chestService.js';
 import {
   COSMETIC_TYPE,
   COSMETIC_TYPES,
@@ -235,6 +235,18 @@ export default async function meRoutes(app) {
   app.get('/me/rewards', async (request) => {
     const { accountCurve, ladder, catalogue, version } = progression();
     const rankedRating = request.user.rankedRating ?? RANKED_START;
+
+    /**
+     * Catch up anything this player has already qualified for.
+     *
+     * Chests are awarded on "has reached", but only ever CHECKED at the end of
+     * a rated match — so a Gold player who only plays quick matches, or anyone
+     * at all when an event chest is switched on or a trigger is retuned, saw a
+     * locked card promising something they already qualified for. This is the
+     * screen where that promise is read, so it is the honest place to settle
+     * it; the unique index makes it a no-op for anybody already holding one.
+     */
+    await awardChests({ userId: request.user._id, rankedRating }).catch(() => {});
     const { level, ...progress } = accountProgress(
       request.user.totalXp,
       accountCurve,
@@ -287,7 +299,9 @@ export default async function meRoutes(app) {
     async (request) =>
       ok(
         await claimChest(request.user._id, request.params.key, {
-          owned: request.user.grantedPerks ?? [],
+          // Starters included: they are owned from registration but never
+          // written down, and a duplicate that is not recognised pays nothing.
+          owned: ownedKeys(request.user.grantedPerks ?? []),
         }),
       ),
   );
@@ -311,6 +325,8 @@ export default async function meRoutes(app) {
           properties: {
             type: { type: 'string', enum: COSMETIC_TYPES },
             key: { type: 'string', maxLength: 40 },
+            /** What the shelf showed. Optional, so an older client still buys. */
+            expectedPrice: { type: 'integer', minimum: 0, nullable: true },
           },
         },
       },

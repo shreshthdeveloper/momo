@@ -314,7 +314,16 @@ export default function MatchResult() {
    */
   const forfeitedBy = result.forfeitedBy ?? null;
   const wasForfeit = forfeitedBy != null && !isVoid;
-  const youQuit = wasForfeit && (lostIt || Boolean(game.forfeitedByYou));
+  /**
+   * The verdict wins over the local flag.
+   *
+   * When both players press Leave at almost the same moment the engine's first
+   * `complete()` takes it and the slower quitter is handed `won` — so trusting
+   * the local flag stacked "YOU LEFT / You forfeited the match" above a green
+   * rating gain and a win being banked. A player who is told they won did win,
+   * whatever their own device remembers about the button they pressed.
+   */
+  const youQuit = wasForfeit && !wonIt && (lostIt || Boolean(game.forfeitedByYou));
   const theyQuit = wasForfeit && !youQuit;
 
   // §10 — the loss copy consoles rather than announces. Nobody needs YOU
@@ -739,9 +748,36 @@ export default function MatchResult() {
               style={styles.primary}
               onPress={() => router.replace(`/contest/${contest.contestId}`)}
             />
+          ) : game.rematchInvite ? (
+            /**
+             * They asked first. Both sides have to ask for the handshake to
+             * complete, so this is the other half of it — and until the
+             * invitation had an event of its own, this prompt could not exist
+             * and a one-sided rematch simply expired in silence.
+             */
+            <>
+              <Text variant="meta" color={colors.gold} style={styles.footnote}>
+                {game.rematchInvite.from?.displayName ?? 'Your rival'} wants a rematch
+              </Text>
+              <Button
+                label="Play again"
+                style={styles.primary}
+                onPress={() => {
+                  game.rematch();
+                  router.replace('/match/searching');
+                }}
+              />
+              <Button
+                variant="soft"
+                label="Not now"
+                onPress={() => game.declineRematch()}
+                style={{ marginTop: space.md }}
+              />
+            </>
           ) : (
             <Button
-              label="Rematch"
+              label={game.rematchPending ? 'Waiting for them…' : 'Rematch'}
+              disabled={game.rematchPending}
               style={styles.primary}
               onPress={() => {
                 game.rematch();

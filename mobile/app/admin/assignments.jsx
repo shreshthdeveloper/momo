@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import {
   Text,
@@ -13,7 +14,7 @@ import {
   ProgressBar,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, elevation, layout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space } from '../../src/theme/index.js';
 
 /**
  * prd.md F8.5.5 — assignments from the admin's side: what was set, when it is
@@ -21,6 +22,7 @@ import { colors, elevation, layout, space } from '../../src/theme/index.js';
  * whether to chase the class or leave it alone.
  */
 export default function AdminAssignments() {
+  const goBack = useConsoleBack();
   const router = useRouter();
   const adminSpace = useAdminSpace();
   const [items, setItems] = useState(null);
@@ -44,7 +46,7 @@ export default function AdminAssignments() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Assignments" subtitle={adminSpace?.name} onBack={() => router.back()} />
+      <Header title="Assignments" subtitle={adminSpace?.name} onBack={goBack} />
 
       <ErrorNotice error={error} onRetry={load} />
 
@@ -80,7 +82,27 @@ export default function AdminAssignments() {
               const total = assignment.stats?.assigned ?? 0;
               const overdue = Boolean(assignment.overdue);
               return (
-                <View key={assignment.id} style={[styles.card, elevation.raised]}>
+                /**
+                 * The card opens the roster. An assignment whose whole point is
+                 * "did they do it?" was previously a card that could not be
+                 * tapped — the answer lived behind an endpoint with no screen.
+                 */
+                <Pressable
+                  key={assignment.id}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/admin/assignment-detail',
+                      params: { id: assignment.id },
+                    })
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={`${assignment.title}. ${done} of ${total} done.`}
+                  style={({ pressed }) => [
+                    styles.card,
+                    elevation.raised,
+                    pressed && { opacity: 0.75 },
+                  ]}
+                >
                   <View style={styles.cardHead}>
                     <Text variant="label" style={{ flex: 1 }} numberOfLines={1}>
                       {assignment.title}
@@ -101,7 +123,7 @@ export default function AdminAssignments() {
                   <Text variant="meta" color={colors.inkFaint} style={{ marginTop: space.sm }}>
                     {done} of {total} students done
                   </Text>
-                </View>
+                </Pressable>
               );
             })
           )}
@@ -129,7 +151,7 @@ function dueText(dueAt) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  list: { padding: layout.gutter, paddingTop: space.sm, paddingBottom: space.lg },
+  list: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.lg },
   card: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,
@@ -141,7 +163,7 @@ const styles = StyleSheet.create({
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   meta: { marginTop: space.xs, marginBottom: space.md },
   footer: {
-    paddingHorizontal: layout.gutter,
+    paddingHorizontal: consoleLayout.gutter,
     paddingTop: space.sm,
     paddingBottom: space.sm,
     backgroundColor: colors.sunken,

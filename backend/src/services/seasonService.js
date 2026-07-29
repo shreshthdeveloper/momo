@@ -1,4 +1,4 @@
-import { User, Space, Match, Chest } from '../models/index.js';
+import { User, Space, Match, Chest, ProgressionConfig } from '../models/index.js';
 import { rebuildPeriodSnapshot } from './leaderboardService.js';
 import { ensureMonthlyChests, clearStaleChestGrants, currentPeriod } from './chestService.js';
 import { monthKey, periodRange } from '../lib/dates.js';
@@ -121,31 +121,103 @@ export async function archiveMonth({ at } = {}) {
  */
 export async function runMonthlyCycle({ softReset = true, at } = {}) {
   const period = currentPeriod();
+
+  /**
+   * Claim the month BEFORE the one step that cannot be repeated.
+   *
+   * The soft reset halves every rating on the platform, and the marker saying
+   * "this month is done" used to be written after it — so a crash or a deploy
+   * in the window between the two left the month looking un-run, and the next
+   * tick halved every rating a second time (1400 → 1300 → 1250). A ladder-wide
+   * corruption, once a month, in a narrow but entirely real window.
+   *
+   * Claiming first inverts the risk: a crash after the claim leaves the archive
+   * or the chest roll undone, and both of those are idempotent and repaired by
+   * the next boot (`ensureMonthlyChests` runs there too). Losing a repeatable
+   * step is recoverable; halving everybody twice is not.
+   */
+  if (softReset && !(await claimPeriod(period))) {
+    logger.info({ period }, 'monthly cycle already claimed — not running it twice');
+    return { period, ran: false, archived: 0, reset: 0, expired: 0 };
+  }
+
   const archived = await archiveMonth({ at });
   const reset = softReset ? await softResetRatings() : { reset: 0 };
   const chests = await ensureMonthlyChests({ period });
   const cleared = await clearStaleChestGrants({ period });
+  if (!softReset) await stampCycled(period);
 
   logger.info({ period, ...archived, ...reset, ...cleared }, 'monthly cycle complete');
   return { period, ...archived, ...reset, chests, ...cleared };
 }
 
 /**
+ * Take the month, if nobody else has it.
+ *
+ * One conditional update, so two processes racing on the 1st cannot both win:
+ * the filter only matches while the stored period is something else, and the
+ * loser's update modifies nothing.
+ */
+async function claimPeriod(period) {
+  const result = await ProgressionConfig.updateOne(
+    { singleton: 'progression', lastCycledPeriod: { $ne: period } },
+    { $set: { lastCycledPeriod: period } },
+    { upsert: true },
+  ).catch((err) => {
+    // Upserting against a filter two callers both match races on the unique
+    // singleton index; the duplicate key IS the other caller having won.
+    if (err?.code === 11000) return { modifiedCount: 0, upsertedCount: 0 };
+    throw err;
+  });
+  return Boolean(result.modifiedCount || result.upsertedCount);
+}
+
+/** Record that `period` has had its turnover. */
+async function stampCycled(period) {
+  await ProgressionConfig.updateOne(
+    { singleton: 'progression' },
+    { $set: { lastCycledPeriod: period } },
+    { upsert: true },
+  );
+}
+
+/**
  * Has the month turned over since the last run?
  *
- * The chests' own `period` is the record, rather than a separate "last ran"
- * field somewhere. It is written by the same step that ends the cycle, so the
- * two cannot disagree, and it means an install that was DOWN over the 1st runs
- * the turnover the moment it comes back rather than skipping the month.
+ * The record is `lastCycledPeriod` on the progression config, written by the
+ * cycle itself. It used to be inferred from any chest carrying the current
+ * period, which the boot-time roll also writes — so a restart on the 1st before
+ * the job's first tick marked the month done without archiving, resetting or
+ * clearing anything, and the month was then skipped entirely. The two steps now
+ * keep separate records because they are separate promises.
  *
- * Checked hourly instead of fired at a precise minute for exactly that reason:
- * a job that only exists at 00:05 on the 1st is a job that a deploy window can
- * delete.
+ * Checked hourly instead of fired at a precise minute: a job that only exists
+ * for one minute a month is a job a deploy window can delete, and an install
+ * that was DOWN over the 1st still runs the turnover the moment it returns.
  */
 export async function runMonthlyCycleIfDue() {
   const period = currentPeriod();
-  const current = await Chest.countDocuments({ period });
-  if (current > 0) return { period, ran: false };
+  const config = await ProgressionConfig.findOne(
+    { singleton: 'progression' },
+    { lastCycledPeriod: 1 },
+  ).lean();
+
+  if (config?.lastCycledPeriod === period) return { period, ran: false };
+
+  /**
+   * First tick after this record existed. Chests already rolled for this month
+   * are the old record saying the turnover happened, so adopt it rather than
+   * soft-resetting every rating in the middle of a month on the release that
+   * introduced the field.
+   */
+  if (!config?.lastCycledPeriod) {
+    const rolled = await Chest.countDocuments({ period });
+    if (rolled > 0) {
+      await stampCycled(period);
+      logger.info({ period }, 'adopting the current period — chests already rolled');
+      return { period, ran: false, adopted: true };
+    }
+  }
 
   logger.info({ period }, 'month rolled over — running the cycle');
   const result = await runMonthlyCycle();

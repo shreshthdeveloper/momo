@@ -1,7 +1,14 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { scoreAnswer, outcomeFor, verdictFor, accuracyOf } from '../src/shared/scoring.js';
+import {
+  scoreAnswer,
+  outcomeFor,
+  verdictFor,
+  accuracyOf,
+  roundMultiplier,
+  maxScoreForRounds,
+} from '../src/shared/scoring.js';
 import { expected, nextRating, ratingDelta, overallRatingFrom, ratingBandOf } from '../src/shared/elo.js';
 import { xpForLevel, levelForXp, masteryProgress, xpForMatch } from '../src/shared/mastery.js';
 import { difficultyMixFor } from '../src/game/questionSelector.js';
@@ -51,10 +58,41 @@ describe('scoring (prd.md F6.4.14–F6.4.17)', () => {
   test('a perfect match totals exactly the documented maximum', () => {
     let total = 0;
     for (let i = 0; i < ROUNDS_PER_MATCH; i += 1) {
-      total += scoreAnswer({ isCorrect: true, elapsedMs: 0, durationMs: 10_000 });
+      total += scoreAnswer({
+        isCorrect: true,
+        elapsedMs: 0,
+        durationMs: 10_000,
+        multiplier: roundMultiplier(i, ROUNDS_PER_MATCH),
+      });
     }
     assert.equal(total, MAX_MATCH_SCORE);
-    assert.equal(total, 280);
+    // Six ordinary rounds at 40, then the bonus round at double.
+    assert.equal(total, 320);
+  });
+
+  test('the closing round is the bonus round and pays double', () => {
+    assert.equal(roundMultiplier(0, 7), 1);
+    assert.equal(roundMultiplier(5, 7), 1);
+    assert.equal(roundMultiplier(6, 7), 2);
+    // A contest paper of twelve doubles its OWN last round, not round seven.
+    assert.equal(roundMultiplier(6, 12), 1);
+    assert.equal(roundMultiplier(11, 12), 2);
+
+    assert.equal(
+      scoreAnswer({ isCorrect: true, elapsedMs: 0, durationMs: 10_000, multiplier: 2 }),
+      (BASE_POINTS + SPEED_MAX) * 2,
+    );
+    // Double the winnings, never a penalty — there is no negative marking.
+    assert.equal(
+      scoreAnswer({ isCorrect: false, elapsedMs: 0, durationMs: 10_000, multiplier: 2 }),
+      0,
+    );
+  });
+
+  test('the score rails run to a total that includes the bonus round', () => {
+    assert.equal(maxScoreForRounds(ROUNDS_PER_MATCH), MAX_MATCH_SCORE);
+    assert.equal(maxScoreForRounds(1), 80);
+    assert.equal(maxScoreForRounds(0), 0);
   });
 
   test('scoring is monotonic — answering sooner is never worth less', () => {

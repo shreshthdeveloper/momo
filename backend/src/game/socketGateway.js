@@ -12,6 +12,7 @@ import {
 } from '../shared/protocol.js';
 import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
+import { setRealtime } from '../lib/realtime.js';
 import { AppError } from '../lib/errors.js';
 
 /**
@@ -76,6 +77,18 @@ export function createSocketGateway(httpServer, { timing = {} } = {}) {
   };
 
   const orchestrator = new GameOrchestrator({ transport, timing });
+
+  /**
+   * The services' way to reach a connected player.
+   *
+   * Notifications are written all over the product — friends, challenges,
+   * contests, chests — and none of those services should know a socket exists.
+   * Registering the namespace once here is what lets `notify()` deliver a row
+   * the moment it is written without importing any of this.
+   */
+  setRealtime({
+    toUser: (userId, event, payload) => transport.toPlayer(userId, event, payload),
+  });
 
   const limiter = new RateLimiter({
     [C2S.QUEUE_JOIN]: { max: 12, windowMs: 60_000 },
@@ -144,7 +157,22 @@ export function createSocketGateway(httpServer, { timing = {} } = {}) {
     const resumed = orchestrator.handleReconnect(user.id);
     if (resumed) {
       socket.join(`match:${resumed.matchId}`);
-      socket.emit(C2S.MATCH_RESUME, resumed);
+      socket.emit(S2C.MATCH_RESUME, resumed);
+    } else {
+      /**
+       * No live match — but there may be a result they never saw.
+       *
+       * The disconnect grace forfeits the match after ten seconds, and the
+       * `match:end` that ends it is emitted to a room this player is not in,
+       * because being absent is the whole reason it fired. Without this they
+       * come back to a dead board with the clock at zero and never learn they
+       * forfeited, let alone what it cost them.
+       */
+      const missed = orchestrator.missedResult(user.id);
+      if (missed) {
+        orchestrator.clearMissedResult(user.id);
+        socket.emit(S2C.MATCH_END, missed);
+      }
     }
 
     const fail = (code, message) => socket.emit(S2C.ERROR, { code, message });

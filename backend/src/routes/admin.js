@@ -45,6 +45,7 @@ import {
   Report,
   AuditLog,
   Question,
+  User,
 } from '../models/index.js';
 import { NotFoundError, BadRequestError, ForbiddenError } from '../lib/errors.js';
 import {
@@ -129,7 +130,10 @@ export default async function adminRoutes(app) {
       topicIds: { type: 'array', items: { type: 'string' } },
       tags: { type: 'array', items: { type: 'string', maxLength: 30 } },
       explanation: { type: 'string', maxLength: 600 },
-      imageUrl: { type: 'string', maxLength: 500 },
+      // Nullable: the editor sends `null` to mean "this question has no
+      // picture", which is the majority of them and the only way to clear one.
+      // Without this the schema rejected every save of an image-less question.
+      imageUrl: { type: 'string', maxLength: 500, nullable: true },
       timeLimitOverrideMs: { type: 'integer', minimum: 5000, maximum: 60000, nullable: true },
       status: { type: 'string', enum: ['draft', 'in_review', 'published', 'archived'] },
       language: { type: 'string', maxLength: 8 },
@@ -180,7 +184,11 @@ export default async function adminRoutes(app) {
   app.post(
     '/questions/:id/status',
     {
-      preHandler: spaceAdminGuard,
+      // Moving a question between draft, review, published and archived is
+      // editing the bank, so it takes the same grant every other edit does.
+      // Only PUBLISHING was ever checked, which left archiving — the one that
+      // takes questions away from players — open to any sub-admin at all.
+      preHandler: spacePermissionGuard('createQuestions'),
       schema: {
         body: {
           type: 'object',
@@ -242,7 +250,11 @@ export default async function adminRoutes(app) {
   app.post(
     '/questions/bulk',
     {
-      preHandler: spaceAdminGuard,
+      // Same grant as the single-question version, and for a sharper reason:
+      // this one takes up to 500 ids, so an ungranted sub-admin could archive
+      // an organization's entire published bank in one call, dropping every
+      // topic under the 21-question line and off every player's screen.
+      preHandler: spacePermissionGuard('createQuestions'),
       schema: {
         body: {
           type: 'object',
@@ -513,11 +525,19 @@ export default async function adminRoutes(app) {
       const topic = await Topic.findOne({ _id: request.params.id, spaceId: request.scope.spaceId });
       if (!topic) throw new NotFoundError('That topic does not exist.');
 
-      // prd.md F8.3.3 — the 21-question gate is enforced here, not just shown.
-      if (
-        request.body.status === TOPIC_STATUS.PUBLISHED &&
-        topic.publishedQuestionCount < MIN_PUBLISHED_QUESTIONS_TO_LIVE
-      ) {
+      /**
+       * prd.md F8.3.3 — the 21-question gate is enforced here, not just shown.
+       *
+       * It applies to PUBLISHING, not to saving a topic that is already
+       * published. A topic can fall under the threshold after the fact (archive
+       * a few questions and it does), and the editor sends `status` on every
+       * save — so a topic in that state could not have its name, description or
+       * cover corrected at all: every save came back demanding 21 questions,
+       * and the only way out was to demote it to draft first.
+       */
+      const publishing =
+        request.body.status === TOPIC_STATUS.PUBLISHED && topic.status !== TOPIC_STATUS.PUBLISHED;
+      if (publishing && topic.publishedQuestionCount < MIN_PUBLISHED_QUESTIONS_TO_LIVE) {
         throw new BadRequestError(
           `This topic needs ${MIN_PUBLISHED_QUESTIONS_TO_LIVE} published questions before it goes live. It has ${topic.publishedQuestionCount}.`,
           'TOPIC_NOT_READY',
@@ -556,6 +576,24 @@ export default async function adminRoutes(app) {
     if (request.query.batchId) filter.batchId = oid(request.query.batchId);
     if (request.query.role) filter.role = request.query.role;
 
+    /**
+     * The search runs against the DATABASE, not against the page.
+     *
+     * It used to filter the rows that had already been paged out, so a name
+     * that was not in the first fifty simply could not be found — and the
+     * `total` beside the results still counted the whole roster, so the
+     * numbers disagreed with the list. The name lives on the user document,
+     * so the ids are resolved first and the membership query narrowed by them.
+     */
+    const needle = String(request.query.q ?? '').trim().toLowerCase();
+    if (needle) {
+      const safe = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const matches = await User.find({ displayNameLower: { $regex: safe } }, { _id: 1 })
+        .limit(500)
+        .lean();
+      filter.userId = { $in: matches.map((u) => u._id) };
+    }
+
     const page = Number(request.query.page) || 0;
     const pageSize = Math.min(Number(request.query.pageSize) || 50, 100);
 
@@ -570,11 +608,7 @@ export default async function adminRoutes(app) {
       SpaceMember.countDocuments(filter),
     ]);
 
-    let rows = members.filter((m) => m.userId);
-    if (request.query.q) {
-      const needle = String(request.query.q).toLowerCase();
-      rows = rows.filter((m) => m.userId.displayName?.toLowerCase().includes(needle));
-    }
+    const rows = members.filter((m) => m.userId);
 
     return ok({
       total,
@@ -704,7 +738,7 @@ export default async function adminRoutes(app) {
     return ok({
       joinCode: space.joinCode,
       joinMode: space.joinMode,
-      link: `${process.env.APP_LINK_BASE ?? 'https://mimo.app'}/join/${space.joinCode}`,
+      link: `${process.env.APP_LINK_BASE ?? 'https://wms.distrx.io'}/join/${space.joinCode}`,
     });
   });
 
@@ -764,6 +798,34 @@ export default async function adminRoutes(app) {
       await audit(request, 'batch.create', { targetType: 'batch', targetId: batch._id });
       reply.code(201);
       return ok({ id: String(batch._id), name: batch.name });
+    },
+  );
+
+  app.patch(
+    '/batches/:id',
+    {
+      preHandler: spacePermissionGuard('manageStudents'),
+      schema: {
+        body: {
+          type: 'object',
+          properties: {
+            spaceId: { type: 'string' },
+            name: { type: 'string', minLength: 1, maxLength: 60 },
+            description: { type: 'string', maxLength: 200, nullable: true },
+            year: { type: 'string', maxLength: 20, nullable: true },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const batch = await Batch.findOne({ _id: request.params.id, spaceId: request.scope.spaceId });
+      if (!batch) throw new NotFoundError('That batch does not exist.');
+      for (const key of ['name', 'description', 'year']) {
+        if (request.body[key] !== undefined) batch[key] = request.body[key];
+      }
+      await batch.save();
+      await audit(request, 'batch.update', { targetType: 'batch', targetId: batch._id, summary: batch.name });
+      return ok({ id: String(batch._id), name: batch.name, description: batch.description, year: batch.year });
     },
   );
 
@@ -950,7 +1012,6 @@ export default async function adminRoutes(app) {
               type: 'object',
               properties: {
                 roundDurationMs: { type: 'integer', minimum: 5000, maximum: 60000 },
-                allowPublicProfiles: { type: 'boolean' },
                 allowGhosts: { type: 'boolean' },
               },
             },

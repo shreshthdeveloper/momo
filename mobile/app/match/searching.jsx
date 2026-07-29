@@ -140,6 +140,15 @@ export default function Searching() {
       router.replace('/match/play');
       return undefined;
     }
+    /**
+     * A rematch that nobody took up puts the last result back in hand. Without
+     * this the screen keeps searching for a match that is never coming, since
+     * every other exit from here is a match starting.
+     */
+    if (game.status === 'finished') {
+      router.replace('/match/result');
+      return undefined;
+    }
     if (game.status !== 'found' && game.status !== 'countdown') return undefined;
 
     if (!found) {

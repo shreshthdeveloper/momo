@@ -186,6 +186,19 @@ const STARTERS = new Set([
 ]);
 
 /**
+ * Every key a player owns, INCLUDING the starters.
+ *
+ * Registration does not write the starter set into `grantedPerks` — ownership
+ * of it is derived — so any check that reads `grantedPerks` alone believes a
+ * player does not own the face they have been wearing since day one. That is
+ * fine for the shop, which derives free ownership itself, and wrong everywhere
+ * a bare key list is compared, which is why this exists.
+ */
+export function ownedKeys(grantedPerks = []) {
+  return [...new Set([...grantedPerks, ...STARTER_AVATARS, ...STARTER_BANNERS])];
+}
+
+/**
  * What an item costs, from its tier and its position in it.
  *
  * A tier's items are spread evenly across its price band in `PRICE_STEPS`

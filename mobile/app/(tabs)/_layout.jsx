@@ -36,7 +36,12 @@ const TABS = [
 /** Play keeps the middle, because it is still the thing the app is for. */
 const ORDER = ['index', 'shop', 'play', 'friends', 'profile'];
 
-const DOCK_HEIGHT = 66;
+/**
+ * From the token, not beside it. Two "tab bar height" values were in
+ * circulation and had already drifted by 2pt, so anything sized against the
+ * token sat 2pt off the dock it was supposed to clear.
+ */
+const DOCK_HEIGHT = layout.tabBar;
 
 /** One slot. `focused` drives the ink and the bar; nothing else does. */
 function DockItem({ focused, label, icon, onPress }) {

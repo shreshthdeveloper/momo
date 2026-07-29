@@ -10,7 +10,7 @@ import {
   MATCH_MODE,
   RANKED_START,
 } from '../shared/constants.js';
-import { scoreAnswer, verdictFor } from '../shared/scoring.js';
+import { roundMultiplier, scoreAnswer, verdictFor } from '../shared/scoring.js';
 import { leagueFor, leagueMovement } from '../shared/league.js';
 import { progression } from '../services/progressionService.js';
 import { S2C, ERROR_CODE } from '../shared/protocol.js';
@@ -304,7 +304,13 @@ export class LiveMatch {
     // Grace time is for transit, not for points — clamp before scoring so a
     // slow connection is neither punished nor rewarded.
     const scoringElapsed = Math.min(elapsedMs, durationMs);
-    const points = scoreAnswer({ isCorrect, elapsedMs: scoringElapsed, durationMs });
+    const points = scoreAnswer({
+      isCorrect,
+      elapsedMs: scoringElapsed,
+      durationMs,
+      // The closing round is the bonus round the match screen announces.
+      multiplier: roundMultiplier(this.roundIndex, this.totalRounds),
+    });
 
     // tech.md §9.6 — below the human floor is flagged, not rejected. A false
     // positive must never cost someone a match they actually played.
@@ -411,6 +417,23 @@ export class LiveMatch {
       if (quitter) quitter.forfeited = true;
     }
 
+    /**
+     * Anyone else still away when the match ends is gone too.
+     *
+     * `complete()` runs exactly once — the `isOver` guard above sees to that —
+     * and `clearAllTimers()` then kills the OTHER player's grace timer, so only
+     * ever one player was marked. When a shared network event took both phones
+     * down, whichever timer happened to fire first scored that player as the
+     * sole forfeiter and the other as the winner: `bothGone` could never be
+     * true, and the void case tech.md §9.7 describes — and the result screen
+     * still has copy for — was unreachable.
+     *
+     * A ghost is never "away": it has no connection to lose.
+     */
+    for (const p of this.players) {
+      if (!p.isGhost && !p.connected) p.forfeited = true;
+    }
+
     const [a, b] = this.players;
     // tech.md §9.7 — if both dropped, nobody's rating moves.
     const bothGone = this.players.every((p) => p.forfeited);
@@ -447,6 +470,15 @@ export class LiveMatch {
         userId: p.userId,
         displayName: p.displayName,
         avatarUrl: p.avatarUrl,
+        /**
+         * Carried so the replay writer can record it. It reads
+         * `player.country`/`player.city` off this summary, and they were never
+         * put here — so every replay was stored with a null country and a
+         * replayed ghost always wore the SEARCHING player's flag instead of the
+         * one the recorded player actually played under.
+         */
+        country: p.country ?? null,
+        city: p.city ?? null,
         isGhost: p.isGhost,
         sourceMatchId: p.sourceMatchId,
         rating: p.rating,
@@ -503,7 +535,7 @@ export class LiveMatch {
       const rankedBefore = result.rankedBefore ?? RANKED_START;
       const rankedAfter = result.rankedAfter ?? rankedBefore;
 
-      this.transport.toPlayer(player.userId, S2C.MATCH_END, {
+      const payload = {
         matchId: this.id,
         /**
          * Derived from the outcome, not from the scores. A forfeit is a win
@@ -591,7 +623,21 @@ export class LiveMatch {
             opponent: { optionIndex: theirs?.optionIndex ?? null, points: theirs?.points ?? 0 },
           };
         }),
-      });
+      };
+
+      this.transport.toPlayer(player.userId, S2C.MATCH_END, payload);
+      /**
+       * Only for a player who was AWAY when this fired.
+       *
+       * The 10-second grace exists precisely for players who have dropped, so
+       * the forfeit that ends their match is emitted into an empty room by
+       * definition — they reconnect to a dead board with the clock at zero, no
+       * result, and no notice of the loss they just took. Held for them, and
+       * for nobody else: caching it for a player who received it perfectly well
+       * means the next socket they open replays the last match at them, which
+       * is a result screen out of nowhere in the middle of the next game.
+       */
+      if (!player.connected) this.hooks.onResultForPlayer?.(player.userId, payload);
     }
     this.hooks.onFinished?.(this, summary);
   }
@@ -661,7 +707,13 @@ export class LiveMatch {
             displayName: them.displayName,
             avatarUrl: them.avatarUrl,
             rating: them.rating,
-            connected: them.connected,
+            /**
+             * A ghost has no connection to lose. It is built `connected:
+             * false`, so a resume against one used to pin the status line to
+             * "opponent reconnecting" for the rest of the match — which is
+             * both wrong and exactly the ghost tell F6.7.5 forbids.
+             */
+            connected: them.isGhost ? true : them.connected,
           }
         : null,
       serverNow: Date.now(),

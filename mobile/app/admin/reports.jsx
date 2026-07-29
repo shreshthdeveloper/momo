@@ -17,7 +17,7 @@ import {
   Stat,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * prd.md §8.6 — reports. Four questions an admin actually asks, one tab each:
@@ -541,9 +541,9 @@ export default function AdminReports() {
         <EmptyState
           icon="friends"
           title="No batches yet"
-          body="Group students into batches on the Students screen."
-          actionLabel="Students"
-          onAction={() => router.push('/admin/students')}
+          body="A batch is a class or a year group. Create one, then file students into it."
+          actionLabel="Batches"
+          onAction={() => router.push('/admin/batches')}
         />
       );
     }
@@ -683,18 +683,18 @@ export default function AdminReports() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  tabs: { marginHorizontal: layout.gutter, marginTop: space.xs },
-  subTabs: { marginHorizontal: layout.gutter, marginTop: space.md },
+  tabs: { marginHorizontal: consoleLayout.gutter, marginTop: space.xs },
+  subTabs: { marginHorizontal: consoleLayout.gutter, marginTop: space.md },
   chipsScroll: { flexGrow: 0, marginTop: space.md },
-  chips: { paddingHorizontal: layout.gutter, gap: space.sm, paddingBottom: space.xs },
+  chips: { paddingHorizontal: consoleLayout.gutter, gap: space.sm, paddingBottom: space.xs },
   chipsSkeleton: {
     flexDirection: 'row',
     gap: space.sm,
-    paddingHorizontal: layout.gutter,
+    paddingHorizontal: consoleLayout.gutter,
     marginTop: space.md,
     paddingBottom: space.xs,
   },
-  body: { padding: layout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
+  body: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
   count: { paddingBottom: space.sm },
   card: {
     backgroundColor: colors.nightRaised,
@@ -726,7 +726,7 @@ const styles = StyleSheet.create({
     minHeight: 200,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: layout.gutter,
+    padding: consoleLayout.gutter,
   },
   statRow: { flexDirection: 'row' },
   calRow: { marginTop: space.lg },

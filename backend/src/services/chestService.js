@@ -7,10 +7,13 @@ import { NotFoundError, ConflictError } from '../lib/errors.js';
 import { cosmeticsOfRarity, LEGENDARY_CHEST_TITLE } from '../shared/perks.js';
 import { leagueFor, leagueRank } from '../shared/league.js';
 import {
+  CHEST_PERIOD_ONCE,
+  CHEST_RECURRENCE,
   CHEST_TRIGGER,
   COSMETIC_TYPE,
   DUPLICATE_PAYOUT,
   MONTHLY_CHESTS,
+  UNLOCK_KIND,
 } from '../shared/constants.js';
 
 /**
@@ -69,8 +72,19 @@ export function rollChest(spec, catalogue) {
 
   for (const [rarity, count] of Object.entries(spec.slots ?? {})) {
     if (!count) continue;
+    /**
+     * Starters are excluded from the pool.
+     *
+     * Every account owns Rose, Sunflower and Grape Dots from registration, but
+     * that ownership is DERIVED — it is never written to `grantedPerks`, which
+     * is the only thing the duplicate check consults. A starter in a chest was
+     * therefore the one outcome the whole duplicate-pays-coins rule exists to
+     * prevent: no item, no coins, a dead open.
+     */
     const pool = shuffled(
-      cosmeticsOfRarity(catalogue, rarity, [COSMETIC_TYPE.AVATAR, COSMETIC_TYPE.BANNER]),
+      cosmeticsOfRarity(catalogue, rarity, [COSMETIC_TYPE.AVATAR, COSMETIC_TYPE.BANNER]).filter(
+        (c) => c.unlockKind !== UNLOCK_KIND.FREE,
+      ),
     ).slice(0, count);
     for (const item of pool) {
       slots.push({ type: item.type, key: item.key, name: item.name, rarity, amount: null });
@@ -105,6 +119,9 @@ export async function rollMonthlyChests({ period = currentPeriod() } = {}) {
           triggerKind: CHEST_TRIGGER.LEAGUE,
           triggerRating: null,
           triggerLeague: spec.triggerLeague,
+          // These two are the monthly loop; everything else an operator makes
+          // is a one-off, so the recurrence is stated rather than defaulted.
+          recurrence: CHEST_RECURRENCE.MONTHLY,
           rewards,
           period,
           enabled: true,
@@ -149,7 +166,18 @@ export async function ensureMonthlyChests({ period = currentPeriod() } = {}) {
  * of gifts, and the pile is the opposite of a reason to come back.
  */
 export async function clearStaleChestGrants({ period = currentPeriod() } = {}) {
-  const result = await ChestGrant.deleteMany({ claimedAt: null, period: { $ne: period } });
+  /**
+   * One-time chests are kept, whatever month it is.
+   *
+   * The deadline is what makes the MONTHLY loop a loop; an event chest has no
+   * loop to belong to, and deleting an unopened Christmas present on the 1st
+   * of January — silently, with no surface anywhere warning that it could
+   * happen — is the opposite of what it was created to be.
+   */
+  const result = await ChestGrant.deleteMany({
+    claimedAt: null,
+    period: { $nin: [period, CHEST_PERIOD_ONCE] },
+  });
   if (result.deletedCount) logger.info({ period, expired: result.deletedCount }, 'chest grants expired');
   return { expired: result.deletedCount };
 }
@@ -157,6 +185,8 @@ export async function clearStaleChestGrants({ period = currentPeriod() } = {}) {
 /** Has this player reached what the chest asks for? */
 function chestIsOpen(chest, { rating, ladder }) {
   if (chest.enabled === false) return false;
+  // An event chest is for everyone the moment it is switched on.
+  if (chest.triggerKind === CHEST_TRIGGER.EVENT) return true;
   if (chest.triggerKind === CHEST_TRIGGER.RATING) {
     return Number.isFinite(chest.triggerRating) && rating >= chest.triggerRating;
   }
@@ -165,7 +195,8 @@ function chestIsOpen(chest, { rating, ladder }) {
 }
 
 /** "Reached Gold" / "Reached 1225" — what the reveal says they did. */
-function triggerLabel(chest, ladder) {
+export function triggerLabel(chest, ladder) {
+  if (chest.triggerKind === CHEST_TRIGGER.EVENT) return chest.description || 'A gift for everyone';
   if (chest.triggerKind === CHEST_TRIGGER.RATING) return `Reached ${chest.triggerRating}`;
   const league = ladder.leagues.find((l) => l.key === chest.triggerLeague);
   return `Reached ${league?.name ?? chest.triggerLeague}`;
@@ -192,7 +223,16 @@ export async function awardChests({ userId, rankedRating, period }) {
   const fresh = [];
   for (const chest of earned) {
     const label = triggerLabel(chest, ladder);
-    const forPeriod = period ?? chest.period ?? currentPeriod();
+    /**
+     * Monthly chests are stamped with the month, which is what re-earns them
+     * on the 1st. A one-time chest is stamped with a constant instead: the
+     * unique index on (userId, chestKey, period) then makes it once EVER, and
+     * the monthly sweep below leaves it alone.
+     */
+    const forPeriod =
+      chest.recurrence === CHEST_RECURRENCE.ONCE
+        ? CHEST_PERIOD_ONCE
+        : (period ?? chest.period ?? currentPeriod());
     try {
       const result = await ChestGrant.updateOne(
         { userId: oid(userId), chestKey: chest.key, period: forPeriod },
@@ -320,13 +360,40 @@ export async function claimChest(userId, chestKey, { owned = [] } = {}) {
   }
 
   if (grants.length || coinsAwarded) {
-    await User.updateOne(
-      { _id: oid(userId) },
-      {
-        ...(grants.length ? { $addToSet: { grantedPerks: { $each: grants } } } : {}),
-        ...(coinsAwarded ? { $inc: { coins: coinsAwarded } } : {}),
-      },
-    );
+    /**
+     * The payout is the point of the open, so a failure here must not be
+     * swallowed.
+     *
+     * Claim-first is deliberate — it is what stops two taps drawing twice —
+     * but it also means a database error between the two writes used to eat
+     * the chest and hand over nothing: the grant read `claimed`, the retry
+     * said ALREADY_CLAIMED, and the item the reveal had just shown never
+     * arrived. If the payout cannot be applied, the claim is rolled back and
+     * the chest is left exactly as it was, so trying again is safe.
+     */
+    try {
+      await User.updateOne(
+        { _id: oid(userId) },
+        {
+          ...(grants.length ? { $addToSet: { grantedPerks: { $each: grants } } } : {}),
+          ...(coinsAwarded ? { $inc: { coins: coinsAwarded } } : {}),
+        },
+      );
+    } catch (err) {
+      await ChestGrant.updateOne(
+        { _id: claimed._id },
+        { $set: { claimedAt: null, drawn: null, duplicate: false, coinsAwarded: 0 } },
+      ).catch((rollbackErr) =>
+        // Nothing was credited, so the chest is still owed. Loud, because now
+        // only a human can put it right.
+        logger.error(
+          { err: rollbackErr, userId: String(userId), chestKey },
+          'chest payout failed AND the claim could not be rolled back',
+        ),
+      );
+      logger.warn({ err, userId: String(userId), chestKey }, 'chest payout failed — claim rolled back');
+      throw err;
+    }
   }
 
   return { ...publicGrant(claimed), granted: grants };

@@ -72,7 +72,7 @@ const SPACE_SCOPES = [
 
 /** Gold, silver, bronze. Gold is the palette's; the other two are metals
  * that exist nowhere else, so they stay literal here and in `RankTile`. */
-const MEDALS = [colors.gold, '#C7CEDB', '#DE9A62'];
+const MEDALS = [colors.gold, colors.silver, colors.bronze];
 
 export default function Leaderboard() {
   const router = useRouter();

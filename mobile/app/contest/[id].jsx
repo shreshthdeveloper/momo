@@ -20,7 +20,7 @@ import { BrandField } from '../../src/components/Brand.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
-import { MAX_ROUND_SCORE } from '../../src/shared/constants.js';
+import { maxScoreForRounds } from '../../src/shared/scoring.js';
 
 /**
  * prd.md F7.5 — a contest: its window, its standings, and one way in.
@@ -103,7 +103,7 @@ export default function ContestScreen() {
   }
 
   const entered = Boolean(contest?.yourEntry);
-  const maxScore = (contest?.questionCount ?? 7) * MAX_ROUND_SCORE;
+  const maxScore = maxScoreForRounds(contest?.questionCount ?? 7);
   const live = contest?.phase === 'open';
 
   return (

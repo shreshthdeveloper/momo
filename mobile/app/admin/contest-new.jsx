@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import { Text, Button, Chip, ErrorNotice, Header } from '../../src/components/ui.jsx';
-import { colors, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * prd.md F8.5.1 — scheduling a contest, sized for a phone: a name, a topic,
@@ -34,7 +34,7 @@ function atHour(hour, plusDays = 0) {
 }
 
 export default function AdminContestNew() {
-  const router = useRouter();
+  const goBack = useConsoleBack();
   const adminSpace = useAdminSpace();
 
   const [name, setName] = useState('');
@@ -79,7 +79,7 @@ export default function AdminContestNew() {
         endsAt: endsAt.toISOString(),
         publish: true,
       });
-      router.back();
+      goBack();
     } catch (err) {
       setError(err);
     } finally {
@@ -89,9 +89,17 @@ export default function AdminContestNew() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Schedule a contest" subtitle={adminSpace?.name} onBack={() => router.back()} />
+      <Header title="Schedule a contest" subtitle={adminSpace?.name} onBack={goBack} />
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+            /* Dense forms whose fields run to the bottom of the screen: on
+               iOS the keyboard used to cover whatever was being typed into.
+               The auth flow gets this from its StepScaffold; the console
+               screens had nothing at all. */
+            automaticallyAdjustKeyboardInsets
+            contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled"
+          >
         <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
           Name
         </Text>
@@ -179,7 +187,7 @@ export default function AdminContestNew() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: layout.gutter, paddingBottom: space.xl },
+  content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xl },
   fieldLabel: { marginTop: space.xl, marginBottom: space.sm },
   input: {
     ...type.option,
@@ -194,5 +202,5 @@ const styles = StyleSheet.create({
   inputFocused: { borderColor: colors.accent, backgroundColor: colors.canvas },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   note: { marginTop: space.xl },
-  footer: { padding: layout.gutter, paddingTop: space.sm },
+  footer: { padding: consoleLayout.gutter, paddingTop: space.sm },
 });

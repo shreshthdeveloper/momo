@@ -41,6 +41,13 @@ export async function evaluateAchievements({
   ratingBefore,
   level,
   maxSpeedAnswer,
+  /**
+   * The streak AFTER this match, from `advanceStreak`. The caller has already
+   * computed it; reading `user.streak` here instead meant testing the streak as
+   * it was BEFORE the match that extended it, so "play on seven consecutive
+   * days" never fired on the seventh day — it waited for the eighth.
+   */
+  streak,
 }) {
   const already = new Set((user.achievements ?? []).map((a) => a.key));
   const earned = [];
@@ -52,7 +59,7 @@ export async function evaluateAchievements({
   if (correctCount === ROUNDS_PER_MATCH) award('perfect_match');
   if (verdict === 'won' && opponentRating - ratingBefore >= 200) award('giant_slayer');
   if (level >= 10) award('topic_level_10');
-  if ((user.streak?.current ?? 0) >= 7) award('streak_7');
+  if ((streak?.current ?? user.streak?.current ?? 0) >= 7) award('streak_7');
   if ((user.matchesPlayed ?? 0) + 1 >= 100) award('centurion');
   if (maxSpeedAnswer) award('fast_hands');
 

@@ -6,7 +6,7 @@ import Icon from './Icon.jsx';
 import { leagueFor, nextLeagueLabel } from '../lib/league.js';
 import { leagueMetal } from './League.jsx';
 import { faceSource } from '../lib/avatar.js';
-import { BANNERS } from '../lib/banner.js';
+import { bannerSource } from '../lib/banner.js';
 import { coins as fmtCoins, rarityTone } from '../lib/rarity.js';
 import { colors, fonts, layout, space } from '../theme/index.js';
 import { useReducedMotion } from '../lib/motion.js';
@@ -702,10 +702,10 @@ function PerkFace({ perk, tone, size = 104 }) {
       </View>
     );
   }
-  if (perk.type === 'banner' && BANNERS[perk.key]) {
+  if (perk.type === 'banner' && bannerSource(perk.key)) {
     return (
       <View style={ring}>
-        <Image source={BANNERS[perk.key]} style={face} resizeMode="cover" />
+        <Image source={bannerSource(perk.key)} style={face} resizeMode="cover" />
       </View>
     );
   }

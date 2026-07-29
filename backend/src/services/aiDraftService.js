@@ -340,6 +340,15 @@ export async function reviewQueue(scope, { source, limit = 50 } = {}) {
         explanation: content.explanation ?? null,
         correctIndex: q.correctIndex,
         difficulty: q.difficulty,
+        /**
+         * A picture question carries its subject in the image — "which emblem
+         * is this?" is unanswerable without it. Omitting this from the review
+         * payload meant a reviewer approving a picture question saw four
+         * options and no picture, which is not reviewing it, it is guessing.
+         */
+        imageUrl: q.imageUrl ?? null,
+        /** The clock this question is answered against, when it overrides. */
+        timeLimitOverrideMs: q.timeLimitOverrideMs ?? null,
         source: q.source,
         topics: (q.topicIds ?? []).map((t) => (t?.name ? t.name : String(t))),
         createdBy: q.createdBy?.displayName ?? null,

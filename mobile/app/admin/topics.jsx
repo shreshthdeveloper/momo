@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { api } from '../../src/lib/api.js';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace, useAdminPermissions } from '../../src/lib/admin.js';
 import {
   Text,
@@ -18,7 +19,7 @@ import {
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import { TopicGlyph } from '../../src/components/Illustration.jsx';
 import { MIN_PUBLISHED_QUESTIONS_TO_LIVE, TOPIC_STATUS } from '../../src/shared/constants.js';
-import { colors, elevation, layout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space } from '../../src/theme/index.js';
 
 /**
  * prd.md F8.3 — the topic list, from the phone. Every card answers the one
@@ -30,6 +31,7 @@ import { colors, elevation, layout, space } from '../../src/theme/index.js';
  * comes straight back here — the list has to already show what was saved.
  */
 export default function AdminTopics() {
+  const goBack = useConsoleBack();
   const router = useRouter();
   const adminSpace = useAdminSpace();
   const { canManageTopics, canWrite } = useAdminPermissions(adminSpace);
@@ -67,7 +69,7 @@ export default function AdminTopics() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Topics" subtitle={adminSpace?.name} onBack={() => router.back()} />
+      <Header title="Topics" subtitle={adminSpace?.name} onBack={goBack} />
 
       <ErrorNotice error={error} onRetry={load} />
 
@@ -283,8 +285,8 @@ function StatusBadge({ topic, isLive }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
   filterBar: { flexGrow: 0, marginTop: space.xs },
-  filterContent: { paddingHorizontal: layout.gutter, gap: space.sm, paddingBottom: space.sm },
-  list: { padding: layout.gutter, paddingTop: space.sm, paddingBottom: space.lg },
+  filterContent: { paddingHorizontal: consoleLayout.gutter, gap: space.sm, paddingBottom: space.sm },
+  list: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.lg },
   card: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,
@@ -318,7 +320,7 @@ const styles = StyleSheet.create({
   sources: { marginTop: space.sm },
   actions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md },
   footer: {
-    paddingHorizontal: layout.gutter,
+    paddingHorizontal: consoleLayout.gutter,
     paddingTop: space.sm,
     paddingBottom: space.sm,
     backgroundColor: colors.sunken,

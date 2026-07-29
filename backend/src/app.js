@@ -45,6 +45,17 @@ export async function buildApp({ orchestratorRef } = {}) {
     global: true,
     max: 500,
     timeWindow: '1 minute',
+    /**
+     * On `preHandler`, not the default `onRequest`.
+     *
+     * `request.user` is set by the `authenticate` preHandler, so at onRequest
+     * time it is always undefined and the key silently fell back to the IP for
+     * every request — the per-account throttle simply did not exist. That is
+     * not a subtle loss on mobile: a school on one NAT, or a carrier behind
+     * CGNAT, shares a public IP, so unrelated users spent each other's budget
+     * and could rate-limit one another out of the app.
+     */
+    hook: 'preHandler',
     keyGenerator: (request) => request.user?._id?.toString() ?? request.ip,
     /**
      * Every request in the test suite originates from one loopback address, so

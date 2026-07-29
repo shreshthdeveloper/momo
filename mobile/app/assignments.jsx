@@ -15,6 +15,7 @@ import {
 import { CardsSkeleton } from '../src/components/Skeletons.jsx';
 import AssignmentCard from '../src/components/AssignmentCard.jsx';
 import { colors, elevation, layout, space } from '../src/theme/index.js';
+import { MATCH_MODE } from '../src/shared/constants.js';
 
 /**
  * prd.md F7.4 — every assignment, with its requirement, progress, due date and
@@ -49,12 +50,23 @@ export default function Assignments() {
     load();
   }, [load]);
 
+  /**
+   * Homework is a quick match, and it says so.
+   *
+   * Sending no mode meant the queue fell back to the session default, which is
+   * RANKED — so tapping an assignment quietly put a student's rating and
+   * league on the line. Nothing on this screen names that stake, and the rule
+   * everywhere else in the app is that nothing queues without a press that
+   * says what it costs. Assignments are practice; they count toward the
+   * requirement either way.
+   */
   const play = (topic) =>
     router.push({
       pathname: '/match/searching',
       params: {
         topicId: topic.id,
         spaceId: activeSpaceId,
+        mode: MATCH_MODE.QUICK,
         name: topic.name,
         coverUrl: topic.coverUrl ?? '',
       },

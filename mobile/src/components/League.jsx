@@ -64,13 +64,21 @@ export function leagueMetal(key, color) {
  */
 const ROMAN = ['I', 'II', 'III'];
 
-export function LeagueBadge({ rating, size = 'md', showDivision = true, style }) {
-  const league = leagueFor(rating);
+export function LeagueBadge({ rating, league: served, size = 'md', showDivision = true, style }) {
+  // The server's band when it sent one — the ladder is editable, so its name
+  // and floors are not something a cached copy can be trusted to reproduce.
+  const league = served ?? leagueFor(rating);
   const metal = leagueMetal(league.key, league.color);
   const height = size === 'sm' ? 22 : size === 'lg' ? 32 : 26;
   const fontSize = size === 'sm' ? 10 : size === 'lg' ? 13 : 11;
-  // The top league has no divisions, so there is no numeral to strike.
-  const division = showDivision && !league.isTop ? ROMAN[league.division - 1] : null;
+  /**
+   * The top league has no divisions, so there is no numeral to strike. Guarded
+   * against a ladder configured with more divisions than there are numerals:
+   * `ROMAN[3]` is undefined, which renders nothing at all where a numeral
+   * belongs while the label elsewhere still says "Silver IV".
+   */
+  const division =
+    showDivision && !league.isTop ? (ROMAN[league.division - 1] ?? String(league.division)) : null;
 
   return (
     <View
@@ -102,14 +110,23 @@ export function LeagueBadge({ rating, size = 'md', showDivision = true, style })
  * The badge plus the climb: how far into the division, and what is left.
  * Used on the profile and after a ranked match.
  */
-export function LeagueProgress({ rating, style }) {
-  const league = leagueFor(rating);
+/**
+ * @param {object} props
+ * @param {number} props.rating
+ * @param {object} [props.league] the server's own band, when the payload has
+ *   one. League floors and names are superadmin-editable, so a client working
+ *   from a cached ladder can name the wrong league and draw the wrong division
+ *   — and then disagree with the share sheet on the same screen, which quotes
+ *   the server's label. Local derivation stays as the fallback.
+ */
+export function LeagueProgress({ rating, league: served, style }) {
+  const league = served ?? leagueFor(rating);
   const metal = leagueMetal(league.key, league.color);
 
   return (
     <View style={[styles.progress, style]}>
       <View style={styles.progressHead}>
-        <LeagueBadge rating={rating} size="lg" />
+        <LeagueBadge rating={rating} league={served} size="lg" />
         <View style={{ flex: 1 }} />
         <Text allowFontScaling={false} style={styles.rating}>
           {Math.round(rating ?? 0)}

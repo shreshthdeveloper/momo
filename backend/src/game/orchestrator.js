@@ -22,6 +22,7 @@ import {
   MIN_PUBLISHED_QUESTIONS_TO_LIVE,
   DEFAULT_LANGUAGE,
   GHOST_AFTER_MS,
+  REMATCH_WINDOW_MS,
   LEVEL_BAND_MAX,
   LEVEL_BAND_STEP_MS,
   RANKED_START,
@@ -31,6 +32,13 @@ import { AppError } from '../lib/errors.js';
 import { env } from '../config/env.js';
 
 const oid = (v) => new mongoose.Types.ObjectId(String(v));
+
+/**
+ * How long a finished match's result waits for a player who was offline when
+ * it landed. Long enough to cover the disconnect grace plus a socket's own
+ * reconnect backoff, short enough that it is never a surprise.
+ */
+const MISSED_RESULT_TTL_MS = 120_000;
 
 /**
  * The ladder standing of a replayed player, for the versus badge only.
@@ -71,6 +79,17 @@ export class GameOrchestrator {
     this.timing = timing;
     /** matchId → Set<userId> who asked for a rematch */
     this.rematchRequests = new Map();
+    /** Expiry timers for the above, keyed the same way. */
+    this.rematchTimers = new Map();
+    /**
+     * userId → the `match:end` payload they were last sent, and when.
+     *
+     * Held only long enough to survive a reconnect: the disconnect grace is
+     * ten seconds and the socket's own backoff a few more, so anything older
+     * than a couple of minutes belongs to a match the player has moved on
+     * from and would be a jarring result screen out of nowhere.
+     */
+    this.recentResults = new Map();
 
     this.matchmaker = new Matchmaker({
       onPair: (a, b) => this.createLiveMatch(a, b),
@@ -121,6 +140,9 @@ export class GameOrchestrator {
     if (registry.matchForUser(user.id)) {
       throw new AppError(409, ERROR_CODE.ALREADY_IN_MATCH, 'You are already in a match.');
     }
+    // Queueing for the next match settles the last one: whatever they missed,
+    // they have plainly moved on from it.
+    this.clearMissedResult(user.id);
 
     // A contest is entered by id, not by topic — the paper is the contest's,
     // not the topic's, and eligibility is a different question. Routing it
@@ -284,6 +306,10 @@ export class GameOrchestrator {
   }
 
   leaveQueue(userId) {
+    // Cancel means cancel: a pending rematch is a queue of one and has to go
+    // with it, or accepting it later drops this player into a match they are
+    // not on a screen for.
+    this.withdrawRematch(userId);
     return this.matchmaker.leave(userId);
   }
 
@@ -639,6 +665,7 @@ export class GameOrchestrator {
       hooks: {
         onComplete: (_m, summary) => this.onMatchComplete(summary),
         onFinished: (m) => registry.removeMatch(m.id),
+        onResultForPlayer: (userId, payload) => this.rememberResult(userId, payload),
         onError: (err) => logger.error({ err }, 'match hook failed'),
       },
     });
@@ -787,6 +814,33 @@ export class GameOrchestrator {
     return match.handleReconnect(userId);
   }
 
+  /** Keep a finished match's payload briefly — see `recentResults`. */
+  rememberResult(userId, payload) {
+    const key = String(userId);
+    this.recentResults.set(key, { payload, at: Date.now() });
+    const timer = setTimeout(() => this.recentResults.delete(key), MISSED_RESULT_TTL_MS);
+    timer.unref?.();
+  }
+
+  /**
+   * The result of a match that ended while this player was away, if there is
+   * one recent enough to still be worth showing.
+   */
+  missedResult(userId) {
+    const entry = this.recentResults.get(String(userId));
+    if (!entry) return null;
+    if (Date.now() - entry.at > MISSED_RESULT_TTL_MS) {
+      this.recentResults.delete(String(userId));
+      return null;
+    }
+    return entry.payload;
+  }
+
+  /** Once delivered it must not arrive a second time on the next connect. */
+  clearMissedResult(userId) {
+    this.recentResults.delete(String(userId));
+  }
+
   snapshotFor(userId) {
     const match = registry.matchForUser(userId);
     return match ? match.snapshotFor(userId) : null;
@@ -801,7 +855,28 @@ export class GameOrchestrator {
     const requests = this.rematchRequests.get(key) ?? new Set();
     requests.add(String(user.id));
     this.rematchRequests.set(key, requests);
-    setTimeout(() => this.rematchRequests.delete(key), 30_000).unref?.();
+    /**
+     * The window closes, and everybody waiting is told that it has.
+     *
+     * It used to expire in silence, which left the asker on a searching screen
+     * with nothing coming: no match, no error, and no client-side watchdog on
+     * this path either. Whoever is still listed when the timer fires gets an
+     * explicit "not this time" and can go back to the result screen.
+     */
+    clearTimeout(this.rematchTimers.get(key));
+    const expiry = setTimeout(() => {
+      const pending = this.rematchRequests.get(key);
+      this.rematchRequests.delete(key);
+      this.rematchTimers.delete(key);
+      for (const waitingId of pending ?? []) {
+        this.transport.toPlayer(waitingId, S2C.MATCH_REMATCH_DECLINED, {
+          matchId: key,
+          reason: 'expired',
+        });
+      }
+    }, REMATCH_WINDOW_MS);
+    expiry.unref?.();
+    this.rematchTimers.set(key, expiry);
 
     const { Match } = await import('../models/index.js');
     const record = await Match.findById(oid(matchId)).lean();
@@ -831,37 +906,91 @@ export class GameOrchestrator {
 
     if (requests.has(String(them.userId))) {
       this.rematchRequests.delete(key);
+      clearTimeout(this.rematchTimers?.get(key));
+      this.rematchTimers?.delete(key);
       const [aUser, bUser] = await Promise.all([
         User.findById(oid(user.id)).lean(),
         User.findById(oid(them.userId)).lean(),
       ]);
       const topic = await Topic.findById(oid(record.topicId)).lean();
       const space = await Space.findById(oid(record.spaceId)).lean();
-      const entryFor = async (u) => ({
-        userId: String(u._id),
-        displayName: u.displayName,
-        avatarUrl: u.avatarUrl,
-        rating: await getRatingValue(u._id, topic._id),
-        topicId: String(topic._id),
-        spaceId: String(topic.spaceId),
-        mode,
-        language: record.language,
-        // The space's own setting wins (design.md §11 makes it configurable per
-      // Space); `timing` is a test seam so a full match need not take 90s.
-      roundDurationMs:
-        this.timing.roundDurationMs ?? space?.settings?.roundDurationMs ?? ROUND_DURATION_MS,
-      });
+      /**
+       * The same identity a fresh queue entry carries.
+       *
+       * Everything the versus screen draws has to be named here — see the note
+       * in matchEngine's player mapping. Building these from `_id`, name and
+       * avatar alone is why every rematch opened on two "Level 1" players with
+       * fallback banners and no flags, against rivals who had just played a
+       * full match at their real standing.
+       */
+      const entryFor = async (u) => {
+        const { rating, level } = await getRatingEntry(u._id, topic._id);
+        return {
+          userId: String(u._id),
+          displayName: u.displayName,
+          avatarUrl: u.avatarUrl ?? null,
+          banner: u.banner ?? null,
+          country: u.country ?? null,
+          city: u.city ?? null,
+          rating,
+          level,
+          rankedRating: u.rankedRating ?? RANKED_START,
+          topicId: String(topic._id),
+          spaceId: String(topic.spaceId),
+          mode,
+          language: record.language,
+          // The space's own setting wins (design.md §11 makes it configurable
+          // per Space); `timing` is a test seam so a match need not take 90s.
+          roundDurationMs:
+            this.timing.roundDurationMs ?? space?.settings?.roundDurationMs ?? ROUND_DURATION_MS,
+        };
+      };
       await this.createLiveMatch(await entryFor(aUser), await entryFor(bUser));
       return { status: 'rematched' };
     }
 
-    // Ask the other side. If they never answer, the request simply expires.
-    this.transport.toPlayer(them.userId, S2C.MATCH_OPPONENT_REJOINED, {
+    /**
+     * Ask the other side, on an event that means only this.
+     *
+     * It used to go out as `match:opponent_rejoined` with a `rematchRequested`
+     * flag on it, and the client's handler for that event does one thing —
+     * mark the opponent connected — so the invitation was received and thrown
+     * away. Nobody was ever asked anything, and the handshake only completed
+     * when both players happened to press Rematch inside the same 30 seconds.
+     */
+    this.transport.toPlayer(them.userId, S2C.MATCH_REMATCH_REQUESTED, {
       matchId: key,
-      rematchRequested: true,
-      from: { id: String(user.id), displayName: user.displayName },
+      expiresInMs: REMATCH_WINDOW_MS,
+      from: {
+        id: String(user.id),
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl ?? null,
+      },
     });
     return { status: 'requested' };
+  }
+
+  /**
+   * Withdraw a pending rematch — the asker changed their mind.
+   *
+   * Cancelling only left the matchmaker pool, so the request stayed live and
+   * the opponent accepting it seconds later started a real ranked match for
+   * somebody who had already walked away: battle music on the home screen,
+   * seven rounds timed out, rating lost, no match screen ever mounted.
+   */
+  withdrawRematch(userId) {
+    const me = String(userId);
+    let withdrawn = 0;
+    for (const [key, requests] of this.rematchRequests) {
+      if (!requests.delete(me)) continue;
+      withdrawn += 1;
+      if (requests.size === 0) {
+        this.rematchRequests.delete(key);
+        clearTimeout(this.rematchTimers?.get(key));
+        this.rematchTimers?.delete(key);
+      }
+    }
+    return withdrawn;
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────
@@ -884,5 +1013,8 @@ export class GameOrchestrator {
     this.matchmaker.clear();
     registry.clear();
     this.rematchRequests.clear();
+    for (const timer of this.rematchTimers.values()) clearTimeout(timer);
+    this.rematchTimers.clear();
+    this.recentResults.clear();
   }
 }

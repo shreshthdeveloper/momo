@@ -7,8 +7,14 @@ import { Share } from 'react-native';
  * friend invite — and a link base that drifts between screens is the kind of
  * bug nobody notices until half the invites 404. Matches the backend's
  * `APP_LINK_BASE`, which is what organization invite links already use.
+ *
+ * It has to be a domain that actually exists and is actually claimed by the
+ * app: this was `mimo.app`, which nothing serves and no build declared, so
+ * every invite ever sent opened a browser on a dead host instead of the app.
+ * `wms.distrx.io` is the deployed API, declared in app.json as an associated
+ * domain (iOS) and an auto-verified intent filter (Android).
  */
-export const APP_LINK_BASE = 'https://mimo.app';
+export const APP_LINK_BASE = 'https://wms.distrx.io';
 
 /** The public profile route the app already serves. */
 export const profileLink = (userId) => `${APP_LINK_BASE}/user/${userId ?? ''}`;

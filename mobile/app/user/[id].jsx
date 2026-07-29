@@ -188,23 +188,56 @@ export default function UserProfile() {
               />
             </View>
           ) : (
-            <Button
-              label={profile.friendship?.status === 'pending' ? 'Request sent' : 'Add friend'}
-              disabled={Boolean(profile.friendship)}
-              loading={busy}
-              style={{ marginBottom: space.xl }}
-              onPress={async () => {
+            /**
+              * Four states, not two.
+              *
+              * `requestedByMe` is sent precisely so the two directions of a
+              * pending request can be told apart, and it was being ignored: an
+              * invitation somebody sent YOU rendered as a disabled "Request
+              * sent", which is a false statement AND the only control on the
+              * screen — there was no way to accept a friend request from the
+              * profile of the person who sent it. A declined request also
+              * disabled the button for ever, though the API is happy to open
+              * one again.
+              */
+            (() => {
+              const friendship = profile.friendship;
+              const incoming = friendship?.status === 'pending' && !friendship.requestedByMe;
+              const outgoing = friendship?.status === 'pending' && friendship.requestedByMe;
+
+              const act = async (fn) => {
                 setBusy(true);
                 try {
-                  await api.post('/friends/request', { userId: String(id) });
+                  await fn();
                   await load();
                 } catch (err) {
                   setError(err);
                 } finally {
                   setBusy(false);
                 }
-              }}
-            />
+              };
+
+              if (incoming) {
+                return (
+                  <Button
+                    label={`Accept ${profile.displayName ?? 'their'} request`}
+                    loading={busy}
+                    style={{ marginBottom: space.xl }}
+                    onPress={() => act(() => api.post(`/friends/${friendship.id}/accept`))}
+                  />
+                );
+              }
+
+              return (
+                <Button
+                  label={outgoing ? 'Request sent' : 'Add friend'}
+                  disabled={outgoing}
+                  loading={busy}
+                  style={{ marginBottom: space.xl }}
+                  onPress={() => act(() => api.post('/friends/request', { userId: String(id) }))}
+                />
+              );
+            })()
           )}
 
           {/**

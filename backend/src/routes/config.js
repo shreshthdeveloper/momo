@@ -1,4 +1,5 @@
 import { progression } from '../services/progressionService.js';
+import { triggerLabel as chestTriggerLabel } from '../services/chestService.js';
 import { ACCOUNT_MAX_LEVEL, RANKED_FLOOR } from '../shared/constants.js';
 
 const ok = (data) => ({ data });
@@ -67,6 +68,18 @@ export default async function configRoutes(app) {
             triggerKind: c.triggerKind,
             triggerRating: c.triggerRating,
             triggerLeague: c.triggerLeague,
+            /**
+             * What a player has to do to get it, in words.
+             *
+             * The shop's teaser cards read `triggerLabel` and it was only ever
+             * put on a GRANT, so every not-yet-earned chest fell back to the
+             * word "Locked" — a card naming no requirement at all, next to a
+             * case whose foot told a rating-triggered chest to go and reach a
+             * league. The label is a pure function of the trigger, so it is
+             * computed in one place rather than assembled twice on two clients.
+             */
+            triggerLabel: chestTriggerLabel(c, ladder),
+            recurrence: c.recurrence,
             period: c.period,
             /**
              * The contents, in full.

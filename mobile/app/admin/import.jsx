@@ -9,11 +9,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { api, BASE_URL, getAccessToken } from '../../src/lib/api.js';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace, useAdminPermissions } from '../../src/lib/admin.js';
 import {
   Text,
@@ -25,7 +25,7 @@ import {
   Header,
 } from '../../src/components/ui.jsx';
 import Icon from '../../src/components/Icon.jsx';
-import { colors, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * Bulk question import, sized for a phone. Three stages in one screen: get a
@@ -43,7 +43,7 @@ const TEMPLATE =
   'What is the SI unit of force?,Newton,Joule,Watt,Pascal,a,easy,Physics,units;mechanics,Force is mass times acceleration.';
 
 export default function AdminImport() {
-  const router = useRouter();
+  const goBack = useConsoleBack();
   const adminSpace = useAdminSpace();
   const { canPublish } = useAdminPermissions(adminSpace);
 
@@ -196,7 +196,13 @@ export default function AdminImport() {
         );
       const data = await api.post('/admin/questions/import/commit', {
         spaceId: adminSpace.id,
-        status: publishNow && canPublish ? 'published' : 'draft',
+        /**
+         * Not published means IN REVIEW, which is what this screen has always
+         * told the admin ("they wait in the review queue") — while committing
+         * them as plain drafts, which that queue does not list. An admin
+         * imported a bank, opened Review, and was told the queue was clear.
+         */
+        status: publishNow && canPublish ? 'published' : 'in_review',
         rows,
       });
       setResult(data);
@@ -217,13 +223,14 @@ export default function AdminImport() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Import questions" subtitle={adminSpace?.name} onBack={() => router.back()} />
+      <Header title="Import questions" subtitle={adminSpace?.name} onBack={goBack} />
 
       <ErrorNotice error={error} />
 
       {stage === 'pick' ? (
         <>
           <ScrollView
+        automaticallyAdjustKeyboardInsets
             contentContainerStyle={styles.content}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
@@ -519,7 +526,7 @@ export default function AdminImport() {
             ) : null}
           </Card>
 
-          <Button label="Done" onPress={() => router.back()} style={{ marginTop: space.xl }} />
+          <Button label="Done" onPress={goBack} style={{ marginTop: space.xl }} />
         </ScrollView>
       )}
     </SafeAreaView>
@@ -528,8 +535,8 @@ export default function AdminImport() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: layout.gutter, paddingBottom: space.xl },
-  footer: { padding: layout.gutter, paddingTop: space.sm },
+  content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xl },
+  footer: { padding: consoleLayout.gutter, paddingTop: space.sm },
   fieldLabel: { marginTop: space.xl, marginBottom: space.sm },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
 

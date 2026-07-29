@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useIsSuperadmin } from '../../src/lib/admin.js';
 import { Text, Button, Chip, ErrorNotice, Header } from '../../src/components/ui.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import { SPACE_ACCENTS } from '../../src/shared/constants.js';
-import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * Creating an organization is a phone call made real: a name, the owner's number,
@@ -29,6 +30,7 @@ const TIERS = [
 ];
 
 export default function SuperTenantNew() {
+  const goBack = useConsoleBack();
   const router = useRouter();
   const isSuper = useIsSuperadmin();
 
@@ -77,7 +79,7 @@ export default function SuperTenantNew() {
   if (created) {
     return (
       <SafeAreaView style={styles.screen} edges={['top']}>
-        <Header title="New organization" onBack={() => router.back()} />
+        <Header title="New organization" onBack={goBack} />
         <View style={styles.result}>
           <Text variant="display" style={{ textAlign: 'center' }}>
             {created.name} created.
@@ -104,7 +106,7 @@ export default function SuperTenantNew() {
           <Text variant="meta" color={colors.inkFaint} style={styles.once}>
             It is shown only once.
           </Text>
-          <Button variant="soft" label="Done" style={{ marginTop: space.md }} onPress={() => router.back()} />
+          <Button variant="soft" label="Done" style={{ marginTop: space.md }} onPress={goBack} />
         </View>
       </SafeAreaView>
     );
@@ -112,9 +114,17 @@ export default function SuperTenantNew() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="New organization" onBack={() => router.back()} />
+      <Header title="New organization" onBack={goBack} />
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+            /* Dense forms whose fields run to the bottom of the screen: on
+               iOS the keyboard used to cover whatever was being typed into.
+               The auth flow gets this from its StepScaffold; the console
+               screens had nothing at all. */
+            automaticallyAdjustKeyboardInsets
+            contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled"
+          >
         <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
           Name
         </Text>
@@ -232,7 +242,7 @@ export default function SuperTenantNew() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: layout.gutter, paddingBottom: space.xl },
+  content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xl },
   fieldLabel: { marginTop: space.xl, marginBottom: space.sm },
   input: {
     ...type.option,
@@ -270,8 +280,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   swatchOn: { borderWidth: 2.5, borderColor: colors.ink },
-  footer: { padding: layout.gutter, paddingTop: space.sm },
-  result: { padding: layout.gutter, paddingTop: space.xl },
+  footer: { padding: consoleLayout.gutter, paddingTop: space.sm },
+  result: { padding: consoleLayout.gutter, paddingTop: space.xl },
   codeCard: {
     alignItems: 'center',
     gap: space.sm,

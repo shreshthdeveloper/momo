@@ -23,6 +23,8 @@ import { AuthProvider, useAuth } from '../src/state/auth.jsx';
 import { useConsolePath } from '../src/lib/admin.js';
 import { GameProvider } from '../src/state/game.jsx';
 import { ProgressionProvider } from '../src/state/progression.jsx';
+import { NotificationsProvider } from '../src/state/notifications.jsx';
+import NotificationBanner from '../src/components/NotificationBanner.jsx';
 import Splash from '../src/components/Splash.jsx';
 import { colors, motion } from '../src/theme/index.js';
 
@@ -37,7 +39,7 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 const ONBOARDING_STEPS = ['profile', 'avatar', 'country', 'organization', 'interests'];
 
 function RootNavigator() {
-  const { booting, isAuthenticated, needsProfile } = useAuth();
+  const { booting, isAuthenticated, needsProfile, onboardingStep } = useAuth();
   const consolePath = useConsolePath();
   const segments = useSegments();
   const router = useRouter();
@@ -52,11 +54,22 @@ function RootNavigator() {
     // face and picking a country.
     const inOnboarding = inAuthGroup && ONBOARDING_STEPS.includes(segments[1]);
 
+    /**
+     * A manager never sees the player sign-up: their whole onboarding is the
+     * name, after which `profile.jsx` sends them to their console. Only a
+     * player is resumed through the remaining steps.
+     */
+    const resumeStep = consolePath ? null : onboardingStep;
+
     if (!isAuthenticated && !inAuthGroup) {
       router.replace('/(auth)/welcome');
     } else if (isAuthenticated && needsProfile && !inOnboarding) {
       router.replace('/(auth)/profile');
-    } else if (isAuthenticated && !needsProfile) {
+    } else if (isAuthenticated && !needsProfile && resumeStep && !inOnboarding) {
+      // Killed mid-flow. Pick it up where it stopped rather than stranding the
+      // account half-made.
+      router.replace(`/(auth)/${resumeStep}`);
+    } else if (isAuthenticated && !needsProfile && !resumeStep) {
       // Each account lands in ITS app. A manager signs in to run the game —
       // the player experience is not theirs; a player never sees a console.
       const inPlayerApp = segments[0] === '(tabs)' || segments[0] === 'match' || segments[0] === 'play';
@@ -69,7 +82,7 @@ function RootNavigator() {
         router.replace('/');
       }
     }
-  }, [booting, isAuthenticated, needsProfile, consolePath, segments, router]);
+  }, [booting, isAuthenticated, needsProfile, onboardingStep, consolePath, segments, router]);
 
   // Nothing mounts until the stored session has been confirmed. A screen that
   // rendered first would fire its own fetch without a token and land on the
@@ -148,7 +161,12 @@ export default function RootLayout() {
               face the same way. */}
           <ProgressionProvider>
             <GameProvider>
-              <Boot />
+              {/* Inside the game provider: the banner has to know whether a
+                  match is on the board, because the one place it must never
+                  appear is over a question with a clock running. */}
+              <NotificationsProvider>
+                <Boot />
+              </NotificationsProvider>
             </GameProvider>
           </ProgressionProvider>
         </AuthProvider>
@@ -172,6 +190,9 @@ function Boot() {
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
       <StatusBar style="light" />
       <RootNavigator />
+      {/* Above every screen and below the splash: it announces things that
+          arrive while the player is somewhere else, which is everywhere. */}
+      {booting ? null : <NotificationBanner />}
       <Splash ready={!booting} />
     </View>
   );

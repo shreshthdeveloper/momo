@@ -27,7 +27,7 @@ import {
 } from '../../src/components/ui.jsx';
 import ConsoleHeader from '../../src/components/ConsoleHeader.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, elevation, fonts, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, fonts, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * Every tenant on the platform. A pending organization is a person waiting at the
@@ -442,9 +442,9 @@ function ReasonSheet({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  tabs: { marginHorizontal: layout.gutter, marginTop: space.xs },
-  search: { marginHorizontal: layout.gutter, marginTop: space.md, marginBottom: space.sm },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: space.lg },
+  tabs: { marginHorizontal: consoleLayout.gutter, marginTop: space.xs },
+  search: { marginHorizontal: consoleLayout.gutter, marginTop: space.md, marginBottom: space.sm },
+  list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.lg },
   count: { paddingVertical: space.sm },
   card: {
     backgroundColor: colors.nightRaised,
@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
   metaLine: { marginTop: space.md },
   actions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md },
   footer: {
-    paddingHorizontal: layout.gutter,
+    paddingHorizontal: consoleLayout.gutter,
     paddingTop: space.sm,
     paddingBottom: space.sm,
     backgroundColor: colors.sunken,
@@ -495,7 +495,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
-    padding: layout.gutter,
+    padding: consoleLayout.gutter,
     paddingBottom: space.xxxl,
   },
   sheetGrabber: {

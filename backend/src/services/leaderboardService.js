@@ -217,9 +217,23 @@ async function overallLeaderboard({ scope, viewer, scopeType, period, page, audi
     { $sort: { rating: -1, matchesPlayed: 1, reachedRatingAt: 1 } },
   ];
 
+  /**
+   * The count has to exclude exactly what the rows exclude.
+   *
+   * The rows join `users` and drop deleted and banned accounts; this count did
+   * neither, so `total` was inflated against the list it described — pagination
+   * advertised players who are not there and the last page came up short.
+   * Reusing the pipeline's own stages is what keeps the two from drifting
+   * again.
+   */
+  const audiencePipeline = pipeline.slice(
+    0,
+    pipeline.findIndex((stage) => '$project' in stage),
+  );
+
   const [rows, totalRows] = await Promise.all([
     Rating.aggregate([...pipeline, { $skip: page * PAGE_SIZE }, { $limit: PAGE_SIZE }]),
-    Rating.aggregate([{ $match: match }, { $group: { _id: '$userId' } }, { $count: 'n' }]),
+    Rating.aggregate([...audiencePipeline, { $count: 'n' }]),
   ]);
 
   const entries = rows.map((r, i) => ({
@@ -266,6 +280,10 @@ async function overallLeaderboard({ scope, viewer, scopeType, period, page, audi
           { $group: { _id: '$userId', matchesPlayed: { $sum: '$matchesPlayed' } } },
           { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
           { $unwind: '$user' },
+          // The same accounts the page drops. Counting deleted and banned
+          // players as "above" the viewer pushed their off-page rank below
+          // where they actually stand.
+          { $match: { 'user.status': { $nin: ['deleted', 'banned'] } } },
           // Ranked with the same $ifNull the page uses, so an unseeded rating
           // cannot count as above the viewer on one query and below on the other.
           { $addFields: { ranked: { $ifNull: ['$user.rankedRating', RANKED_START] } } },

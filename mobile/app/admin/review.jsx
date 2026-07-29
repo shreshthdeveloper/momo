@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import {
   Text,
@@ -14,8 +14,9 @@ import {
   Header,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
+import QuestionArt from '../../src/components/QuestionArt.jsx';
 import Icon from '../../src/components/Icon.jsx';
-import { colors, layout, space, type, OPTION_COLORS } from '../../src/theme/index.js';
+import { OPTION_COLORS, colors, consoleLayout, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * prd.md F8.2.8 — the review queue. One card per waiting question with the
@@ -27,7 +28,7 @@ import { colors, layout, space, type, OPTION_COLORS } from '../../src/theme/inde
 const LETTERS = ['A', 'B', 'C', 'D'];
 
 export default function AdminReview() {
-  const router = useRouter();
+  const goBack = useConsoleBack();
   const adminSpace = useAdminSpace();
   const [queue, setQueue] = useState(null);
   const [error, setError] = useState(null);
@@ -76,7 +77,7 @@ export default function AdminReview() {
       <Header
         title="Review queue"
         subtitle={queue ? `${queue.total} waiting${queue.aiPending ? ` · ${queue.aiPending} from AI` : ''}` : adminSpace?.name}
-        onBack={() => router.back()}
+        onBack={goBack}
       />
 
       <ErrorNotice error={error} onRetry={load} />
@@ -87,7 +88,7 @@ export default function AdminReview() {
         <EmptyState
           icon="check"
           title="Queue clear"
-          body="Nothing is waiting for review. Drafts land here before they can be played."
+          body="Nothing is waiting for review. Imported and submitted questions land here before they can be played."
         />
       ) : (
         <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
@@ -103,6 +104,14 @@ export default function AdminReview() {
                   {question.topics?.length ? `  ·  ${question.topics.join(', ')}` : ''}
                 </Text>
               </View>
+
+              {/* The picture IS the question on a picture question, so a
+                  reviewer has to see it before approving anything. */}
+              {question.imageUrl ? (
+                <View style={styles.art}>
+                  <QuestionArt imageUrl={question.imageUrl} size={120} />
+                </View>
+              ) : null}
 
               <Text style={[type.question, styles.question]}>{question.text}</Text>
 
@@ -173,7 +182,7 @@ export default function AdminReview() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  list: { padding: layout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl, gap: layout.cardGap },
+  list: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl, gap: layout.cardGap },
   card: {},
   cardHead: {
     flexDirection: 'row',
@@ -182,6 +191,7 @@ const styles = StyleSheet.create({
     gap: space.sm,
     marginBottom: space.sm,
   },
+  art: { alignItems: 'center', paddingVertical: space.sm },
   question: { color: colors.ink, marginBottom: space.md },
   option: {
     flexDirection: 'row',

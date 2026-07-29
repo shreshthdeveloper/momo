@@ -1,34 +1,61 @@
-import { Tabs } from 'expo-router';
-import ConsoleDock from '../../src/components/ConsoleDock.jsx';
-import { colors } from '../../src/theme/index.js';
+import { Stack } from 'expo-router';
+import ConsoleShell from '../../src/components/ConsoleShell.jsx';
+import { colors, motion } from '../../src/theme/index.js';
 
 /**
- * The platform operator's console — the superadmin's whole app. Tenants of
- * every kind live under Organizations; the central question bank and
- * moderation get their own doors; Platform is the pulse.
+ * The platform operator's console — the superadmin's whole app.
+ *
+ * Same sidebar shell as the organization console, for the same reason: a dock
+ * of five could not carry the platform's operations, so announcements, the
+ * audit trail and tenant plans had no door at all despite being fully built on
+ * the server. Listing them IS the fix.
  */
-const TABS = [
-  { name: 'index', label: 'Platform', icon: 'bolt' },
-  { name: 'tenants', label: 'Orgs', icon: 'grid' },
-  { name: 'central', label: 'Bank', icon: 'book' },
-  /** Progression is configuration now — the ladder gets its own door. */
-  { name: 'progression', label: 'Ladder', icon: 'ranks' },
-  { name: 'moderation', label: 'Reports', icon: 'flag' },
+const SECTIONS = [
+  {
+    title: 'Platform',
+    base: 'super',
+    items: [
+      { route: 'index', label: 'Pulse', icon: 'bolt' },
+      { route: 'announce', label: 'Announcement', icon: 'megaphone' },
+      { route: 'audit', label: 'Audit trail', icon: 'history' },
+    ],
+  },
+  {
+    title: 'People',
+    base: 'super',
+    items: [
+      { route: 'tenants', label: 'Organizations', icon: 'building', match: ['tenants', 'tenant-new'] },
+      { route: 'users', label: 'Users', icon: 'friends' },
+    ],
+  },
+  {
+    title: 'Content',
+    base: 'super',
+    items: [{ route: 'central', label: 'Central bank', icon: 'book' }],
+  },
+  {
+    title: 'Progression',
+    base: 'super',
+    items: [{ route: 'progression', label: 'Ladder & rewards', icon: 'ranks' }],
+  },
+  {
+    title: 'Oversight',
+    base: 'super',
+    items: [{ route: 'moderation', label: 'Reports', icon: 'shield' }],
+  },
 ];
 
 export default function SuperLayout() {
   return (
-    <Tabs
-      tabBar={(props) => <ConsoleDock tabs={TABS} {...props} />}
-      screenOptions={{
-        headerShown: false,
-        sceneStyle: { backgroundColor: colors.sunken },
-      }}
-    >
-      {TABS.map((tab) => (
-        <Tabs.Screen key={tab.name} name={tab.name} options={{ title: tab.label }} />
-      ))}
-      <Tabs.Screen name="tenant-new" options={{ href: null }} />
-    </Tabs>
+    <ConsoleShell sections={SECTIONS} title="Mimo platform">
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: motion.screen,
+          contentStyle: { backgroundColor: colors.sunken },
+        }}
+      />
+    </ConsoleShell>
   );
 }

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Share, StyleSheet, Switch, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as FileSystem from 'expo-file-system/legacy';
 import { api } from '../src/lib/api.js';
 import { useAuth } from '../src/state/auth.jsx';
 import { Text, Button, ConfirmSheet, ErrorNotice, Header } from '../src/components/ui.jsx';
@@ -73,7 +74,7 @@ export default function Settings() {
           <Toggle
             icon="bolt"
             tint={colors.optionA}
-            label="Friend challenges"
+            label="Friend requests and challenges"
             value={prefs.friendChallenge !== false}
             onChange={(v) => savePrefs({ friendChallenge: v })}
           />
@@ -93,25 +94,29 @@ export default function Settings() {
               and a pref only governs pushing — prd.md §6.9 keeps the row either
               way — so a switch here would be a control that does nothing. */}
           <Toggle
-            icon="ranks"
-            tint={colors.optionC}
-            label="Someone passed your rank"
-            value={prefs.rankPassed !== false}
-            onChange={(v) => savePrefs({ rankPassed: v })}
-          />
-          <Toggle
             icon="flag"
             tint={colors.optionB}
             label="Streak about to break"
             value={prefs.streakAtRisk !== false}
             onChange={(v) => savePrefs({ streakAtRisk: v })}
           />
+          {/* The two org categories that are actually sent. They had no switch
+              at all, while "Someone passed your rank" and "Weekly summary" —
+              which nothing anywhere sends — each had one. A switch that governs
+              nothing is worse than no switch: it is a promise. */}
+          <Toggle
+            icon="trophy"
+            tint={colors.optionC}
+            label="Contests"
+            value={prefs.contestNew !== false}
+            onChange={(v) => savePrefs({ contestNew: v })}
+          />
           <Toggle
             icon="calendar"
             tint={colors.optionD}
-            label="Weekly summary"
-            value={prefs.weeklySummary === true}
-            onChange={(v) => savePrefs({ weeklySummary: v })}
+            label="Assignments due"
+            value={prefs.assignmentDue !== false}
+            onChange={(v) => savePrefs({ assignmentDue: v })}
           />
           {/* prd.md F6.9.2 — quiet hours, default 22:00–08:00. */}
           <Toggle
@@ -223,8 +228,22 @@ export default function Settings() {
             label="Export my data"
             onPress={async () => {
               try {
-                await api.get('/me/export');
-                setSheet({ kind: 'exported' });
+                /**
+                 * The export is returned inline and there is no mail path
+                 * anywhere in the product, so this used to throw the data away
+                 * and tell the player it had been "sent to your account" —
+                 * which was not true of anything that had just happened. It is
+                 * now written to a file and handed to the OS share sheet, so
+                 * the player genuinely ends up holding their data.
+                 */
+                const data = await api.get('/me/export');
+                const path = `${FileSystem.cacheDirectory}mimo-data-export.json`;
+                await FileSystem.writeAsStringAsync(path, JSON.stringify(data, null, 2));
+                await Share.share(
+                  Platform.OS === 'ios'
+                    ? { url: path, title: 'Your Mimo data' }
+                    : { message: JSON.stringify(data, null, 2), title: 'Your Mimo data' },
+                );
               } catch (err) {
                 setError(err);
               }
@@ -281,7 +300,22 @@ export default function Settings() {
         loading={busy}
         onConfirm={async () => {
           setBusy(true);
-          await api.delete('/me').catch(setError);
+          /**
+           * A failed deletion must not look like a successful one.
+           *
+           * `.catch(setError)` swallowed it and the flow carried on to sign
+           * out and navigate away regardless, so a request that never reached
+           * the server ended with the player signed out and convinced their
+           * account was scheduled for deletion. It was not.
+           */
+          try {
+            await api.delete('/me');
+          } catch (err) {
+            setBusy(false);
+            setSheet(null);
+            setError(err);
+            return;
+          }
           await signOut();
           router.replace('/(auth)/welcome');
         }}
@@ -302,16 +336,7 @@ export default function Settings() {
         onCancel={closeSheet}
       />
 
-      <ConfirmSheet
-        visible={sheet?.kind === 'exported'}
-        icon="check"
-        title="Export ready"
-        body="Your data has been prepared and sent to your account."
-        confirmLabel="Done"
-        cancelLabel={null}
-        onConfirm={closeSheet}
-        onCancel={closeSheet}
-      />
+
     </SafeAreaView>
   );
 }

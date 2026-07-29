@@ -101,3 +101,5 @@ venv/
 # Claude Code — share settings.json, keep local overrides out
 # ---------------------------------------------------------------------------
 .claude/settings.local.json
+
+backend.zip

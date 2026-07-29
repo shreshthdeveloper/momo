@@ -4,7 +4,7 @@ import { runMonthlyCycleIfDue } from '../services/seasonService.js';
 import { notify } from '../services/notificationService.js';
 import { runContestLifecycle } from '../services/contestService.js';
 import { remindDueAssignments } from '../services/assignmentService.js';
-import { istYesterdayKey } from '../lib/dates.js';
+import { istDateKey, istYesterdayKey } from '../lib/dates.js';
 import { logger } from '../lib/logger.js';
 import { QUESTION_STATUS } from '../shared/constants.js';
 
@@ -39,11 +39,25 @@ function every(intervalMs, name, fn, { runAtStart = false } = {}) {
   if (runAtStart) setTimeout(run, 5_000).unref?.();
 }
 
-/** Runs `fn` once a day at the given IST hour. */
+/**
+ * Runs `fn` once a day at the given IST hour.
+ *
+ * "At or after the target, and not yet today" rather than "exactly this
+ * minute". The tick is a `setInterval` that is not aligned to wall-clock
+ * minutes, so accumulated drift could straddle the target minute and skip the
+ * day entirely — a silent no-run, which for the streak job means every streak
+ * in the product going unevaluated. The day-key makes a late tick catch up and
+ * a double tick a no-op, which is the safer pair of failures.
+ */
 function dailyAt(istHour, istMinute, name, fn) {
+  let lastRunDay = null;
   every(MINUTE, `${name}:tick`, async () => {
     const now = new Date(Date.now() + 330 * MINUTE);
-    if (now.getUTCHours() !== istHour || now.getUTCMinutes() !== istMinute) return;
+    const dayKey = now.toISOString().slice(0, 10);
+    const dueMinutes = istHour * 60 + istMinute;
+    const nowMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+    if (nowMinutes < dueMinutes || lastRunDay === dayKey) return;
+    lastRunDay = dayKey;
     const started = Date.now();
     try {
       await fn();
@@ -290,11 +304,21 @@ export async function expireChallenges() {
   return { expired: result.modifiedCount };
 }
 
-/** tech.md §10 — daily 00:05 IST. Streaks with no match yesterday break. */
+/**
+ * tech.md §10 — daily 00:05 IST. Streaks with no match yesterday break.
+ *
+ * TODAY has to be spared as well as yesterday. This job runs five minutes
+ * after midnight IST, so anyone who played between 00:00 and 00:05 already has
+ * today's key stamped on them — and zeroing those was doubly cruel: the streak
+ * they had just extended went to 0, and `advanceStreak` then refused to count
+ * the day at all (it returns unchanged when `lastPlayedOn` is already today),
+ * so the card read "Start a streak" for the rest of a day they had played.
+ */
 export async function evaluateStreaks() {
   const yesterday = istYesterdayKey();
+  const today = istDateKey();
   const result = await User.updateMany(
-    { 'streak.current': { $gt: 0 }, 'streak.lastPlayedOn': { $nin: [yesterday, null] } },
+    { 'streak.current': { $gt: 0 }, 'streak.lastPlayedOn': { $nin: [yesterday, today, null] } },
     { $set: { 'streak.current': 0 } },
   );
   return { broken: result.modifiedCount };

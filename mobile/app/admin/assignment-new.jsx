@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import { Text, Button, Chip, ErrorNotice, Header } from '../../src/components/ui.jsx';
-import { colors, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * prd.md F8.5.5 — setting work: a title, a topic, what counts as done, and
@@ -25,7 +25,7 @@ const DUE = [
 ];
 
 export default function AdminAssignmentNew() {
-  const router = useRouter();
+  const goBack = useConsoleBack();
   const adminSpace = useAdminSpace();
 
   const [title, setTitle] = useState('');
@@ -67,7 +67,7 @@ export default function AdminAssignmentNew() {
         dueAt: dueDate.toISOString(),
         requirement: REQUIREMENTS.find((r) => r.key === requirement).requirement,
       });
-      router.back();
+      goBack();
     } catch (err) {
       setError(err);
     } finally {
@@ -77,9 +77,17 @@ export default function AdminAssignmentNew() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Set an assignment" subtitle={adminSpace?.name} onBack={() => router.back()} />
+      <Header title="Set an assignment" subtitle={adminSpace?.name} onBack={goBack} />
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+            /* Dense forms whose fields run to the bottom of the screen: on
+               iOS the keyboard used to cover whatever was being typed into.
+               The auth flow gets this from its StepScaffold; the console
+               screens had nothing at all. */
+            automaticallyAdjustKeyboardInsets
+            contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled"
+          >
         <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
           Title
         </Text>
@@ -158,7 +166,7 @@ export default function AdminAssignmentNew() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: layout.gutter, paddingBottom: space.xl },
+  content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xl },
   fieldLabel: { marginTop: space.xl, marginBottom: space.sm },
   input: {
     ...type.option,
@@ -173,5 +181,5 @@ const styles = StyleSheet.create({
   inputFocused: { borderColor: colors.accent, backgroundColor: colors.canvas },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   note: { marginTop: space.xl },
-  footer: { padding: layout.gutter, paddingTop: space.sm },
+  footer: { padding: consoleLayout.gutter, paddingTop: space.sm },
 });

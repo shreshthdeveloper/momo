@@ -16,7 +16,7 @@ import {
 import ConsoleHeader from '../../src/components/ConsoleHeader.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import { MIN_PUBLISHED_QUESTIONS_TO_LIVE, PUBLIC_SPACE_ID } from '../../src/shared/constants.js';
-import { colors, elevation, layout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space } from '../../src/theme/index.js';
 
 /**
  * The Central bank — the Public Arena's content, seen as inventory. The
@@ -183,7 +183,7 @@ export default function SuperCentral() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  content: { padding: layout.gutter, paddingTop: space.sm, paddingBottom: space.lg },
+  content: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.lg },
   stats: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   tabular: { fontVariant: ['tabular-nums'] },
   footer: {
-    paddingHorizontal: layout.gutter,
+    paddingHorizontal: consoleLayout.gutter,
     paddingTop: space.sm,
     paddingBottom: space.sm,
     backgroundColor: colors.sunken,

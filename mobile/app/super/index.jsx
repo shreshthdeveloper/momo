@@ -8,7 +8,7 @@ import { Text, Badge, Card, ErrorNotice } from '../../src/components/ui.jsx';
 import ConsoleHeader from '../../src/components/ConsoleHeader.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
-import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * The platform operator's control room. One person oversees every tenant, so
@@ -258,7 +258,7 @@ function SysRow({ label, value, tone = colors.ink, last = false }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  content: { padding: layout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
+  content: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
   stats: {
     flexDirection: 'row',
     alignItems: 'center',

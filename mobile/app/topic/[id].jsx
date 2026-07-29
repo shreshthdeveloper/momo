@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,6 +25,9 @@ import { TopicGlyph } from '../../src/components/Illustration.jsx';
 import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
 import { masteryProgress } from '../../src/shared/mastery.js';
 import { MATCH_MODE } from '../../src/shared/constants.js';
+
+/** How many rows the topic board shows before the pinned "you" row matters. */
+const BOARD_ROWS = 10;
 
 /**
  * design.md §8.3 — topic.
@@ -64,6 +67,21 @@ export default function TopicScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  /**
+   * The rows this screen actually draws, and whether the viewer is among them.
+   *
+   * The server pages fifty and reports `inPage` against that; this list shows
+   * ten. Deciding the pinned row from the server's answer therefore hid it
+   * from exactly the players who needed it — anyone ranked 11th to 50th.
+   */
+  const shownEntries = useMemo(() => (board?.entries ?? []).slice(0, BOARD_ROWS), [board]);
+  const viewerVisible = useMemo(
+    () =>
+      Boolean(board?.viewerRow) &&
+      shownEntries.some((e) => String(e.userId) === String(board.viewerRow.userId)),
+    [shownEntries, board],
+  );
 
   if (error) {
     return (
@@ -161,7 +179,7 @@ export default function TopicScreen() {
                   This is the one place a topic rating is shown for other
                   people — off a board it invites a comparison it cannot
                   fairly settle. */}
-              {board.entries.slice(0, 10).map((e) => (
+              {shownEntries.map((e) => (
                 <Pressable
                   key={e.userId}
                   onPress={() => router.push(`/user/${e.userId}`)}
@@ -190,8 +208,14 @@ export default function TopicScreen() {
                 </Pressable>
               ))}
 
-              {/* prd.md F6.6.4 — the viewer's own row is pinned when outside the page. */}
-              {board.viewerRow && !board.viewerRow.inPage ? (
+              {/* prd.md F6.6.4 — the viewer's own row is pinned when outside the page.
+
+                  "The page" here is what is actually ON SCREEN, not the fifty
+                  rows the server computed `inPage` against. This list shows
+                  ten, so for anyone ranked 11th–50th the server said "they can
+                  see themselves" while their row had been sliced away — no row
+                  in the list, and no pinned row either. */}
+              {board.viewerRow && !viewerVisible ? (
                 <View style={[styles.boardRow, styles.pinned]}>
                   <Avatar
                     url={board.viewerRow.avatarUrl}

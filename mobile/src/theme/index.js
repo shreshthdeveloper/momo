@@ -71,6 +71,25 @@ export const colors = {
    */
   gold: '#F5B62E',
   goldSoft: 'rgba(245, 182, 46, 0.14)',
+  /**
+   * The brighter gold, for gold on the night field.
+   *
+   * The competition accent above is struck for paper; on the indigo of the
+   * match flow it reads dull, so the HUD clock, the bonus-round word and the
+   * bonus interstitial all reached for a lighter one — and each reached
+   * separately, leaving three unmanaged golds in circulation and no way to
+   * retune the staging without hunting call sites.
+   */
+  goldBright: '#FFD34D',
+  /** The warning amber the round clock wears on its last five seconds. */
+  goldWarn: '#FFD98A',
+  /**
+   * Silver and bronze. Struck here rather than in the two places that draw
+   * medals, which held their own identical literals and would have drifted
+   * apart the first time either was retuned — the leaderboard renders both.
+   */
+  silver: '#C7CEDB',
+  bronze: '#DE9A62',
 
   // ── The night field ──────────────────────────────────────────────────────
   // One field, from the splash through the match to every list. The violet
@@ -202,7 +221,8 @@ export const layout = {
   buttonHeight: 54,
   countdownHeight: 8,
   bubbleSize: 26,
-  tabBar: 68,
+  /** The floating dock's height. The dock itself reads this. */
+  tabBar: 66,
   /**
    * The floating dock overlays the scene, so every tab screen's scrollable
    * content needs this much bottom padding to clear it — the dock and the
@@ -250,6 +270,52 @@ export const type = {
   label: { fontFamily: fonts.semibold, fontSize: 14, lineHeight: 20 },
   meta: { fontFamily: fonts.medium, fontSize: 12, lineHeight: 17 },
   tiny: { fontFamily: fonts.medium, fontSize: 11, lineHeight: 15 },
+};
+
+/**
+ * The console scale — the same system, tuned for work rather than for play.
+ *
+ * A player sees one thing at a time and is often holding the phone at arm's
+ * length mid-match, so the player scale is large and generous. A manager is
+ * reading a roster of two hundred names, a question bank, a standings table:
+ * the same 54pt buttons and 26pt titles turn every console screen into three
+ * rows and a scroll bar, and the whole job becomes scrolling.
+ *
+ * So the console gets a denser type ramp and tighter furniture. What it does
+ * NOT get is smaller touch targets — 44pt is the floor on both platforms and
+ * a dense screen is exactly where mis-taps hurt most, so controls keep their
+ * height and lose only their padding and their shouting.
+ *
+ * `Text`, `Button` and `Header` swap to these automatically inside a console
+ * (they read the sidebar's context), so no screen has to ask for them.
+ */
+export const consoleType = {
+  display: { fontFamily: fonts.heading, fontSize: 20, lineHeight: 26 },
+  title: { fontFamily: fonts.heading, fontSize: 16, lineHeight: 22 },
+  body: { fontFamily: fonts.regular, fontSize: 14, lineHeight: 20 },
+  bodyStrong: { fontFamily: fonts.medium, fontSize: 14, lineHeight: 20 },
+  label: { fontFamily: fonts.semibold, fontSize: 13, lineHeight: 18 },
+  meta: { fontFamily: fonts.medium, fontSize: 12, lineHeight: 16 },
+  tiny: { fontFamily: fonts.medium, fontSize: 11, lineHeight: 14 },
+  /**
+   * Figures in a column. Tabular numerals so a rating of 1,200 and one of
+   * 999 line up on the decimal instead of shimmering as the list scrolls.
+   */
+  figure: {
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    fontVariant: ['tabular-nums'],
+  },
+};
+
+export const consoleLayout = {
+  /** Tighter than the player's 20: more table, less margin. */
+  gutter: 16,
+  /** 44, not 54 — the accessible floor, without the presentation. */
+  buttonHeight: 44,
+  /** One line of a list: name, meta, action. */
+  rowHeight: 56,
 };
 
 /**

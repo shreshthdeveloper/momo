@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Share, StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import { Text, Button, ConfirmSheet, ErrorNotice, Header, Loading } from '../../src/components/ui.jsx';
-import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * prd.md F8.4.1 — the join code, big enough to read off a phone held up at
@@ -13,7 +13,7 @@ import { colors, elevation, layout, space, type } from '../../src/theme/index.js
  * Rotation kills the old code instantly, so it goes through a confirm.
  */
 export default function AdminInvite() {
-  const router = useRouter();
+  const goBack = useConsoleBack();
   const adminSpace = useAdminSpace();
   const [invite, setInvite] = useState(null);
   const [error, setError] = useState(null);
@@ -50,7 +50,7 @@ export default function AdminInvite() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Invite code" subtitle={adminSpace?.name} onBack={() => router.back()} />
+      <Header title="Invite code" subtitle={adminSpace?.name} onBack={goBack} />
 
       <ErrorNotice error={error} onRetry={load} />
 
@@ -112,7 +112,7 @@ export default function AdminInvite() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  body: { padding: layout.gutter },
+  body: { padding: consoleLayout.gutter },
   codeCard: {
     alignItems: 'center',
     gap: space.sm,

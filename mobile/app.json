@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "mimo",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "platforms": [
       "ios",
@@ -22,7 +22,10 @@
       "infoPlist": {
         "UIBackgroundModes": [],
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "associatedDomains": [
+        "applinks:wms.distrx.io"
+      ]
     },
     "android": {
       "package": "app.mimo.client",
@@ -34,9 +37,29 @@
       "permissions": [
         "INTERNET",
         "VIBRATE",
-        "RECEIVE_BOOT_COMPLETED",
-        "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "wms.distrx.io",
+              "pathPrefix": "/join"
+            },
+            {
+              "scheme": "https",
+              "host": "wms.distrx.io",
+              "pathPrefix": "/user"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
       ]
     },
     "plugins": [
@@ -50,13 +73,6 @@
           "imageWidth": 180,
           "resizeMode": "contain",
           "backgroundColor": "#171422"
-        }
-      ],
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/notification-icon.png",
-          "color": "#3A9FB2"
         }
       ],
       "expo-audio",

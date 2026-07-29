@@ -14,7 +14,8 @@ import { useRoundClock, TimeLine, ScoreRail } from '../../src/components/RoundCl
 import { colors, layout, space, type, motion } from '../../src/theme/index.js';
 import { useReducedMotion } from '../../src/lib/motion.js';
 import { sfx } from '../../src/lib/sound.js';
-import { MAX_ROUND_SCORE, QUESTION_TEXT_SOFT_MAX } from '../../src/shared/constants.js';
+import { QUESTION_TEXT_SOFT_MAX } from '../../src/shared/constants.js';
+import { maxScoreForRounds } from '../../src/shared/scoring.js';
 
 /**
  * design.md §8.6 — the match screen, arranged the way QuizUp arranged it,
@@ -31,9 +32,9 @@ import { MAX_ROUND_SCORE, QUESTION_TEXT_SOFT_MAX } from '../../src/shared/consta
  *   ║  ⓐ Iron   ⓑ Copper  …          ║  ← the options arrive on a later beat
  *   └────────────────────────────────┘
  *
- * Every round is three beats, each with its own sound:
+ * Every round is three beats:
  *
- *   1. ROUND 4 stamps in and lifts off        (sfx.round)
+ *   1. ROUND 4 stamps in and lifts off        (silent, bar the bonus round)
  *   2. the question drops in and stands ALONE — a beat to actually read it
  *   3. the four options deal themselves in    (sfx.reveal), and the round is on
  *
@@ -45,6 +46,21 @@ import { MAX_ROUND_SCORE, QUESTION_TEXT_SOFT_MAX } from '../../src/shared/consta
 const QUESTION_IN = 0.25;
 /** The read-beat: the question stands alone for this long. */
 const READ_HOLD_MS = 850;
+
+/**
+ * How long the staging holds before the options can be tapped: the
+ * interstitial (200 + 440 + 150), the question dropping in (340) and the
+ * read-beat (850).
+ *
+ * The reduced-motion path has to spend the SAME time here, and that is not a
+ * cosmetic detail. The round clock is the server's and starts at `round:start`
+ * regardless of what the screen is doing, so skipping straight to live options
+ * handed anyone with the OS setting on two extra seconds of answering time
+ * against the same deadline — worth about four speed points a round, which is
+ * enough to decide close ranked matches. Reduced motion removes the movement,
+ * never the beat.
+ */
+const REVEAL_LEAD_MS = 200 + 440 + 150 + 340 + READ_HOLD_MS;
 
 export default function MatchScreen() {
   const game = useGame();
@@ -64,18 +80,30 @@ export default function MatchScreen() {
 
   // No sound on the round interstitial — seven rounds a match, and a cue on
   // every one of them wore thin. The reveal beat carries the round's audio.
+  // The bonus round is the one exception: it is announced, so it is worth
+  // hearing once a match.
   useEffect(() => {
     if (game.roundIndex === lastRound.current || game.roundIndex < 0) return;
     lastRound.current = game.roundIndex;
+    const bonus = game.roundIndex === game.totalRounds - 1;
 
+    // Reduced motion drops the movement but keeps the timing — see
+    // REVEAL_LEAD_MS. The stage jumps between beats instead of travelling.
     if (reduced) {
       intro.setValue(0);
-      reveal.setValue(1);
+      reveal.setValue(QUESTION_IN);
       setInterstitial(false);
-      setOptionsLive(true);
-      return;
+      setOptionsLive(false);
+      if (bonus) sfx.round();
+      const held = setTimeout(() => {
+        reveal.setValue(1);
+        setOptionsLive(true);
+        sfx.reveal();
+      }, REVEAL_LEAD_MS);
+      return () => clearTimeout(held);
     }
 
+    if (bonus) sfx.round();
     setInterstitial(true);
     setOptionsLive(false);
     reveal.setValue(0);
@@ -98,7 +126,12 @@ export default function MatchScreen() {
       sfx.reveal();
       Animated.timing(reveal, { toValue: 1, duration: 560, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
     });
-  }, [game.roundIndex, reduced, intro, reveal]);
+    // Leaving mid-round must not land a reveal on a screen that has gone.
+    return () => {
+      intro.stopAnimation();
+      reveal.stopAnimation();
+    };
+  }, [game.roundIndex, game.totalRounds, reduced, intro, reveal]);
 
   // A resolution arriving mid-choreography (a resume, a very fast rival) snaps
   // the stage to its final state — a verdict over invisible options is chaos.
@@ -184,7 +217,9 @@ export default function MatchScreen() {
     if (clock.secondsLeft <= 3 && clock.secondsLeft > 0) sfx.tick();
   }, [clock.secondsLeft, game.status, game.yourAnswer]);
 
-  const maxScore = (game.totalRounds || 7) * MAX_ROUND_SCORE;
+  // The bonus round pays double, so the rails have to run to a total that
+  // includes it — otherwise a strong finish pins them at full early.
+  const maxScore = maxScoreForRounds(game.totalRounds || 7);
 
   // The question then each option, cut from the one reveal timeline.
   const slice = (from, to) => ({
@@ -202,18 +237,21 @@ export default function MatchScreen() {
 
   // One line under the header for whatever the moment needs said.
   const statusLine = game.status === 'leaving'
-    ? { text: 'leaving the match…', tone: '#FF9B8F' }
+    ? { text: 'leaving the match…', tone: colors.wrong }
     : !game.opponentConnected
     ? { text: 'opponent reconnecting', tone: 'rgba(255,255,255,0.55)' }
     : game.status === 'playing' && game.opponentAnswered && !game.yourAnswer
-      ? { text: `${game.opponent?.displayName ?? 'Rival'} has locked in`, tone: '#FFD98A' }
+      ? { text: `${game.opponent?.displayName ?? 'Rival'} has locked in`, tone: colors.goldWarn }
       : {
-          text: isBonus ? 'Bonus round — double or nothing on speed' : `Round ${Math.max(1, game.roundIndex + 1)} of ${game.totalRounds}`,
+          // Says exactly what the scoring does: the round pays double, and a
+          // wrong answer costs nothing extra. There is no negative marking
+          // anywhere in the game and this line must not imply one.
+          text: isBonus ? 'Bonus round — every point counts double' : `Round ${Math.max(1, game.roundIndex + 1)} of ${game.totalRounds}`,
           tone: 'rgba(255,255,255,0.55)',
         };
 
   const clockTone =
-    urgent ? '#FF9B8F' : clock.secondsLeft <= 5 ? '#FFD98A' : colors.onColor;
+    urgent ? colors.wrong : clock.secondsLeft <= 5 ? colors.goldWarn : colors.onColor;
 
   return (
     <BrandField tone={colors.night}>
@@ -341,7 +379,7 @@ export default function MatchScreen() {
               </Text>
               <Text
                 allowFontScaling={false}
-                style={[styles.interstitialWord, isBonus && { color: '#FFD34D' }]}
+                style={[styles.interstitialWord, isBonus && { color: colors.goldBright }]}
               >
                 {isBonus ? 'BONUS ROUND' : `ROUND ${game.roundIndex + 1}`}
               </Text>
@@ -579,7 +617,7 @@ const styles = StyleSheet.create({
     marginBottom: space.sm,
     backgroundColor: colors.nightRaised,
   },
-  interstitialFaceBonus: { borderColor: '#FFD34D' },
+  interstitialFaceBonus: { borderColor: colors.goldBright },
   interstitialImage: { width: '100%', height: '100%' },
   interstitialWord: {
     ...type.scoreHero,

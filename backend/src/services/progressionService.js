@@ -24,6 +24,8 @@ import {
 
 import {
   ACCOUNT_MAX_LEVEL,
+  CHEST_RECURRENCE,
+  CHEST_RECURRENCES,
   CHEST_TRIGGER,
   COINS_MAX,
   COIN_AWARD,
@@ -683,6 +685,57 @@ export async function saveLeagues(leagues, { actorId } = {}) {
     }
   }
 
+  /**
+   * Nothing may be left pointing at a league that no longer exists.
+   *
+   * The ladder is replaced wholesale and the chests and cosmetics that gate on
+   * a league key were never re-checked, so re-keying `gold` silently stopped
+   * the monthly chest ever being awarded again and made every gold-gated
+   * cosmetic permanently unownable — no error, nothing on any screen, because
+   * `leagueRank` maps an unknown key to +Infinity rather than failing.
+   *
+   * A key that changed IN PLACE is a rename, which is a thing the console is
+   * meant to allow: the band at that rung is still the same band, so anything
+   * pointing at the old key is moved to the new one. Only a reference with
+   * nowhere to land — a rung that no longer exists at all — is refused.
+   */
+  const previous = progression().ladder.leagues ?? [];
+  const renames = new Map();
+  for (let i = 0; i < Math.min(previous.length, rows.length); i += 1) {
+    if (previous[i].key !== rows[i].key) renames.set(previous[i].key, rows[i].key);
+  }
+  const keys = new Set(rows.map((l) => l.key));
+  const landing = (key) => (keys.has(key) ? key : renames.get(key));
+
+  const [chests, cosmetics] = await Promise.all([
+    Chest.find({ triggerLeague: { $ne: null } }, { key: 1, name: 1, triggerLeague: 1 }).lean(),
+    Cosmetic.find({ unlockLeague: { $ne: null } }, { type: 1, key: 1, name: 1, unlockLeague: 1 }).lean(),
+  ]);
+
+  const orphanedChest = chests.find((c) => !landing(c.triggerLeague));
+  if (orphanedChest) {
+    throw new ConflictError(
+      `${orphanedChest.name} opens on "${orphanedChest.triggerLeague}", which this ladder no longer has. Point it somewhere else first.`,
+      'LEAGUE_IN_USE',
+    );
+  }
+
+  const orphanedCosmetic = cosmetics.find((c) => !landing(c.unlockLeague));
+  if (orphanedCosmetic) {
+    throw new ConflictError(
+      `${orphanedCosmetic.name} unlocks at "${orphanedCosmetic.unlockLeague}", which this ladder no longer has. Point it somewhere else first.`,
+      'LEAGUE_IN_USE',
+    );
+  }
+
+  // Carry every reference across before the ladder they read is replaced.
+  for (const [from, to] of renames) {
+    await Promise.all([
+      Chest.updateMany({ triggerLeague: from }, { $set: { triggerLeague: to } }),
+      Cosmetic.updateMany({ unlockLeague: from }, { $set: { unlockLeague: to } }),
+    ]);
+  }
+
   // Existing rows are replaced wholesale: a ladder is one thing, not five.
   return commit(actorId, { leagues: rows });
 }
@@ -792,8 +845,32 @@ export async function saveCosmetic(input, { actorId } = {}) {
  * `grantedPerks`, and an unknown key resolves as free. Deleting is about
  * withdrawing something from the shelf, not about confiscating it.
  */
+/**
+ * A chest that still advertises this item, if any.
+ *
+ * The console promises the server "refuses the combinations that would break —
+ * a chest promising an avatar that was just deleted"; it was only ever checked
+ * at chest-save time, so deleting from the other side left the chest awarding
+ * a key that no catalogue row describes: the winner's `grantedPerks` gains
+ * something that appears on no shelf and can never be worn.
+ */
+async function chestAdvertising(type, key) {
+  return Chest.findOne(
+    { rewards: { $elemMatch: { type, key } } },
+    { key: 1, name: 1 },
+  ).lean();
+}
+
 export async function deleteCosmetic(type, key, { actorId } = {}) {
-  const result = await Cosmetic.deleteOne({ type, key: String(key).toLowerCase() });
+  const clean = String(key).toLowerCase();
+  const promised = await chestAdvertising(type, clean);
+  if (promised) {
+    throw new ConflictError(
+      `${promised.name} still has this in it. Take it out of the chest first.`,
+      'COSMETIC_IN_CHEST',
+    );
+  }
+  const result = await Cosmetic.deleteOne({ type, key: clean });
   if (!result.deletedCount) throw new NotFoundError('No such cosmetic.', 'NOT_FOUND');
   await commit(actorId);
   return { deleted: true };
@@ -808,8 +885,23 @@ export async function saveChest(input, { actorId } = {}) {
 
   const triggerKind = String(input.triggerKind ?? CHEST_TRIGGER.LEAGUE);
   if (!Object.values(CHEST_TRIGGER).includes(triggerKind)) {
-    throw new BadRequestError('A chest opens on a rating or on a league.', 'BAD_TRIGGER');
+    throw new BadRequestError(
+      'A chest opens on a rating, on a league, or on an event.',
+      'BAD_TRIGGER',
+    );
   }
+
+  /**
+   * How often it can be won. An event chest — a Christmas or New Year chest —
+   * is by definition a one-off, so it may not be monthly; the two built-in
+   * chests are the only monthly ones and they set it themselves.
+   */
+  const recurrence =
+    triggerKind === CHEST_TRIGGER.EVENT
+      ? CHEST_RECURRENCE.ONCE
+      : CHEST_RECURRENCES.includes(input.recurrence)
+        ? input.recurrence
+        : CHEST_RECURRENCE.ONCE;
 
   const patch = {
     key,
@@ -818,11 +910,15 @@ export async function saveChest(input, { actorId } = {}) {
     triggerKind,
     triggerRating: null,
     triggerLeague: null,
+    recurrence,
     enabled: input.enabled !== false,
     order: Number.isFinite(Number(input.order)) ? Math.round(Number(input.order)) : 0,
   };
 
-  if (triggerKind === CHEST_TRIGGER.RATING) {
+  // An event chest has nothing to reach — being switched on IS the trigger.
+  if (triggerKind === CHEST_TRIGGER.EVENT) {
+    // Nothing to validate; both trigger fields stay null.
+  } else if (triggerKind === CHEST_TRIGGER.RATING) {
     const rating = Math.round(Number(input.triggerRating));
     if (!Number.isFinite(rating) || rating <= RANKED_FLOOR) {
       throw new BadRequestError(
@@ -963,11 +1059,28 @@ export function rewardsForLevels({ catalogue, before, after, granted = [] }) {
  * Ownership is checked in the same breath for a reason worth stating: a second
  * purchase of something already owned would be a silent charge for nothing.
  */
-export async function buyCosmetic(user, { type, key }) {
+export async function buyCosmetic(user, { type, key, expectedPrice = null }) {
   const item = findCosmetic(progression().catalogue, type, String(key ?? '').toLowerCase());
 
   if (!item || item.enabled === false) {
     throw new NotFoundError('The shop does not stock that.', 'NO_SUCH_ITEM');
+  }
+
+  /**
+   * The price the player was shown has to be the price they pay.
+   *
+   * Prices are superadmin-editable, and a shelf is fetched once and then sat
+   * on — so a retune between the fetch and the tap silently charged whatever
+   * the catalogue said now, with no confirmation and nothing on the screen
+   * that said otherwise. Sending the displayed price back turns that into an
+   * honest "the price changed" rather than a surprise on the balance.
+   */
+  if (expectedPrice != null && Number(expectedPrice) !== item.price) {
+    throw new ConflictError(
+      `${item.name} now costs ${formatCoins(item.price)} coins. Have another look before you buy.`,
+      'PRICE_CHANGED',
+      { price: item.price },
+    );
   }
   if (!isBuyable(item)) {
     // Legendaries are listed so a player can see what exists and where it comes

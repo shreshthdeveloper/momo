@@ -68,7 +68,7 @@ export default function OrganizationStep() {
       step={4}
       total={5}
       title="Joining an organization?"
-      subtitle="If your school, academy or company is on Mimo, their code adds their topics, contests and leaderboards to your app."
+      subtitle="If your organization is on Mimo, their code adds their topics, contests and leaderboards to your app."
       onBack={() => router.back()}
       footer={
         sent ? (
@@ -121,7 +121,7 @@ export default function OrganizationStep() {
         </Text>
       ) : (
         <Text variant="meta" color={colors.inkFaint} style={styles.hint}>
-          Six characters, from your teacher or admin. You can add it later from Settings.
+          The code your organization gave you. You can add it later from Settings.
         </Text>
       )}
     </StepScaffold>

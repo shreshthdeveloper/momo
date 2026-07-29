@@ -3,6 +3,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import {
   Text,
@@ -15,7 +16,7 @@ import {
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
-import { colors, elevation, layout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space } from '../../src/theme/index.js';
 
 /**
  * prd.md F8.5 — contests, from the phone: everything scheduled, live or done,
@@ -23,6 +24,7 @@ import { colors, elevation, layout, space } from '../../src/theme/index.js';
  * standings, and finalise a contest whose window has closed.
  */
 export default function AdminContests() {
+  const goBack = useConsoleBack();
   const router = useRouter();
   const adminSpace = useAdminSpace();
   const [items, setItems] = useState(null);
@@ -75,7 +77,7 @@ export default function AdminContests() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Contests" subtitle={adminSpace?.name} onBack={() => router.back()} />
+      <Header title="Contests" subtitle={adminSpace?.name} onBack={goBack} />
 
       <ErrorNotice error={error} onRetry={load} />
 
@@ -132,7 +134,20 @@ export default function AdminContests() {
                       variant="soft"
                       label="Standings"
                       fullWidth={false}
-                      onPress={() => router.push(`/contest/${contest.id}`)}
+                      /**
+                       * The ADMIN board, which shows every entrant including
+                       * those still playing and ignores the contest's
+                       * standings-visibility setting. This used to open the
+                       * student's contest screen, so an admin running a
+                       * hidden-standings contest was shown the same nothing
+                       * their students were.
+                       */
+                      onPress={() =>
+                        router.push({
+                          pathname: '/admin/contest-standings',
+                          params: { id: contest.id, name: contest.name },
+                        })
+                      }
                     />
                     {phase.key === 'ended' ? (
                       <Button
@@ -185,7 +200,14 @@ export default function AdminContests() {
 function phaseOf(contest) {
   const now = Date.now();
   if (contest.status === 'cancelled') return { key: 'cancelled', label: 'Cancelled', tone: 'ink' };
-  if (contest.status === 'finalised') return { key: 'done', label: 'Finalised', tone: 'soft' };
+  /**
+   * `finished` is what the backend calls a contest that is over
+   * (CONTEST_STATUS.FINISHED). Testing for 'finalised' — a value nothing ever
+   * writes — meant every completed contest fell through to the time check and
+   * wore a red "Needs finalising" badge for ever, including the ones the
+   * sweeper had already finalised minutes after they closed.
+   */
+  if (contest.status === 'finished') return { key: 'done', label: 'Finalised', tone: 'soft' };
   if (now < new Date(contest.startsAt).getTime()) return { key: 'upcoming', label: 'Upcoming', tone: 'soft' };
   if (now < new Date(contest.endsAt).getTime()) return { key: 'live', label: 'Live', tone: 'correct' };
   return { key: 'ended', label: 'Needs finalising', tone: 'wrong' };
@@ -199,7 +221,7 @@ function windowText(contest) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  list: { padding: layout.gutter, paddingTop: space.sm, paddingBottom: space.lg },
+  list: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.lg },
   card: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,
@@ -221,7 +243,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.wrongSoft,
   },
   footer: {
-    paddingHorizontal: layout.gutter,
+    paddingHorizontal: consoleLayout.gutter,
     paddingTop: space.sm,
     paddingBottom: space.sm,
     backgroundColor: colors.sunken,

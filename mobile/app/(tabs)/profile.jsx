@@ -248,9 +248,10 @@ export default function Profile() {
         <View style={[styles.statCard, elevation.raised]}>
           {stats ? (
             <>
-              {/* LeagueProgress derives the band from the rating itself, so
-                  there is no league prop here that could disagree with the
-                  number printed beside it. */}
+              {/* The server sends the band it computed alongside the rating,
+                  and that is what is drawn — the ladder is editable, so a
+                  cached copy of it can name the wrong league. The share sheet
+                  below quotes `stats.league.label`, and the two must agree. */}
               {typeof stats.rankedRating === 'number' ? (
                 <Pressable
                   onPress={() => router.push('/leaderboard')}
@@ -258,7 +259,7 @@ export default function Profile() {
                   accessibilityLabel="Your league. Opens the leaderboard."
                   style={({ pressed }) => [pressed && styles.pressed]}
                 >
-                  <LeagueProgress rating={stats.rankedRating} />
+                  <LeagueProgress rating={stats.rankedRating} league={stats.league} />
                 </Pressable>
               ) : null}
               <AccountLevel

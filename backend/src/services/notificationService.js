@@ -3,6 +3,8 @@ import { Notification, User } from '../models/index.js';
 import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
 import { istClockTime, isWithinQuietHours } from '../lib/dates.js';
+import { emitToUser } from '../lib/realtime.js';
+import { S2C } from '../shared/protocol.js';
 
 const oid = (v) => new mongoose.Types.ObjectId(String(v));
 
@@ -47,6 +49,34 @@ export async function notify(
     data,
     spaceId: spaceId ? oid(spaceId) : undefined,
   });
+
+  /**
+   * Tell them NOW, if they are holding the app.
+   *
+   * This is the in-app half and it is deliberately gated differently from the
+   * OS push below. `push: false` still silences it — that flag means "the
+   * player is already looking at this happening", and a banner on top of the
+   * result screen celebrating the level they just made is the app talking over
+   * itself. But the pref toggles and quiet hours do NOT silence it: those exist
+   * so nobody is woken at 3am by their phone, and a person who has the app open
+   * is by definition awake and looking at it.
+   *
+   * Without this the inbox could only be discovered by visiting it: a friend
+   * request that arrived while you were anywhere but Home was invisible until
+   * you happened to go back and notice the bell had changed.
+   */
+  if (push) {
+    emitToUser(userId, S2C.NOTIFICATION, {
+      id: String(record._id),
+      type,
+      title,
+      body,
+      data,
+      spaceId: spaceId ? String(spaceId) : null,
+      read: false,
+      at: record.createdAt,
+    });
+  }
 
   const allowed = push && (force || shouldPush(user, prefKey));
   if (!allowed) return record;
@@ -114,6 +144,16 @@ export async function listNotifications(userId, { limit = 30, unreadOnly = false
     title: n.title,
     body: n.body,
     data: n.data,
+    /**
+     * Which organization this belongs to.
+     *
+     * Contests and assignments are org-scoped and the app's active space
+     * resets to the Public Arena on every launch, so a notification that did
+     * not say where it came from opened a screen that then asked the Arena for
+     * the contest — and the Arena has none. The row was stored with a
+     * `spaceId` all along; it simply was not being sent.
+     */
+    spaceId: n.spaceId ? String(n.spaceId) : null,
     read: Boolean(n.readAt),
     at: n.createdAt,
   }));

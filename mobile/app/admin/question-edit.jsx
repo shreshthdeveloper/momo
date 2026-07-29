@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -18,7 +19,8 @@ import {
   Skeleton,
 } from '../../src/components/ui.jsx';
 import Icon from '../../src/components/Icon.jsx';
-import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
+import QuestionArt, { ART_KEYS, artKeyOf, artUri } from '../../src/components/QuestionArt.jsx';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * prd.md F8.2 — the question editor. One form for both jobs: no `id` param
@@ -48,6 +50,9 @@ const TIME_LIMITS = [
   { value: 20_000, label: '20 s' },
   { value: 30_000, label: '30 s' },
   { value: 45_000, label: '45 s' },
+  // The model and the org round-duration setting both go to 60s, so a question
+  // already carrying that limit had no chip to highlight and no way to be set.
+  { value: 60_000, label: '60 s' },
 ];
 
 const STATUS_BADGE = {
@@ -69,9 +74,11 @@ const emptyErrors = () => ({
 });
 
 export default function AdminQuestionEdit() {
-  const router = useRouter();
+  const goBack = useConsoleBack();
   const adminSpace = useAdminSpace();
   const permissions = useAdminPermissions(adminSpace);
+  /** The drawn-art key in `imageUrl`, or null when it is an uploaded URL. */
+  const drawnArtKey = artKeyOf(imageUrl);
   const params = useLocalSearchParams();
 
   const id = typeof params.id === 'string' && params.id.length > 0 ? params.id : undefined;
@@ -97,6 +104,8 @@ export default function AdminQuestionEdit() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [explanation, setExplanation] = useState('');
   const [imageUrl, setImageUrl] = useState(null);
+  /** Open when choosing from the drawn set — see the Picture block below. */
+  const [artPicker, setArtPicker] = useState(false);
   const [timeLimitMs, setTimeLimitMs] = useState(null);
 
   const [focusedField, setFocusedField] = useState(null);
@@ -254,7 +263,7 @@ export default function AdminQuestionEdit() {
 
       setDuplicates(null);
       if (result?.warnings?.length) setSavedWarnings(result.warnings);
-      else router.back();
+      else goBack();
     } catch (err) {
       if (err.code === 'DUPLICATE_QUESTION') {
         setDuplicates(err.details?.duplicates ?? []);
@@ -290,7 +299,7 @@ export default function AdminQuestionEdit() {
   if (!spaceId) {
     return (
       <SafeAreaView style={styles.screen} edges={['top']}>
-        <Header title="New question" onBack={() => router.back()} />
+        <Header title="New question" onBack={goBack} />
         <EmptyState
           icon="alert"
           title="No organization to manage"
@@ -316,7 +325,7 @@ export default function AdminQuestionEdit() {
               ? 'Public space'
               : adminSpace?.name
         }
-        onBack={() => router.back()}
+        onBack={goBack}
       />
 
       {!ready && !error ? (
@@ -325,7 +334,15 @@ export default function AdminQuestionEdit() {
         <ErrorNotice error={error} onRetry={load} />
       ) : (
         <>
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            /* Dense forms whose fields run to the bottom of the screen: on
+               iOS the keyboard used to cover whatever was being typed into.
+               The auth flow gets this from its StepScaffold; the console
+               screens had nothing at all. */
+            automaticallyAdjustKeyboardInsets
+            contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled"
+          >
             <View style={styles.labelRow}>
               <Text variant="label" color={colors.inkMuted} style={{ flex: 1 }}>
                 Question
@@ -487,21 +504,47 @@ export default function AdminQuestionEdit() {
                 <FieldError message={fieldErrors.explanation} />
 
                 <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
-                  Image
+                  Picture
                 </Text>
+                {/**
+                  * Two kinds of picture, and the editor has to speak both.
+                  *
+                  * A question's `imageUrl` is either an uploaded URL or a
+                  * `mimo:art/<key>` wire value that the match screen DRAWS —
+                  * the seeded picture questions all use the second kind. This
+                  * block used to feed either straight into <Image uri>, so a
+                  * seeded question showed a blank frame in the editor where a
+                  * player saw art, and the only repair on offer replaced the
+                  * drawn emblem with a photograph. Now the drawn set is a
+                  * picker, and an upload is still an upload.
+                  */}
                 {imageUrl ? (
                   <>
-                    <Image
-                      source={{ uri: imageUrl }}
-                      style={styles.imagePreview}
-                      contentFit="cover"
-                      transition={160}
-                    />
+                    {drawnArtKey ? (
+                      <View style={styles.artPreview}>
+                        <QuestionArt imageUrl={imageUrl} size={120} />
+                      </View>
+                    ) : (
+                      <Image
+                        source={{ uri: imageUrl }}
+                        style={styles.imagePreview}
+                        contentFit="cover"
+                        transition={160}
+                      />
+                    )}
                     <View style={styles.imageActions}>
                       <Button
                         size="sm"
                         variant="soft"
-                        label="Change image"
+                        label={drawnArtKey ? 'Change art' : 'Change image'}
+                        fullWidth={false}
+                        disabled={uploading}
+                        onPress={() => setArtPicker(true)}
+                      />
+                      <Button
+                        size="sm"
+                        variant="soft"
+                        label="Upload"
                         fullWidth={false}
                         loading={uploading}
                         onPress={pickImage}
@@ -517,15 +560,25 @@ export default function AdminQuestionEdit() {
                     </View>
                   </>
                 ) : (
-                  <Button
-                    size="sm"
-                    variant="soft"
-                    label="Add image"
-                    fullWidth={false}
-                    loading={uploading}
-                    style={{ alignSelf: 'flex-start' }}
-                    onPress={pickImage}
-                  />
+                  <View style={styles.imageActions}>
+                    <Button
+                      size="sm"
+                      variant="soft"
+                      label="Choose art"
+                      fullWidth={false}
+                      disabled={uploading}
+                      style={{ alignSelf: 'flex-start' }}
+                      onPress={() => setArtPicker(true)}
+                    />
+                    <Button
+                      size="sm"
+                      variant="soft"
+                      label="Upload a photo"
+                      fullWidth={false}
+                      loading={uploading}
+                      onPress={pickImage}
+                    />
+                  </View>
                 )}
 
                 <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
@@ -624,9 +677,9 @@ export default function AdminQuestionEdit() {
         visible={Boolean(savedWarnings)}
         transparent
         animationType="fade"
-        onRequestClose={() => router.back()}
+        onRequestClose={goBack}
       >
-        <Pressable style={({ pressed }) => [styles.sheetScrim, pressed && { opacity: 0.7 }]} onPress={() => router.back()}>
+        <Pressable style={({ pressed }) => [styles.sheetScrim, pressed && { opacity: 0.7 }]} onPress={goBack}>
           <Pressable style={[styles.sheet, elevation.sheet]} onPress={() => {}}>
             <View style={styles.sheetGrabber} />
             <Text variant="display" style={styles.sheetTitle}>
@@ -640,7 +693,55 @@ export default function AdminQuestionEdit() {
                 </Text>
               </View>
             ))}
-            <Button label="Done" style={{ marginTop: space.lg }} onPress={() => router.back()} />
+            <Button label="Done" style={{ marginTop: space.lg }} onPress={goBack} />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* The drawn set, which is what the seeded picture questions use and
+          what the match screen can render without a network round trip. */}
+      <Modal
+        visible={artPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setArtPicker(false)}
+      >
+        <Pressable style={styles.sheetScrim} onPress={() => setArtPicker(false)}>
+          <Pressable style={[styles.sheet, elevation.sheet]} onPress={() => {}}>
+            <View style={styles.sheetGrabber} />
+            <Text variant="display" style={styles.sheetTitle}>
+              Choose art
+            </Text>
+            <Text variant="meta" color={colors.inkMuted} style={styles.artNote}>
+              Drawn in the app, so it loads instantly and works offline.
+            </Text>
+            <ScrollView contentContainerStyle={styles.artGrid} showsVerticalScrollIndicator={false}>
+              {ART_KEYS.map((key) => (
+                <Pressable
+                  key={key}
+                  onPress={() => {
+                    setImageUrl(artUri(key));
+                    setArtPicker(false);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={key}
+                  accessibilityState={{ selected: drawnArtKey === key }}
+                  style={({ pressed }) => [
+                    styles.artCell,
+                    drawnArtKey === key && styles.artCellActive,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <QuestionArt imageUrl={artUri(key)} size={64} />
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Button
+              variant="soft"
+              label="Close"
+              style={{ marginTop: space.md }}
+              onPress={() => setArtPicker(false)}
+            />
           </Pressable>
         </Pressable>
       </Modal>
@@ -682,7 +783,7 @@ function FormSkeleton() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: layout.gutter, paddingBottom: space.xl },
+  content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xl },
   labelRow: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm, marginBottom: space.sm },
   fieldLabel: { marginTop: space.xl, marginBottom: space.sm },
   input: {
@@ -727,21 +828,37 @@ const styles = StyleSheet.create({
     borderTopColor: colors.hairline,
     paddingTop: space.lg,
   },
+  artPreview: { alignItems: 'center', paddingVertical: space.sm },
+  artNote: { textAlign: 'center', marginBottom: space.sm },
+  artGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.sm,
+    justifyContent: 'center',
+    paddingVertical: space.sm,
+  },
+  artCell: {
+    padding: space.xs,
+    borderRadius: layout.radiusCard,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  artCellActive: { borderColor: colors.accent },
   imagePreview: {
     aspectRatio: 16 / 9,
     borderRadius: layout.radiusInput,
     backgroundColor: colors.sunken,
   },
   imageActions: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
-  footer: { padding: layout.gutter, paddingTop: space.sm },
+  footer: { padding: consoleLayout.gutter, paddingTop: space.sm },
   footerButtons: { flexDirection: 'row', gap: space.md },
-  skeleton: { paddingHorizontal: layout.gutter, paddingTop: space.lg, gap: space.sm },
+  skeleton: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.lg, gap: space.sm },
   sheetScrim: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.canvas,
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
-    padding: layout.gutter,
+    padding: consoleLayout.gutter,
     paddingBottom: space.xxxl,
   },
   sheetGrabber: {

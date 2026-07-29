@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { Text } from './ui.jsx';
 import Icon from './Icon.jsx';
 import { faceSource } from '../lib/avatar.js';
-import { BANNERS } from '../lib/banner.js';
+import { bannerSource } from '../lib/banner.js';
 import { coins as fmtCoins } from '../lib/rarity.js';
 import { colors, fonts, layout, space } from '../theme/index.js';
 
@@ -105,7 +105,7 @@ export default function ShopShelf({ kind, rarity, tone, items, worn, onPick }) {
 const Tile = memo(
   function Tile({ item, kind, tone, worn, onPress }) {
     const isBanner = kind === 'banner';
-    const source = isBanner ? BANNERS[item.key] : faceSource(item.key);
+    const source = isBanner ? bannerSource(item.key) : faceSource(item.key);
     if (!source) return null;
 
     const locked = !item.owned;

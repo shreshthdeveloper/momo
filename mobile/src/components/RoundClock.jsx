@@ -84,7 +84,7 @@ export function TimeLine({ progress, urgent, tone = 'paper' }) {
           {
             backgroundColor: urgent
               ? onColor
-                ? '#FFD34D'
+                ? colors.goldBright
                 : colors.wrong
               : onColor
                 ? colors.onColor

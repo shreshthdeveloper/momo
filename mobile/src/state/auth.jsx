@@ -15,6 +15,19 @@ import { PUBLIC_SPACE_ID } from '../shared/constants.js';
 
 const AuthContext = createContext(null);
 
+/**
+ * Did the server actually refuse this session, as opposed to the request never
+ * reaching one?
+ *
+ * `OFFLINE` and `TIMEOUT` are raised by the API client with status 0 when fetch
+ * itself failed, and they say nothing whatsoever about whether the tokens are
+ * still good.
+ */
+function isAuthRejection(err) {
+  if (err?.status === 401 || err?.status === 403) return true;
+  return ['UNAUTHENTICATED', 'TOKEN_EXPIRED', 'REFRESH_FAILED'].includes(err?.code);
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [spaces, setSpaces] = useState([]);
@@ -51,8 +64,19 @@ export function AuthProvider({ children }) {
           if (!alive) return;
           setUser(me);
           await refreshSpaces();
-        } catch {
-          await clearTokens();
+        } catch (err) {
+          /**
+           * Only an actual rejection ends the session.
+           *
+           * This used to clear the tokens on ANY failure, which included the
+           * `OFFLINE` and `TIMEOUT` errors the API client raises when the phone
+           * has no signal — so opening the app in a dead zone or during a
+           * server blip silently signed the player out and made them redo phone
+           * and OTP. A dropped packet is not a revoked session: the tokens stay,
+           * the player stays signed in, and the next request settles it.
+           */
+          if (isAuthRejection(err)) await clearTokens();
+          if (!alive) return;
         }
       }
       if (alive) setBooting(false);
@@ -63,13 +87,24 @@ export function AuthProvider({ children }) {
   }, [refreshSpaces]);
 
   useEffect(() => {
-    setUnauthenticatedHandler(() => setUser(null));
+    // An eviction has to clear the whole session, not just the name on it.
+    // Leaving `spaces` and `activeSpaceId` behind meant the next account to
+    // sign in on this phone inherited the previous one's organization as its
+    // active space, and every org-scoped call 403'd until they switched by hand.
+    setUnauthenticatedHandler(() => {
+      setUser(null);
+      setSpaces([]);
+      setActiveSpaceId(PUBLIC_SPACE_ID);
+    });
   }, []);
 
   const signInWithOtp = useCallback(
     async (phone, code) => {
       const data = await auth.verifyOtp(phone, code);
       setUser(data.user);
+      // Whoever was here before, this account starts in the Arena until its
+      // own memberships arrive.
+      setActiveSpaceId(PUBLIC_SPACE_ID);
       await refreshSpaces();
       return data;
     },
@@ -111,6 +146,27 @@ export function AuthProvider({ children }) {
       /** prd.md F6.1.3/F6.1.4 — onboarding is not done until both are set. */
       needsProfile: Boolean(user && !user.displayName),
       needsInterests: Boolean(user && (user.interests?.length ?? 0) === 0),
+      /**
+       * The first sign-up step this account has not finished, or null.
+       *
+       * Each step saves as it goes so the flow "can be resumed rather than
+       * restarted" — but nothing ever resumed it: the router only checked for a
+       * display name, which exists from step one, so an app killed after the
+       * name landed the player on Home with no face and no country and no way
+       * back into the flow.
+       *
+       * Interests are deliberately absent: that step ships with a Skip, and a
+       * skipped step is a finished one.
+       */
+      onboardingStep: !user
+        ? null
+        : !user.displayName
+          ? 'profile'
+          : !user.avatarUrl
+            ? 'avatar'
+            : !user.country
+              ? 'country'
+              : null,
       spaces,
       activeSpaceId,
       activeSpace,

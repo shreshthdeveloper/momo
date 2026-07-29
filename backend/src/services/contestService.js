@@ -20,8 +20,8 @@ import {
   CONTEST_MAX_QUESTIONS,
   QUESTION_STATUS,
   SPACE_ROLE,
-  MAX_ROUND_SCORE,
 } from '../shared/constants.js';
+import { maxScoreForRounds } from '../shared/scoring.js';
 
 const oid = (v) => new mongoose.Types.ObjectId(String(v));
 
@@ -514,6 +514,20 @@ export async function recordEntryResult({ contestId, spaceId, userId, matchId, p
   ]);
   const row = agg[0];
 
+  /**
+   * Counted, not incremented by zero.
+   *
+   * This was `$inc: { 'stats.entrants': 0 }` — a no-op — and `openEntry`,
+   * which actually creates the entry row, never touched it either. So a live
+   * contest listed "0 entrants" while `stats.completed` climbed past it.
+   * Recomputed from the entries themselves, the way `getContest` already does,
+   * so the two numbers cannot disagree.
+   */
+  const entrants = await ContestEntry.countDocuments({
+    contestId: oid(contestId),
+    spaceId: oid(spaceId),
+  });
+
   await Contest.updateOne(
     { _id: oid(contestId), spaceId: oid(spaceId) },
     {
@@ -521,8 +535,8 @@ export async function recordEntryResult({ contestId, spaceId, userId, matchId, p
         'stats.completed': row?.n ?? 0,
         'stats.avgScore': Math.round(row?.avg ?? 0),
         'stats.topScore': row?.top ?? 0,
+        'stats.entrants': entrants,
       },
-      $inc: { 'stats.entrants': 0 },
     },
   );
 }
@@ -634,7 +648,7 @@ export async function standings(scope, contestId, { limit = 50, viewerId, isAdmi
     contest: shapeContest(contest),
     hidden: false,
     total: ranked.length,
-    maxScore: contest.questionCount * MAX_ROUND_SCORE,
+    maxScore: maxScoreForRounds(contest.questionCount),
     rows: ranked.slice(0, limit),
     you,
   };

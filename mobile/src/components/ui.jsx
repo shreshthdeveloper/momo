@@ -11,15 +11,35 @@ import {
   View,
   Easing,
 } from 'react-native';
-import { colors, elevation, fonts, layout, space, type, motion } from '../theme/index.js';
+import {
+  colors,
+  consoleLayout,
+  consoleType,
+  elevation,
+  fonts,
+  layout,
+  space,
+  type,
+  motion,
+} from '../theme/index.js';
+import { useConsoleNav } from './consoleNav.js';
 import { useReducedMotion } from '../lib/motion.js';
 import { resolveAvatar } from '../lib/avatar.js';
 import Icon from './Icon.jsx';
 
-/** Text bound to the type scale. Nothing outside design.md §4.2 is reachable. */
+/**
+ * Text bound to the type scale. Nothing outside design.md §4.2 is reachable.
+ *
+ * Inside a console it binds to the DENSER ramp instead. A manager reading a
+ * roster of two hundred names does not want the type a player reads one
+ * question at a time in, and the alternative — every console screen naming its
+ * own sizes — is how a design system stops being one.
+ */
 export function Text({ variant = 'body', color = colors.ink, style, children, ...props }) {
+  const inConsole = Boolean(useConsoleNav());
+  const scale = inConsole && consoleType[variant] ? consoleType[variant] : type[variant];
   return (
-    <RNText style={[type[variant], { color }, style]} {...props}>
+    <RNText style={[scale, { color }, style]} {...props}>
       {children}
     </RNText>
   );
@@ -55,9 +75,17 @@ export function Button({
       useNativeDriver: true,
     }).start();
 
+  /**
+   * `press` is the fill a button takes while held.
+   *
+   * The theme has defined these since it was written — `accentPress`,
+   * `accentSoftPress` — and nothing ever applied them, so the only feedback a
+   * press gave was the 0.97 scale. On a solid primary button that is very
+   * little, and on the soft variant it is almost nothing.
+   */
   const palette = {
-    primary: { bg: colors.accent, fg: colors.onAccent, border: colors.transparent },
-    soft: { bg: colors.accentSoft, fg: colors.accent, border: colors.transparent },
+    primary: { bg: colors.accent, press: colors.accentPress, fg: colors.onAccent, border: colors.transparent },
+    soft: { bg: colors.accentSoft, press: colors.accentSoftPress, fg: colors.accent, border: colors.transparent },
     outline: { bg: colors.transparent, fg: colors.accent, border: colors.accent },
     ghost: { bg: colors.transparent, fg: colors.inkMuted, border: colors.transparent },
     danger: { bg: colors.transparent, fg: colors.wrong, border: colors.wrong },
@@ -78,7 +106,15 @@ export function Button({
    * was already generous; nothing reflows, because every row using it is at
    * least 68 tall.
    */
-  const height = size === 'sm' ? 44 : size === 'md' ? 46 : layout.buttonHeight;
+  /**
+   * A console's primary button is 44 rather than 54, and its label 14 rather
+   * than 16. Still the accessible floor — the height that was lost was
+   * presentation, not target.
+   */
+  const inConsole = Boolean(useConsoleNav());
+  const height =
+    size === 'sm' ? 44 : size === 'md' ? 46 : inConsole ? consoleLayout.buttonHeight : layout.buttonHeight;
+  const labelSize = size === 'sm' || inConsole ? 14 : 16;
 
   return (
     // `center` rather than `flex-start` when hugging: a small button almost
@@ -94,12 +130,12 @@ export function Button({
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityState={{ disabled: Boolean(disabled || loading) }}
-        style={[
+        style={({ pressed }) => [
           styles.button,
           variant === 'primary' && !disabled ? elevation.raised : null,
           {
             height,
-            backgroundColor: palette.bg,
+            backgroundColor: pressed && palette.press ? palette.press : palette.bg,
             borderColor: palette.border,
             borderWidth: bordered ? 1.5 : 0,
             paddingHorizontal: size === 'sm' ? space.lg : space.xl,
@@ -114,7 +150,7 @@ export function Button({
             {icon ? <Icon name={icon} size={18} color={palette.fg} /> : null}
             <RNText
               numberOfLines={1}
-              style={[type.label, { fontSize: size === 'sm' ? 14 : 16, color: palette.fg }]}
+              style={[type.label, { fontSize: labelSize, color: palette.fg }]}
             >
               {label}
             </RNText>
@@ -356,8 +392,8 @@ export function Badge({ label, tone = 'ink', style }) {
  */
 const MEDAL_TILES = {
   1: { bg: 'rgba(245, 182, 46, 0.18)', fg: colors.gold },
-  2: { bg: 'rgba(199, 206, 219, 0.18)', fg: '#C7CEDB' },
-  3: { bg: 'rgba(222, 154, 98, 0.18)', fg: '#DE9A62' },
+  2: { bg: 'rgba(199, 206, 219, 0.18)', fg: colors.silver },
+  3: { bg: 'rgba(222, 154, 98, 0.18)', fg: colors.bronze },
 };
 
 export function RankTile({ rank, self, size = 30 }) {
@@ -456,13 +492,31 @@ export function IconButton({ name, onPress, label, tone = 'ink', size = 20, styl
   );
 }
 
-/** Back arrow plus title — the header on every pushed screen. */
+/**
+ * Back arrow plus title — the header on every pushed screen.
+ *
+ * Inside a console it grows a third state: with no `onBack` to show, the slot
+ * carries the sidebar's handle instead. That is what gives every console
+ * screen a way back to the navigation without each of them having to know a
+ * sidebar exists — and it is why the console's twenty-odd operations can be
+ * listed somewhere rather than buried behind a chain of pushes.
+ */
 export function Header({ title, subtitle, onBack, right, tone = 'ink', style }) {
   const fg = tone === 'onColor' ? colors.onColor : colors.ink;
   const subFg = tone === 'onColor' ? 'rgba(255,255,255,0.72)' : colors.inkMuted;
+  const console_ = useConsoleNav();
+  const menu = !onBack && console_ && !console_.pinned;
   return (
-    <View style={[styles.header, style]}>
+    /**
+     * A console header is a bar, not a billboard: tighter gutter, less air
+     * above and below, and a hairline under it so the content that follows
+     * reads as a separate region rather than as more header.
+     */
+    <View style={[styles.header, console_ && styles.headerConsole, style]}>
       {onBack ? <IconButton name="back" onPress={onBack} label="Back" tone={tone} /> : null}
+      {menu ? (
+        <IconButton name="menu" onPress={console_.open} label="Open the menu" tone={tone} />
+      ) : null}
       <View style={{ flex: 1, minWidth: 0 }}>
         {title ? (
           <Text variant="title" color={fg} numberOfLines={1}>
@@ -961,6 +1015,12 @@ const styles = StyleSheet.create({
     gap: space.md,
     paddingHorizontal: layout.gutter,
     paddingVertical: space.md,
+  },
+  headerConsole: {
+    paddingHorizontal: consoleLayout.gutter,
+    paddingVertical: space.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.hairline,
   },
   divider: {
     height: 1,

@@ -3,11 +3,19 @@ import { io } from 'socket.io-client';
 import { AppState } from 'react-native';
 import { BASE_URL, getAccessToken, request } from '../lib/api.js';
 import { useAuth } from './auth.jsx';
-import { C2S, S2C, GAME_NAMESPACE, PROTOCOL_VERSION, ERROR_CODE } from '../shared/protocol.js';
-import { scoreAnswer } from '../shared/scoring.js';
+import {
+  C2S,
+  S2C,
+  GAME_NAMESPACE,
+  PROTOCOL_VERSION,
+  ERROR_CODE,
+  TRANSIENT_ERROR_CODES,
+} from '../shared/protocol.js';
+import { roundMultiplier, scoreAnswer } from '../shared/scoring.js';
 import { MATCH_MODE, MATCH_STATE, RATED_MODES } from '../shared/constants.js';
 import { tap, success, failure, heavy } from '../lib/haptics.js';
 import { music, sfx } from '../lib/sound.js';
+import { publish } from '../lib/liveEvents.js';
 
 /**
  * The game connection and match state.
@@ -67,6 +75,27 @@ const LEAVE_RESULT_TIMEOUT_MS = 6_000;
 const SEARCH_WATCHDOG_MS = 35_000;
 const CHALLENGE_SEARCH_WATCHDOG_MS = 330_000;
 
+/**
+ * How long to wait for the other player to take up a rematch.
+ *
+ * The server drops the request after 30 seconds and says nothing when it does
+ * — there is no "they never answered" event to listen for — so without this the
+ * searching screen spins for ever on a rematch nobody accepted. Slightly longer
+ * than the server's own window, so the server's answer always wins a race with
+ * the watchdog.
+ */
+const REMATCH_WATCHDOG_MS = 34_000;
+
+/**
+ * Statuses in which a match is on the board.
+ *
+ * A rejected action must not tear one of these down — see
+ * TRANSIENT_ERROR_CODES. Checked instead of `matchId`, which outlives the match
+ * itself: it is still set on the result screen, and a rate limit hit while
+ * queueing for the NEXT match has to be surfaced rather than swallowed.
+ */
+const LIVE_MATCH_STATUSES = ['found', 'countdown', 'playing', 'resolved'];
+
 const INITIAL = {
   // idle | searching | found | countdown | playing | resolved | leaving | finished
   status: 'idle',
@@ -99,6 +128,14 @@ const INITIAL = {
   forfeitedByYou: false,
   /** Set for the duration of a contest entry (prd.md F7.5). */
   contestId: null,
+  /**
+   * An invitation from the other player to go again, or null. The result
+   * screen turns it into a prompt; accepting it sends our own `match:rematch`,
+   * which is what completes the server's two-sided handshake.
+   */
+  rematchInvite: null,
+  /** True while OUR rematch request is outstanding and unanswered. */
+  rematchPending: false,
   /**
    * The mode of the match in hand: what the queue was joined with and, once
    * `match:found` lands, what the server actually gave. The result screen
@@ -156,12 +193,15 @@ export function GameProvider({ children }) {
   const queueLostRef = useRef(false);
   /** The search watchdog — see SEARCH_WATCHDOG_MS. */
   const searchTimerRef = useRef(null);
+  /** The rematch watchdog — see REMATCH_WATCHDOG_MS. */
+  const rematchTimerRef = useRef(null);
   const patch = useCallback((next) => setState((s) => ({ ...s, ...next })), []);
 
   useEffect(
     () => () => {
       clearTimeout(leaveTimerRef.current);
       clearTimeout(searchTimerRef.current);
+      clearTimeout(rematchTimerRef.current);
     },
     [],
   );
@@ -240,8 +280,9 @@ export function GameProvider({ children }) {
 
     socket.on(S2C.MATCH_FOUND, (payload) => {
       // The search is over, so there is no place left to ask back for and
-      // nothing for the watchdog to catch.
+      // nothing for either watchdog to catch.
       clearTimeout(searchTimerRef.current);
+      clearTimeout(rematchTimerRef.current);
       queueRequestRef.current = null;
       queueLostRef.current = false;
       // A heavy haptic and the bed fading in ARE the announcement — the
@@ -262,6 +303,8 @@ export function GameProvider({ children }) {
          * in hand is the one moment every path passes through.
          */
         forfeitedByYou: false,
+        rematchInvite: null,
+        rematchPending: false,
         topic: payload.topic,
         you: payload.you,
         opponent: payload.opponent,
@@ -343,11 +386,36 @@ export function GameProvider({ children }) {
     socket.on(S2C.MATCH_OPPONENT_LEFT, () => patch({ opponentConnected: false }));
     socket.on(S2C.MATCH_OPPONENT_REJOINED, () => patch({ opponentConnected: true }));
 
+    /**
+     * They want to go again. The result screen turns this into a prompt, which
+     * is the whole point: the handshake needs both sides to ask, and until this
+     * event existed the second side was never told there was anything to
+     * answer.
+     */
+    socket.on(S2C.MATCH_REMATCH_REQUESTED, (payload) => {
+      if (!payload?.matchId) return;
+      tap();
+      patch({ rematchInvite: { matchId: payload.matchId, from: payload.from ?? null } });
+    });
+
+    // Declined, or the window closed. Either way there is nothing to wait for.
+    socket.on(S2C.MATCH_REMATCH_DECLINED, () => {
+      clearTimeout(rematchTimerRef.current);
+      patch({
+        rematchInvite: null,
+        rematchPending: false,
+        // Only pull the player out of the wait if that is what they are doing.
+        ...(stateRef.current.status === 'searching' && stateRef.current.result
+          ? { status: 'finished' }
+          : {}),
+      });
+    });
+
     // Reconnected mid-match: the server sends the current round with remaining
     // time recomputed from its own clock (tech.md §9.7). The snapshot carries
     // no mode, so the one already in hand is kept — it was set when the queue
     // was joined and confirmed by `match:found`.
-    socket.on(C2S.MATCH_RESUME, (snapshot) => {
+    socket.on(S2C.MATCH_RESUME, (snapshot) => {
       if (!snapshot?.matchId) return;
       music.battle();
       patch({
@@ -370,7 +438,25 @@ export function GameProvider({ children }) {
       });
     });
 
+    /**
+     * The inbox, live. Republished rather than handled here: a friend request
+     * is not match state, and the banner that shows it has nothing to do with
+     * this provider beyond sharing the socket it arrives on.
+     */
+    socket.on(S2C.NOTIFICATION, (payload) => publish(S2C.NOTIFICATION, payload));
+
     socket.on(S2C.ERROR, (payload) => {
+      /**
+       * A rejected action is not a dead match. With one on the board these are
+       * already settled by the ack for the same action — the round plays on
+       * under the server's clock and `round:result` states what it scored.
+       */
+      if (
+        TRANSIENT_ERROR_CODES.includes(payload?.code) &&
+        LIVE_MATCH_STATUSES.includes(stateRef.current.status)
+      ) {
+        return;
+      }
       // The server has spoken, so neither the watchdog nor the re-join should
       // fire on top of it.
       clearTimeout(searchTimerRef.current);
@@ -389,6 +475,21 @@ export function GameProvider({ children }) {
     socketRef.current = null;
     setConnected(false);
   }, []);
+
+  /**
+   * Hold the connection open for as long as somebody is signed in.
+   *
+   * It used to be opened by `joinQueue` and closed when the match ended, which
+   * meant the app's only live channel existed exclusively during a match — so
+   * anything the server wanted to say to a player who was simply USING the app
+   * (a friend request, a challenge, a contest opening) had nowhere to land. The
+   * socket already reconnects with backoff and re-authenticates on every
+   * handshake, so keeping it up costs a heartbeat and buys every live feature.
+   */
+  useEffect(() => {
+    if (!user?.id) return;
+    connect();
+  }, [user?.id, connect]);
 
   /**
    * Coming back from the background reconnects immediately rather than waiting
@@ -420,6 +521,9 @@ export function GameProvider({ children }) {
    */
   const identity = user?.id ?? null;
   useEffect(() => {
+    // Every other teardown stops the bed; this one used to leave it looping
+    // over the sign-in screen until the app was killed.
+    music.stop();
     socketRef.current?.close();
     socketRef.current = null;
     setConnected(false);
@@ -507,6 +611,7 @@ export function GameProvider({ children }) {
   const leaveQueue = useCallback(() => {
     socketRef.current?.emit(C2S.QUEUE_LEAVE, {});
     clearTimeout(searchTimerRef.current);
+    clearTimeout(rematchTimerRef.current);
     queueRequestRef.current = null;
     queueLostRef.current = false;
     music.stop();
@@ -555,7 +660,12 @@ export function GameProvider({ children }) {
       tap();
       sfx.tap();
       const elapsedMs = Math.max(0, Date.now() - s.serverOffsetMs - s.startedAt);
-      const predicted = scoreAnswer({ isCorrect: true, elapsedMs, durationMs: s.durationMs });
+      const predicted = scoreAnswer({
+        isCorrect: true,
+        elapsedMs,
+        durationMs: s.durationMs,
+        multiplier: roundMultiplier(s.roundIndex, s.totalRounds),
+      });
 
       patch({ yourAnswer: { optionIndex, elapsedMs, predictedPoints: predicted } });
 
@@ -563,10 +673,18 @@ export function GameProvider({ children }) {
         C2S.MATCH_ANSWER,
         { matchId: s.matchId, roundIndex: s.roundIndex, optionIndex },
         (ack) => {
-          if (ack?.ok === false) {
-            // Rejected — usually the round already resolved on the server clock.
-            patch({ yourAnswer: null, error: { code: ack.code, message: ack.message } });
-          }
+          if (ack?.ok !== false) return;
+          /**
+           * Rejected — usually the round already resolved on the server clock.
+           * The prediction goes, but the match stays: `round:result` is on its
+           * way and states what the round actually scored. Only a rejection
+           * that is NOT one of the routine ones is worth showing.
+           */
+          patch(
+            TRANSIENT_ERROR_CODES.includes(ack.code)
+              ? { yourAnswer: null }
+              : { yourAnswer: null, error: { code: ack.code, message: ack.message } },
+          );
         },
       );
     },
@@ -602,14 +720,56 @@ export function GameProvider({ children }) {
     }, LEAVE_RESULT_TIMEOUT_MS);
   }, [patch]);
 
-  /** The mode of a rematch is the server's to decide; `match:found` says so. */
+  /**
+   * The mode of a rematch is the server's to decide; `match:found` says so.
+   *
+   * Both sides have to ask. Asking first only sends an invitation, so this
+   * arms a watchdog: the server drops the request after REMATCH_WINDOW_MS and
+   * says so, but a reply that goes missing would otherwise leave the searching
+   * screen spinning for ever with no timeout and no way back but Cancel.
+   */
   const rematch = useCallback(() => {
     const s = stateRef.current;
-    if (!s.result?.matchId) return;
-    patch({ status: 'searching', error: null });
-    socketRef.current?.emit(C2S.MATCH_REMATCH, { matchId: s.result.matchId }, (ack) => {
-      if (ack?.ok === false) patch({ status: 'idle', error: { code: ack.code, message: ack.message } });
+    const matchId = s.rematchInvite?.matchId ?? s.result?.matchId;
+    if (!matchId) return;
+    patch({ status: 'searching', error: null, rematchInvite: null, rematchPending: true });
+
+    clearTimeout(rematchTimerRef.current);
+    rematchTimerRef.current = setTimeout(() => {
+      if (!stateRef.current.rematchPending) return;
+      socketRef.current?.emit(C2S.QUEUE_LEAVE, {});
+      patch({
+        rematchPending: false,
+        status: stateRef.current.result ? 'finished' : 'idle',
+        error: {
+          code: ERROR_CODE.NO_OPPONENT_FOUND,
+          message: 'They did not take up the rematch.',
+        },
+      });
+    }, REMATCH_WATCHDOG_MS);
+
+    socketRef.current?.emit(C2S.MATCH_REMATCH, { matchId }, (ack) => {
+      if (ack?.ok === false) {
+        clearTimeout(rematchTimerRef.current);
+        patch({
+          status: stateRef.current.result ? 'finished' : 'idle',
+          rematchPending: false,
+          error: { code: ack.code, message: ack.message },
+        });
+      }
     });
+  }, [patch]);
+
+  /**
+   * Turn down an invitation, or take back one of our own. Either way the
+   * server has to hear it — a request left standing is one the other side can
+   * still accept, which drops this player into a match they are not on a
+   * screen for.
+   */
+  const declineRematch = useCallback(() => {
+    clearTimeout(rematchTimerRef.current);
+    socketRef.current?.emit(C2S.QUEUE_LEAVE, {});
+    patch({ rematchInvite: null, rematchPending: false });
   }, [patch]);
 
   const reset = useCallback(() => {
@@ -632,9 +792,10 @@ export function GameProvider({ children }) {
       answer,
       forfeit,
       rematch,
+      declineRematch,
       reset,
     }),
-    [state, connected, connect, disconnect, selectMode, joinQueue, leaveQueue, enterContest, answer, forfeit, rematch, reset],
+    [state, connected, connect, disconnect, selectMode, joinQueue, leaveQueue, enterContest, answer, forfeit, rematch, declineRematch, reset],
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

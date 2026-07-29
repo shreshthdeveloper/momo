@@ -16,6 +16,7 @@ import { api } from '../../src/lib/api.js';
 import { useAuth } from '../../src/state/auth.jsx';
 import { useGame } from '../../src/state/game.jsx';
 import { useProgression } from '../../src/state/progression.jsx';
+import { useNotifications } from '../../src/state/notifications.jsx';
 import {
   Text,
   ErrorNotice,
@@ -97,7 +98,13 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
-  const [unread, setUnread] = useState(0);
+  /**
+   * The badge is live now — the provider keeps it, the socket moves it, and
+   * this screen only reads it. It used to be fetched here alongside the feed,
+   * so the bell only ever changed when Home itself was reloaded: the count was
+   * as stale as the last time the player happened to visit.
+   */
+  const { unread } = useNotifications();
   /** The topic whose card is open — see `TopicPlaySheet`. */
   const [chosen, setChosen] = useState(null);
 
@@ -107,20 +114,13 @@ export default function Home() {
     try {
       setError(null);
       // Two different endpoints, one screen. The space home carries the
-      // assignments, contests and personal progress the Arena has no concept of.
-      //
-      // The unread count rides along rather than getting its own effect: it is
-      // wanted at exactly the moments the feed is — on arrival, on focus, on
-      // pull — and a failure to fetch it must never blank the screen behind it,
-      // hence the catch. A badge is the least important thing here.
-      const [data, inbox] = await Promise.all([
-        inSpace
-          ? api.get(`/spaces/${activeSpaceId}/home`)
-          : api.get('/home', { spaceId: activeSpaceId }),
-        api.get('/me/notifications', { limit: 1 }).catch(() => null),
-      ]);
+      // assignments, contests and personal progress the Arena has no concept
+      // of. The unread count is no longer fetched here — it belongs to the
+      // notifications provider, which keeps it current from the socket.
+      const data = inSpace
+        ? await api.get(`/spaces/${activeSpaceId}/home`)
+        : await api.get('/home', { spaceId: activeSpaceId });
       setFeed(data);
-      if (inbox) setUnread(inbox.unread ?? 0);
     } catch (err) {
       setError(err);
     }
@@ -804,9 +804,16 @@ function LevelCard({ user, curve }) {
   const router = useRouter();
   const level = user?.accountLevel ?? 1;
   const rating = user?.rankedRating;
-  // `accountLevel` is already floored by the server, so handing it back as the
-  // floor reproduces the server's own answer exactly.
-  const progress = accountProgress(user?.totalXp ?? 0, curve, level);
+  /**
+   * The server's own answer, when it sent one.
+   *
+   * Recomputing it here against a cached curve is how Home and the profile
+   * came to disagree about the same account after a curve edit — the config in
+   * hand can be a version behind, and the level bar is not something two
+   * screens may have different opinions about. The local computation stays
+   * only as the fallback for a payload from an older server.
+   */
+  const progress = user?.accountProgress ?? accountProgress(user?.totalXp ?? 0, curve, level);
   const capped = progress.xpForNextLevel === 0;
 
   return (

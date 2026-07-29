@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import {
   ACCOUNT_MAX_LEVEL,
+  CHEST_RECURRENCE,
+  CHEST_RECURRENCES,
   CHEST_TRIGGER,
   CHEST_TRIGGERS,
   COINS_MAX,
@@ -130,6 +132,21 @@ const progressionConfigSchema = new Schema(
     migrations: { type: [String], default: [] },
 
     /**
+     * The last month whose turnover actually ran, as `YYYY-MM`.
+     *
+     * This used to be inferred from the chests carrying the current period,
+     * which quietly broke the whole cycle: boot rolls the month's chests so a
+     * fresh install serves a full pool, so ANY restart between the 1st and the
+     * hourly job's next tick stamped the period without archiving the
+     * leaderboard, soft-resetting ratings or clearing last month's grants —
+     * and then the job saw the period already stamped and skipped the month.
+     *
+     * A record written by the cycle itself, and by nothing else, cannot be
+     * forged by a step that only rolls chests.
+     */
+    lastCycledPeriod: { type: String, default: null, maxlength: 7 },
+
+    /**
      * Bumped on every write. The client sends the version it holds and the
      * server tells it whether to refetch — cheaper than shipping the whole
      * catalogue on every poll.
@@ -180,6 +197,19 @@ const chestSchema = new Schema(
     triggerRating: { type: Number, default: null },
     /** League key to reach, when the trigger is a league. */
     triggerLeague: { type: String, default: null },
+
+    /**
+     * Monthly, or once ever (coins-and-cosmetics.md §5 vs event chests).
+     *
+     * The default is ONCE because the only chests that should recur are the two
+     * built-in ones, which say so explicitly. An operator making a Christmas
+     * chest gets a Christmas chest.
+     */
+    recurrence: {
+      type: String,
+      enum: CHEST_RECURRENCES,
+      default: CHEST_RECURRENCE.ONCE,
+    },
 
     rewards: { type: [chestSlotSchema], default: [] },
 

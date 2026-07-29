@@ -122,7 +122,10 @@ export default async function spaceRoutes(app) {
 
     return ok({
       space: {
-        ...space.toBrand?.() ,
+        // `toBrand()` is a schema method and this document is `.lean()`, so the
+        // spread was always `...undefined` — it read as if it were adding the
+        // model's brand fields while adding nothing at all. The fields the
+        // client uses are the ones listed here.
         id: String(space._id),
         name: space.name,
         logoUrl: space.logoUrl,

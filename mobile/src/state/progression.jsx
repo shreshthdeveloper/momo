@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import * as SecureStore from 'expo-secure-store';
 import { api } from '../lib/api.js';
 import { setRemoteFaces } from '../lib/avatar.js';
+import { setRemoteBanners } from '../lib/banner.js';
 import { setActiveLadder } from '../lib/league.js';
 import { DEFAULT_CATALOGUE } from '../shared/perks.js';
 import { LEAGUES, LEAGUE_DIVISIONS, LEAGUE_DIVISION_WIDTH } from '../shared/constants.js';
@@ -67,6 +68,13 @@ export function ProgressionProvider({ children }) {
       Object.fromEntries(
         next.cosmetics
           .filter((c) => c.type === 'avatar' && c.imageUrl)
+          .map((c) => [c.key, c.imageUrl]),
+      ),
+    );
+    setRemoteBanners(
+      Object.fromEntries(
+        next.cosmetics
+          .filter((c) => c.type === 'banner' && c.imageUrl)
           .map((c) => [c.key, c.imageUrl]),
       ),
     );

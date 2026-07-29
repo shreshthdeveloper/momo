@@ -10,10 +10,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../src/lib/api.js';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace, useAdminPermissions } from '../../src/lib/admin.js';
 import { useAuth } from '../../src/state/auth.jsx';
 import Icon from '../../src/components/Icon.jsx';
@@ -30,7 +30,7 @@ import {
   Spinner,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, elevation, fonts, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, fonts, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * The organization's own controls — brand, door policy, game pace, the plan, the
@@ -105,7 +105,7 @@ function toForm(spaceData) {
 }
 
 export default function AdminSettings() {
-  const router = useRouter();
+  const goBack = useConsoleBack();
   const adminSpace = useAdminSpace();
   const { refreshSpaces } = useAuth();
   const { canManageSettings, isFullAdmin } = useAdminPermissions(adminSpace);
@@ -189,7 +189,7 @@ export default function AdminSettings() {
 
   const onBack = () => {
     if (isDirty) setSheet({ kind: 'discard' });
-    else router.back();
+    else goBack();
   };
 
   const pickLogo = async () => {
@@ -299,6 +299,7 @@ export default function AdminSettings() {
         ) : null
       ) : (
         <ScrollView
+        automaticallyAdjustKeyboardInsets
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -563,7 +564,7 @@ export default function AdminSettings() {
         cancelLabel="Keep editing"
         onConfirm={() => {
           setSheet(null);
-          router.back();
+          goBack();
         }}
         onCancel={() => setSheet(null)}
       />
@@ -684,7 +685,7 @@ function DurationChip({ seconds, active, disabled, onPress }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  content: { padding: layout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
+  content: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
   saveSlot: { minWidth: 44, minHeight: 40, alignItems: 'flex-end', justifyContent: 'center' },
   readOnlyNote: { marginBottom: space.lg, marginLeft: space.xs },
 
@@ -783,7 +784,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
-    padding: layout.gutter,
+    padding: consoleLayout.gutter,
     paddingBottom: space.xxxl,
   },
   sheetGrabber: {

@@ -301,7 +301,9 @@ function PlayingFrom({ country, city, right }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#171422' },
+  // The token, not the hex: a retune of the night canvas has to reach the
+  // middle of the match flow too, or versus fades to a stale black.
+  screen: { flex: 1, backgroundColor: colors.night },
 
   half: { flex: 1, overflow: 'hidden' },
   /** Enough shade that white type always wins against any banner pattern. */

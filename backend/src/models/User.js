@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 import { ELO_START, RANKED_START } from '../shared/constants.js';
-import { effectiveAccountLevel } from '../shared/mastery.js';
-import { activeAccountCurve } from '../lib/progressionCache.js';
+import { accountProgress, effectiveAccountLevel } from '../shared/mastery.js';
+import { leagueFor } from '../shared/league.js';
+import { activeAccountCurve, activeLadder } from '../lib/progressionCache.js';
 
 /**
  * The level this account is shown at, under the curve currently in force.
@@ -241,6 +242,18 @@ userSchema.methods.toPrivateProfile = function toPrivateProfile() {
     title: this.title,
     /** Derived, never stored — XP is the only thing that has to be right. */
     accountLevel: levelOf(this),
+    /**
+     * The bar under the level, computed HERE.
+     *
+     * The rule is one-way — the server computes, the client displays — and
+     * Home was breaking it: it derived the same bar from `totalXp` against
+     * whatever curve its cache happened to hold, so a client a version behind
+     * showed a different "X XP to level N" on Home than the profile showed on
+     * the next tab, off the same account.
+     */
+    accountProgress: accountProgress(this.totalXp, activeAccountCurve(), this.accountLevelFloor),
+    /** Likewise the badge: the ladder is editable, so its name is not derivable. */
+    league: leagueFor(this.rankedRating ?? RANKED_START, activeLadder()),
     coins: this.coins ?? 0,
     grantedPerks: this.grantedPerks ?? [],
     totalXp: this.totalXp,

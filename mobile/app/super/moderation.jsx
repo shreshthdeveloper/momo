@@ -28,7 +28,7 @@ import { CardsSkeleton, ListSkeleton } from '../../src/components/Skeletons.jsx'
 import ConsoleHeader from '../../src/components/ConsoleHeader.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import { QUESTION_TEXT_SOFT_MAX } from '../../src/shared/constants.js';
-import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * Moderation, in the order the work arrives: reported questions, reported
@@ -514,8 +514,8 @@ function ReasonSheet({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  tabs: { marginHorizontal: layout.gutter, marginTop: space.xs, marginBottom: space.sm },
-  list: { paddingHorizontal: layout.gutter, paddingTop: space.xs, paddingBottom: space.xxxl },
+  tabs: { marginHorizontal: consoleLayout.gutter, marginTop: space.xs, marginBottom: space.sm },
+  list: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.xs, paddingBottom: space.xxxl },
   card: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,
@@ -569,7 +569,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
-    padding: layout.gutter,
+    padding: consoleLayout.gutter,
     paddingBottom: space.xxxl,
   },
   sheetGrabber: {

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../src/lib/api.js';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import {
   Text,
@@ -20,7 +21,7 @@ import {
   SPACE_ACCENTS,
   TOPIC_STATUS,
 } from '../../src/shared/constants.js';
-import { colors, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * prd.md F8.3 — one form for both jobs: no `topicId` param means a new topic,
@@ -46,7 +47,7 @@ const STATUS_HINTS = {
 };
 
 export default function AdminTopicEdit() {
-  const router = useRouter();
+  const goBack = useConsoleBack();
   const adminSpace = useAdminSpace();
   const params = useLocalSearchParams();
   const topicId = typeof params.topicId === 'string' ? params.topicId : undefined;
@@ -182,7 +183,7 @@ export default function AdminTopicEdit() {
         if (desc) body.description = desc;
         await api.post('/admin/topics', body);
       }
-      router.back();
+      goBack();
     } catch (err) {
       if (err.code === 'TOPIC_NOT_READY') setStatusError(err.message);
       else setError(err);
@@ -198,7 +199,7 @@ export default function AdminTopicEdit() {
       <Header
         title={editing ? 'Edit topic' : 'New topic'}
         subtitle={adminSpace?.name}
-        onBack={() => router.back()}
+        onBack={goBack}
       />
 
       {!ready && !error ? (
@@ -207,7 +208,15 @@ export default function AdminTopicEdit() {
         <ErrorNotice error={error} onRetry={load} />
       ) : (
         <>
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            /* Dense forms whose fields run to the bottom of the screen: on
+               iOS the keyboard used to cover whatever was being typed into.
+               The auth flow gets this from its StepScaffold; the console
+               screens had nothing at all. */
+            automaticallyAdjustKeyboardInsets
+            contentContainerStyle={styles.content}
+            keyboardShouldPersistTaps="handled"
+          >
             <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
               Name
             </Text>
@@ -448,7 +457,7 @@ function FormSkeleton() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: layout.gutter, paddingBottom: space.xl },
+  content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xl },
   fieldLabel: { marginTop: space.xl, marginBottom: space.sm },
   input: {
     ...type.option,
@@ -502,6 +511,6 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center',
   },
   note: { marginTop: space.xl },
-  footer: { padding: layout.gutter, paddingTop: space.sm },
-  skeleton: { paddingHorizontal: layout.gutter, paddingTop: space.lg, gap: space.sm },
+  footer: { padding: consoleLayout.gutter, paddingTop: space.sm },
+  skeleton: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.lg, gap: space.sm },
 });

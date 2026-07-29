@@ -19,7 +19,7 @@ import Chest from '../../src/components/Chest.jsx';
 import ShopShelf from '../../src/components/ShopShelf.jsx';
 import Takeover, { eventFromChest } from '../../src/components/Takeover.jsx';
 import { faceName, faceSource, faceUri } from '../../src/lib/avatar.js';
-import { BANNERS, bannerName, bannerUri } from '../../src/lib/banner.js';
+import { bannerName, bannerSource, bannerUri } from '../../src/lib/banner.js';
 import { useProgression } from '../../src/state/progression.jsx';
 import { coins as fmtCoins, rarityTone, RARITY_ORDER } from '../../src/lib/rarity.js';
 import { colors, fonts, layout, space } from '../../src/theme/index.js';
@@ -67,6 +67,13 @@ export default function Shop() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
+  /**
+   * What the last purchase actually cost, confirmed after the fact. The buy
+   * sheet states a price and the balance then changes by it; without a line
+   * saying so, a player who is charged has to work out for themselves whether
+   * the number they were shown is the number that left their balance.
+   */
+  const [spent, setSpent] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState('avatar');
 
@@ -133,7 +140,9 @@ export default function Shop() {
     [data, config],
   );
   const banners = useMemo(
-    () => imageShelf('banner', data?.shelves?.banners, config, (k) => Boolean(BANNERS[k])),
+    // `bannerSource`, not the bundled map: an uploaded banner is drawable too,
+    // and filtering on the bundle alone dropped every one of them off the shelf.
+    () => imageShelf('banner', data?.shelves?.banners, config, (k) => Boolean(bannerSource(k))),
     [data, config],
   );
   const titles = useMemo(() => titleShelf(data?.shelves?.titles, wornTitle), [data, wornTitle]);
@@ -143,12 +152,23 @@ export default function Shop() {
   const [busyChest, setBusyChest] = useState(null);
   /** The chest whose case is open. `null` is the shelves, undisturbed. */
   const [viewing, setViewing] = useState(null);
-  const chests = data?.chests ?? [];
-  const unopened = chests.filter((c) => !c.claimedAt);
-  /** What the window shows when nothing is waiting: the next one to aim at. */
+  const chests = useMemo(() => data?.chests ?? [], [data]);
+  const unopened = useMemo(() => chests.filter((c) => !c.claimedAt), [chests]);
+  /**
+   * What the window shows when nothing is waiting: the next one to aim at.
+   *
+   * A chest ALREADY EARNED this period is never a teaser, opened or not. Only
+   * unopened grants were excluded before, so the moment a claim succeeded the
+   * chest reappeared as a locked card — seconds after the reveal, reading as
+   * "it failed" or "it re-locked" rather than "that one is done".
+   */
+  const earnedKeys = useMemo(
+    () => new Set(chests.map((c) => c.key)),
+    [chests],
+  );
   const teaser = useMemo(
-    () => (config.chests ?? []).filter((c) => !unopened.some((u) => u.key === c.key)),
-    [config, unopened],
+    () => (config.chests ?? []).filter((c) => !earnedKeys.has(c.key)),
+    [config, earnedKeys],
   );
   /**
    * Ready first, then locked. The eye starts at the left, so a chest that can
@@ -211,10 +231,23 @@ export default function Shop() {
     if (!offer || buying) return;
     setBuying(true);
     setNotice(null);
+    setSpent(null);
     try {
-      await api.post('/me/shop/buy', { type: offer.type, key: offer.key });
+      /**
+       * The price this shelf is showing travels with the tap. Prices are
+       * editable and a shelf can be minutes old, so the server compares the two
+       * and refuses rather than quietly charging a number the player never saw.
+       */
+      const result = await api.post('/me/shop/buy', {
+        type: offer.type,
+        key: offer.key,
+        expectedPrice: offer.price ?? null,
+      });
       setOffer(null);
       await Promise.all([load(), refreshProfile?.()]);
+      if (Number.isFinite(result?.spent)) {
+        setSpent({ name: offer.name ?? result?.item?.name ?? 'That', coins: result.spent });
+      }
     } catch (err) {
       setOffer(null);
       setNotice(err);
@@ -258,6 +291,11 @@ export default function Shop() {
 
       <ErrorNotice error={error} onRetry={load} />
       <ErrorNotice error={notice} />
+      {spent ? (
+        <Text variant="meta" color={colors.inkMuted} style={styles.spentNote}>
+          {spent.name} is yours — {fmtCoins(spent.coins)} coins spent.
+        </Text>
+      ) : null}
 
       {!data && !error ? (
         <ShopSkeleton />
@@ -487,7 +525,14 @@ function ChestCase({ chest, rarities, busy, spinning, onOpen, onClose }) {
 
       {locked ? (
         <Text variant="meta" color={colors.inkFaint} style={styles.caseFoot}>
-          Re-rolled on the 1st. Reach the league and it is yours to open, free.
+          {/* What THIS chest asks for. The line used to tell every locked case
+              to go and reach a league — including the rating-triggered ones,
+              and now the event chests, which ask for nothing at all. */}
+          {chest?.triggerKind === 'event'
+            ? 'A gift for everyone. It will be waiting here.'
+            : chest?.recurrence === 'monthly'
+              ? `Re-rolled on the 1st. ${chest?.triggerLabel ?? 'Climb'} and it is yours to open, free.`
+              : `${chest?.triggerLabel ?? 'Climb'} and it is yours to open, free.`}
         </Text>
       ) : (
         <Button
@@ -530,8 +575,8 @@ function BuySheet({ offer, balance, rarities, loading, onBuy, onClose }) {
         >
           {offer.type === 'avatar' && faceSource(offer.key) ? (
             <Image source={faceSource(offer.key)} style={styles.fill} contentFit="cover" />
-          ) : BANNERS[offer.key] ? (
-            <Image source={BANNERS[offer.key]} style={styles.fill} contentFit="cover" />
+          ) : bannerSource(offer.key) ? (
+            <Image source={bannerSource(offer.key)} style={styles.fill} contentFit="cover" />
           ) : null}
         </View>
 
@@ -785,6 +830,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   titleNote: { padding: space.lg, paddingBottom: space.sm },
+  spentNote: { paddingHorizontal: layout.gutter, paddingBottom: space.sm, textAlign: 'center' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

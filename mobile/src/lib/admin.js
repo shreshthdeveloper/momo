@@ -39,6 +39,17 @@ export function useAdminPermissions(space) {
     canPublish: granted('publishQuestions'),
     canManageTopics: granted('manageTopics'),
     canManageSettings: granted('manageSettings'),
+    /**
+     * The two the server enforces and this hook did not model.
+     *
+     * `manageStudents` gates approve/reject/suspend and the batch endpoints;
+     * `manageContests` gates contests and assignments. Without them the console
+     * showed a sub-admin fully live controls that only failed with a 403 after
+     * they had filled in the whole form — which reads as a broken console
+     * rather than a permission they were never given.
+     */
+    canManageStudents: granted('manageStudents'),
+    canManageContests: granted('manageContests'),
     isFullAdmin,
   };
 }

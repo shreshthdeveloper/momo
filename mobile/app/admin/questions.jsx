@@ -19,7 +19,7 @@ import {
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
-import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
 
 /**
  * prd.md F8.2 — the question bank. Two banks behind one screen: "Our bank" is
@@ -643,11 +643,11 @@ export default function AdminQuestions() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  tabs: { marginHorizontal: layout.gutter, marginTop: space.xs },
-  search: { marginHorizontal: layout.gutter, marginTop: space.md, marginBottom: space.xs },
+  tabs: { marginHorizontal: consoleLayout.gutter, marginTop: space.xs },
+  search: { marginHorizontal: consoleLayout.gutter, marginTop: space.md, marginBottom: space.xs },
   filterRow: { flexGrow: 0, marginTop: space.sm },
-  filterRowContent: { gap: space.sm, paddingHorizontal: layout.gutter },
-  list: { padding: layout.gutter, paddingTop: 0, paddingBottom: space.xxxl },
+  filterRowContent: { gap: space.sm, paddingHorizontal: consoleLayout.gutter },
+  list: { padding: consoleLayout.gutter, paddingTop: 0, paddingBottom: space.xxxl },
   countRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.sm },
   card: {
     backgroundColor: colors.nightRaised,
@@ -677,11 +677,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentSoft,
     borderRadius: layout.radiusInput,
     padding: space.md,
-    marginHorizontal: layout.gutter,
+    marginHorizontal: consoleLayout.gutter,
     marginBottom: space.md,
   },
   selectionBar: {
-    paddingHorizontal: layout.gutter,
+    paddingHorizontal: consoleLayout.gutter,
     paddingTop: space.md,
     paddingBottom: space.sm,
     backgroundColor: colors.canvas,
@@ -696,7 +696,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvas,
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
-    padding: layout.gutter,
+    padding: consoleLayout.gutter,
     paddingBottom: space.xxxl,
   },
   sheetGrabber: {

@@ -3,12 +3,14 @@ import { FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-nat
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/lib/api.js';
+import { useAuth } from '../src/state/auth.jsx';
+import { useNotifications } from '../src/state/notifications.jsx';
 import { Text, Header, EmptyState, ErrorNotice } from '../src/components/ui.jsx';
 import { ListSkeleton } from '../src/components/Skeletons.jsx';
 import Icon from '../src/components/Icon.jsx';
 import { withAlpha } from '../src/components/TopicMedallion.jsx';
 import { colors, layout, space } from '../src/theme/index.js';
-import { FRIEND_REACTIONS } from '../src/shared/constants.js';
+import { destinationFor, faceFor } from '../src/lib/notifications.js';
 
 /**
  * prd.md §6.9 — the in-app list.
@@ -38,6 +40,8 @@ import { FRIEND_REACTIONS } from '../src/shared/constants.js';
  */
 export default function NotificationsScreen() {
   const router = useRouter();
+  const { activeSpaceId, setActiveSpaceId } = useAuth();
+  const { markAllRead } = useNotifications();
   const [items, setItems] = useState(null);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -64,12 +68,15 @@ export default function NotificationsScreen() {
       // would spend a request to mark zero rows.
       if (!markedRef.current && data.unread > 0) {
         markedRef.current = true;
+        // The bell goes quiet on this frame rather than after the round trip:
+        // the screen showing the rows IS the acknowledgement.
+        markAllRead();
         api.post('/me/notifications/read', {}).catch(() => {});
       }
     } catch (err) {
       setError(err);
     }
-  }, []);
+  }, [markAllRead]);
 
   useEffect(() => {
     load();
@@ -78,9 +85,20 @@ export default function NotificationsScreen() {
   const open = useCallback(
     (item) => {
       const to = destinationFor(item);
-      if (to) router.push(to);
+      if (!to) return;
+      /**
+       * Land in the organization the notification came from.
+       *
+       * Contests and assignments are org-scoped and the active space resets to
+       * the Public Arena on every launch, so tapping "Contest X is open" from
+       * a cold start used to ask the Arena for an org's contest: both fetches
+       * came back empty and the screen sat on its skeleton for ever, or told a
+       * student their organization had set no work.
+       */
+      if (item.spaceId && item.spaceId !== activeSpaceId) setActiveSpaceId(item.spaceId);
+      router.push(to);
     },
-    [router],
+    [router, activeSpaceId, setActiveSpaceId],
   );
 
   const shown = useMemo(
@@ -178,80 +196,6 @@ const NotificationRow = memo(function NotificationRow({ item, onPress }) {
     </Pressable>
   );
 });
-
-/**
- * Which glyph and which hue.
- *
- * A reaction wears the glyph the sender actually chose, so "Priya says GG"
- * arrives with the medal and "Priya wants a rematch" arrives with the bolt —
- * the same marks that were on the buttons they pressed.
- */
-function faceFor(item) {
-  if (item.type === 'friend_reaction') {
-    const reaction = FRIEND_REACTIONS.find((r) => r.key === item.data?.reaction);
-    return { icon: reaction?.icon ?? 'sparkle', tint: colors.gold };
-  }
-  return FACES[item.type] ?? { icon: 'bell', tint: colors.accent };
-}
-
-const FACES = {
-  friend_request: { icon: 'friends', tint: colors.optionA },
-  friend_accepted: { icon: 'friends', tint: colors.correct },
-  challenge: { icon: 'bolt', tint: colors.accent },
-  achievement: { icon: 'medal', tint: colors.gold },
-  level_up: { icon: 'sparkle', tint: colors.accent },
-  contest_open: { icon: 'trophy', tint: colors.gold },
-  contest_starting: { icon: 'trophy', tint: colors.gold },
-  contest_result: { icon: 'medal', tint: colors.gold },
-  assignment_due: { icon: 'book', tint: colors.optionC },
-  chest: { icon: 'gift', tint: colors.gold },
-  space_approved: { icon: 'check', tint: colors.correct },
-  streak_at_risk: { icon: 'flame', tint: colors.gold },
-  announcement: { icon: 'bell', tint: colors.accent },
-};
-
-/**
- * Where a row goes, or `null` for the ones that are only ever an announcement.
- *
- * A row that navigates nowhere is rendered un-pressable rather than pressable
- * and inert — a tap that visibly does nothing reads as a broken screen.
- */
-function destinationFor(item) {
-  const data = item.data ?? {};
-  switch (item.type) {
-    case 'friend_request':
-    case 'challenge':
-      // Both are answered on the Friends tab, not on a profile: that is where
-      // Accept, Decline and the countdown live.
-      return '/friends';
-    case 'friend_accepted':
-    case 'friend_reaction':
-      return data.userId ? `/user/${data.userId}` : '/friends';
-    case 'contest_open':
-    case 'contest_starting':
-    case 'contest_result':
-      return data.contestId ? `/contest/${data.contestId}` : null;
-    case 'assignment_due':
-      return '/assignments';
-    case 'chest':
-      return '/shop';
-    case 'streak_at_risk':
-      return '/play';
-    case 'achievement':
-      return '/achievements';
-    /**
-     * Edit profile, because what a level hands over is a title and a cosmetic
-     * and that is the screen where they get WORN. There is no level-rewards
-     * screen to send this to — levels are celebrated on the result screen and
-     * nowhere else — so the useful destination is the one place the unlock
-     * becomes something you can act on rather than read about.
-     */
-    case 'level_up':
-      return '/customize';
-    default:
-      return null;
-  }
-}
 
 /**
  * Short relative time. Deliberately coarse past a day — "3d" is as much as
