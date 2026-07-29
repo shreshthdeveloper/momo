@@ -114,13 +114,15 @@ export default function MatchScreen() {
 
   // Leaving mid-match forfeits, so the hardware back button must go through
   // the same confirmation as everything else.
+  // Once the forfeit is already in flight there is nothing left to confirm, so
+  // back is swallowed rather than re-asking a question already answered.
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      setConfirmLeave(true);
+      if (game.status !== 'leaving') setConfirmLeave(true);
       return true;
     });
     return () => sub.remove();
-  }, []);
+  }, [game.status]);
 
   useEffect(() => {
     if (game.status === 'finished') router.replace('/match/result');
@@ -199,7 +201,9 @@ export default function MatchScreen() {
   });
 
   // One line under the header for whatever the moment needs said.
-  const statusLine = !game.opponentConnected
+  const statusLine = game.status === 'leaving'
+    ? { text: 'leaving the match…', tone: '#FF9B8F' }
+    : !game.opponentConnected
     ? { text: 'opponent reconnecting', tone: 'rgba(255,255,255,0.55)' }
     : game.status === 'playing' && game.opponentAnswered && !game.yourAnswer
       ? { text: `${game.opponent?.displayName ?? 'Rival'} has locked in`, tone: '#FFD98A' }
@@ -381,7 +385,14 @@ export default function MatchScreen() {
         </View>
 
         {/* design.md §10 — "Leave now and you forfeit." The copy names the
-            consequence rather than asking whether the player is sure. */}
+            consequence rather than asking whether the player is sure.
+
+            Confirming does NOT navigate. `forfeit()` moves the match to
+            `leaving` and the server's `match:end` moves it to `finished`, which
+            the effect above turns into the result screen — the same one the
+            opponent sees. Sending the player home from the callback raced that
+            reply and won, which is why the one person who had just been told
+            their rating would drop was the only one never shown it. */}
         <ConfirmSheet
           visible={confirmLeave}
           icon="flag"
@@ -393,7 +404,6 @@ export default function MatchScreen() {
           onConfirm={() => {
             setConfirmLeave(false);
             game.forfeit();
-            router.replace('/');
           }}
           onCancel={() => setConfirmLeave(false)}
         />

@@ -300,24 +300,51 @@ export default function MatchResult() {
   const wonIt = result.verdict === 'won';
   const lostIt = result.verdict === 'lost';
   const margin = Math.abs((result.scores?.you ?? 0) - (result.scores?.opponent ?? 0));
+
+  /**
+   * Who walked, if anyone.
+   *
+   * The side is read from the VERDICT rather than by comparing `forfeitedBy`
+   * against this player's id. With a forfeit the winner is by definition the
+   * player who stayed, so the verdict the server already computed says which
+   * side of it this device is on — and it says so without this screen having
+   * to know the shape of the id it holds. The local flag is consulted only as
+   * corroboration for the quitter, since it exists solely on the device that
+   * pressed the button.
+   */
+  const forfeitedBy = result.forfeitedBy ?? null;
+  const wasForfeit = forfeitedBy != null && !isVoid;
+  const youQuit = wasForfeit && (lostIt || Boolean(game.forfeitedByYou));
+  const theyQuit = wasForfeit && !youQuit;
+
   // §10 — the loss copy consoles rather than announces. Nobody needs YOU
   // LOSE in 44pt; a close loss is "so close", a big one is still "nice try".
-  const headline = wonIt
-    ? 'YOU WIN!'
-    : lostIt
-      ? margin <= 40
-        ? 'SO CLOSE!'
-        : 'NICE TRY!'
-      : result.verdict === 'draw'
-        ? 'DEAD EVEN'
-        : 'VOID';
-  const subline = wonIt
-    ? 'Well played.'
-    : lostIt
-      ? 'Better luck next time.'
-      : result.verdict === 'draw'
-        ? 'Neither of you gave an inch.'
-        : null;
+  // A forfeit is stated plainly instead: the scoreboard behind it is not what
+  // decided the match, and celebrating a walkover reads as a bug.
+  const headline = theyQuit
+    ? 'OPPONENT LEFT'
+    : youQuit
+      ? 'YOU LEFT'
+      : wonIt
+        ? 'YOU WIN!'
+        : lostIt
+          ? margin <= 40
+            ? 'SO CLOSE!'
+            : 'NICE TRY!'
+          : result.verdict === 'draw'
+            ? 'DEAD EVEN'
+            : 'VOID';
+  const subline = theyQuit
+    ? `${game.opponent?.displayName ?? 'Your opponent'} left the match, so it goes to you.`
+    : youQuit
+      ? 'You forfeited the match.'
+      : wonIt
+        ? 'Well played.'
+        : lostIt
+          ? 'Better luck next time.'
+          : result.verdict === 'draw'
+            ? 'Neither of you gave an inch.'
+            : null;
 
   const ringFor = (winner) =>
     result.verdict === 'draw' || isVoid ? colors.inkFaint : winner ? colors.correct : colors.wrong;

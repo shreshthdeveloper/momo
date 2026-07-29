@@ -1,10 +1,17 @@
 import mongoose from 'mongoose';
-import { User } from '../models/index.js';
+import { User, Notification } from '../models/index.js';
 import { Friendship, Challenge } from '../models/social.js';
 import { Topic, Match } from '../models/index.js';
 import { headToHead } from './matchService.js';
 import { notify } from './notificationService.js';
 import { BadRequestError, NotFoundError, ConflictError, ForbiddenError } from '../lib/errors.js';
+import {
+  CHALLENGE_ACCEPT_WINDOW_MS,
+  CHALLENGE_PLAY_WINDOW_MS,
+  CHALLENGE_ACCEPT_WINDOW_LABEL,
+  FRIEND_REACTIONS,
+  FRIEND_REACTION_COOLDOWN_MS,
+} from '../shared/constants.js';
 
 const oid = (v) => new mongoose.Types.ObjectId(String(v));
 
@@ -259,9 +266,76 @@ export async function recentOpponents(user, { limit = 8, lookbackDays = 60 } = {
     .filter(Boolean);
 }
 
-// ── Challenges (prd.md §6.3, F6.8.1) ───────────────────────────────────────
+// ── Reactions (constants.js — FRIEND_REACTIONS) ────────────────────────────
 
-const CHALLENGE_TTL_MS = 24 * 60 * 60 * 1000;
+/**
+ * Send one of the fixed reactions to a friend.
+ *
+ * The whole surface is a key from a list this file also owns, so there is no
+ * user-authored text anywhere in the path — which is the entire reason this
+ * exists in place of chat. See the note on `FRIEND_REACTIONS`.
+ *
+ * It rides the notification system rather than inventing a second inbox: quiet
+ * hours, the per-category toggle, the in-app list and the sixty-day TTL are all
+ * already correct there, and a reaction that ignored quiet hours would be the
+ * single most annoying thing the app could do.
+ */
+export async function sendReaction(user, targetId, key) {
+  const reaction = FRIEND_REACTIONS.find((r) => r.key === key);
+  if (!reaction) throw new BadRequestError('That is not a reaction.');
+  if (String(user._id) === String(targetId)) {
+    throw new BadRequestError('You cannot react to yourself.');
+  }
+  if (!mongoose.isValidObjectId(targetId)) throw new NotFoundError('No such player.');
+
+  const friendship = await Friendship.findOne({
+    ...Friendship.pairOf(user._id, targetId),
+    status: 'accepted',
+  }).lean();
+  if (!friendship) throw new ForbiddenError('You can only react to friends.');
+
+  // Same rule as `sendFriendRequest`: a block is silent and indistinguishable
+  // from the player not existing, because "you have been blocked" is itself a
+  // message from the person who blocked you.
+  const target = await User.findById(oid(targetId), { status: 1, blockedUsers: 1 }).lean();
+  if (!target || target.status !== 'active') throw new NotFoundError('No such player.');
+  if ((target.blockedUsers ?? []).some((id) => String(id) === String(user._id))) {
+    throw new NotFoundError('No such player.');
+  }
+
+  /**
+   * The cooldown is measured against what was actually DELIVERED, not against a
+   * counter kept somewhere else, so it cannot drift out of step with the inbox
+   * the recipient is looking at. The `(userId, createdAt)` index carries it.
+   */
+  const recent = await Notification.findOne(
+    {
+      userId: oid(targetId),
+      type: 'friend_reaction',
+      'data.userId': String(user._id),
+      createdAt: { $gt: new Date(Date.now() - FRIEND_REACTION_COOLDOWN_MS) },
+    },
+    { createdAt: 1 },
+  ).lean();
+  if (recent) {
+    const waitMs = FRIEND_REACTION_COOLDOWN_MS - (Date.now() - new Date(recent.createdAt));
+    throw new ConflictError(
+      `Give them a moment — you can send another in ${Math.max(1, Math.ceil(waitMs / 1000))}s.`,
+      'REACTION_COOLDOWN',
+    );
+  }
+
+  await notify(targetId, {
+    type: 'friend_reaction',
+    prefKey: 'friendReaction',
+    title: `${user.displayName} ${reaction.message}`,
+    data: { userId: String(user._id), reaction: reaction.key },
+  });
+
+  return { sent: true, key: reaction.key };
+}
+
+// ── Challenges (prd.md §6.3, F6.8.1) ───────────────────────────────────────
 
 export async function createChallenge(user, { toUserId, topicId }) {
   const friendship = await Friendship.findOne({
@@ -273,10 +347,20 @@ export async function createChallenge(user, { toUserId, topicId }) {
   const topic = await Topic.findById(oid(topicId)).lean();
   if (!topic || topic.status !== 'published') throw new NotFoundError('That topic is not available.');
 
+  /**
+   * `accepted` counts as open too. It did not, so a challenge that had been
+   * accepted but not yet played left the door open for a second one to the
+   * same person — two live invitations between two people, only one of which
+   * either of them could act on.
+   *
+   * Re-sending after the window lapses is deliberately allowed, and is the
+   * normal way to use this: the invitation is cheap and short-lived, so
+   * "they missed it, ask again" is one tap rather than an error.
+   */
   const open = await Challenge.findOne({
     fromUserId: user._id,
     toUserId: oid(toUserId),
-    status: 'pending',
+    status: { $in: ['pending', 'accepted'] },
     expiresAt: { $gt: new Date() },
   }).lean();
   if (open) throw new ConflictError('You already have a challenge open with them.');
@@ -286,14 +370,14 @@ export async function createChallenge(user, { toUserId, topicId }) {
     toUserId: oid(toUserId),
     topicId: topic._id,
     spaceId: topic.spaceId,
-    expiresAt: new Date(Date.now() + CHALLENGE_TTL_MS),
+    expiresAt: new Date(Date.now() + CHALLENGE_ACCEPT_WINDOW_MS),
   });
 
   await notify(toUserId, {
     type: 'challenge',
     prefKey: 'friendChallenge',
     title: `${user.displayName} challenged you`,
-    body: `${topic.name} — you have 24 hours.`,
+    body: `${topic.name} — join in the next ${CHALLENGE_ACCEPT_WINDOW_LABEL}.`,
     data: { challengeId: String(challenge._id), topicId: String(topic._id) },
   });
 
@@ -379,6 +463,39 @@ export async function markChallengePlayed(challengeId) {
   );
 }
 
+/**
+ * Withdraw an open challenge, from either side.
+ *
+ * `respondToChallenge` is the recipient's answer and is restricted to them,
+ * which left two states with no way out at all: a challenger who thought better
+ * of it could not take it back, and once accepted NEITHER of them could — the
+ * row simply sat there being offered until its deadline passed. Two minutes is
+ * short enough that waiting it out is survivable and long enough that being
+ * unable to clear a challenge you are not going to play is an irritation on the
+ * one screen this feature lives on.
+ *
+ * Either participant may call it, and only while the challenge is still open —
+ * a played challenge is history and is not rewritten.
+ */
+export async function cancelChallenge(user, challengeId) {
+  const challenge = await Challenge.findById(oid(challengeId));
+  if (!challenge) throw new NotFoundError('That challenge no longer exists.');
+
+  const userId = String(user._id ?? user.id);
+  const mine =
+    String(challenge.fromUserId) === userId || String(challenge.toUserId) === userId;
+  if (!mine) throw new ForbiddenError('That challenge is not yours.');
+
+  if (!['pending', 'accepted'].includes(challenge.status)) {
+    throw new BadRequestError('That challenge is already closed.', 'CHALLENGE_CLOSED');
+  }
+
+  challenge.status = 'cancelled';
+  challenge.respondedAt = new Date();
+  await challenge.save();
+  return challenge;
+}
+
 export async function respondToChallenge(user, challengeId, accept) {
   const challenge = await Challenge.findById(oid(challengeId));
   if (!challenge) throw new NotFoundError('That challenge no longer exists.');
@@ -393,7 +510,36 @@ export async function respondToChallenge(user, challengeId, accept) {
 
   challenge.status = accept ? 'accepted' : 'declined';
   challenge.respondedAt = new Date();
+  /**
+   * Accepting restarts the clock rather than inheriting what is left of the
+   * accept window.
+   *
+   * Two separate things are being timed and they were sharing one deadline:
+   * "will they answer" and, once answered, "will the two of them actually meet
+   * in the queue". A player who accepted with four seconds left had no chance
+   * at the second, and an accepted challenge was never expired by anything at
+   * all — `expireChallenges` only ever looked at `pending` — so it sat in the
+   * list as a live-looking invitation that `playableChallenge` would refuse.
+   */
+  if (accept) challenge.expiresAt = new Date(Date.now() + CHALLENGE_PLAY_WINDOW_MS);
   await challenge.save();
+
+  /**
+   * The challenger is told, because they are the one who has to be in the app
+   * for this to work and they have two minutes to find out. Without it the
+   * accept is silent and the window burns while they look at another screen.
+   */
+  if (accept) {
+    const topic = await Topic.findById(challenge.topicId).lean();
+    await notify(challenge.fromUserId, {
+      type: 'challenge',
+      prefKey: 'friendChallenge',
+      title: `${user.displayName} accepted`,
+      body: `${topic?.name ?? 'Your challenge'} — play now, ${CHALLENGE_ACCEPT_WINDOW_LABEL} left.`,
+      data: { challengeId: String(challenge._id), topicId: String(challenge.topicId) },
+    }).catch(() => {});
+  }
+
   return challenge;
 }
 

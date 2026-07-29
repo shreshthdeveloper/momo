@@ -67,7 +67,18 @@ export function Button({
   }[variant];
 
   const bordered = variant === 'outline' || variant === 'danger';
-  const height = size === 'sm' ? 40 : size === 'md' ? 46 : layout.buttonHeight;
+  /**
+   * `sm` is 44, not 40.
+   *
+   * Forty points is under the minimum touch target on both platforms (44pt on
+   * iOS, 48dp on Material), and `sm` is not a rare decorative size here — it is
+   * every Play, Accept and Add button in the friends list, which is the densest
+   * screen of tap targets in the app and the one where a mis-tap costs the most
+   * (declining instead of accepting). The four points come out of padding that
+   * was already generous; nothing reflows, because every row using it is at
+   * least 68 tall.
+   */
+  const height = size === 'sm' ? 44 : size === 'md' ? 46 : layout.buttonHeight;
 
   return (
     // `center` rather than `flex-start` when hugging: a small button almost

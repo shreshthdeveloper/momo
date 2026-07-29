@@ -71,7 +71,15 @@ export function startJobs() {
   every(5 * MINUTE, 'stale-matches', closeStaleMatches, { runAtStart: true });
 
   // Expired challenges.
-  every(15 * MINUTE, 'expire-challenges', expireChallenges);
+  /**
+   * Every minute, not every fifteen.
+   *
+   * The window is two minutes now (constants.js), so a quarter-hour sweep left
+   * a dead challenge looking alive for up to seven times its own lifetime.
+   * Reads re-check the date and are always correct; this is what stops the
+   * stored status from lying in between.
+   */
+  every(MINUTE, 'expire-challenges', expireChallenges);
 
   /**
    * Contest lifecycle — every minute (tech.md §10).
@@ -264,9 +272,19 @@ export async function closeStaleMatches() {
   return { closed: result.modifiedCount };
 }
 
+/**
+ * Both open states expire, not just `pending`.
+ *
+ * An ACCEPTED challenge that never became a match was previously expired by
+ * nothing at all: this only ever matched `pending`, so those rows stayed
+ * `accepted` for ever. `playableChallenge` refuses them on their deadline, so
+ * the match was correctly impossible — but the row still looked live to every
+ * query that did not itself re-check the date, which is how the Friends screen
+ * ended up listing invitations that could never be played.
+ */
 export async function expireChallenges() {
   const result = await Challenge.updateMany(
-    { status: 'pending', expiresAt: { $lt: new Date() } },
+    { status: { $in: ['pending', 'accepted'] }, expiresAt: { $lt: new Date() } },
     { $set: { status: 'expired' } },
   );
   return { expired: result.modifiedCount };

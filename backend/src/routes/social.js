@@ -9,10 +9,13 @@ import {
   createChallenge,
   listChallenges,
   respondToChallenge,
+  cancelChallenge,
+  sendReaction,
 } from '../services/friendService.js';
 import { getPublicProfile, searchUsers } from '../services/userService.js';
 import { Report, Question, Match } from '../models/index.js';
 import { BadRequestError } from '../lib/errors.js';
+import { FRIEND_REACTION_KEYS } from '../shared/constants.js';
 
 const ok = (data) => ({ data });
 
@@ -70,6 +73,31 @@ export default async function socialRoutes(app) {
     ok(await removeFriend(request.user, request.params.userId)),
   );
 
+  /**
+   * The nearest thing to chat that ships — a key from a fixed list, never text.
+   * See the note on `FRIEND_REACTIONS` for why it is shaped this way.
+   *
+   * Two limits, doing different jobs: the enum below refuses anything that is
+   * not one of ours, and the per-pair cooldown in the service stops one friend
+   * being buried. The hourly cap here is the outer wall — it bounds the damage
+   * a single account can do across ALL of its friends at once, which a
+   * per-pair cooldown by itself does not.
+   */
+  app.post(
+    '/friends/:userId/react',
+    {
+      config: { rateLimit: { max: 60, timeWindow: '1 hour' } },
+      schema: {
+        body: {
+          type: 'object',
+          required: ['key'],
+          properties: { key: { type: 'string', enum: FRIEND_REACTION_KEYS } },
+        },
+      },
+    },
+    async (request) => ok(await sendReaction(request.user, request.params.userId, request.body.key)),
+  );
+
   // ── Challenges (prd.md §6.3) ─────────────────────────────────────────────
 
   app.get('/challenges', async (request) => ok({ items: await listChallenges(request.user) }));
@@ -100,6 +128,14 @@ export default async function socialRoutes(app) {
 
   app.post('/challenges/:id/decline', async (request) =>
     ok({ status: (await respondToChallenge(request.user, request.params.id, false)).status }),
+  );
+
+  /**
+   * Withdraw, from either side and in either open state. Distinct from decline,
+   * which is the recipient answering "no" and which only they may send.
+   */
+  app.post('/challenges/:id/cancel', async (request) =>
+    ok({ status: (await cancelChallenge(request.user, request.params.id)).status }),
   );
 
   // ── Reports (prd.md F6.4.21, F6.8.4) ─────────────────────────────────────

@@ -107,6 +107,8 @@ function RootNavigator() {
           Your look, and from a level-up on the result screen. */}
       <Stack.Screen name="achievements" />
       <Stack.Screen name="leaderboard" />
+      {/* prd.md §6.9 — the in-app list, reached from the bell on Home. */}
+      <Stack.Screen name="notifications" />
       <Stack.Screen name="join" options={{ presentation: 'modal' }} />
     </Stack>
   );

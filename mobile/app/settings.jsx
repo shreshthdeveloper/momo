@@ -77,6 +77,17 @@ export default function Settings() {
             value={prefs.friendChallenge !== false}
             onChange={(v) => savePrefs({ friendChallenge: v })}
           />
+          {/* Separate from challenges on purpose: a challenge has a two-minute
+              clock and missing one costs something, a reaction is somebody
+              saying GG. Anyone who wants the first and not the second needs a
+              switch that tells them apart. */}
+          <Toggle
+            icon="sparkle"
+            tint={colors.gold}
+            label="Reactions from friends"
+            value={prefs.friendReaction !== false}
+            onChange={(v) => savePrefs({ friendReaction: v })}
+          />
           <Toggle
             icon="ranks"
             tint={colors.optionC}

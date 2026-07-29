@@ -65,6 +65,7 @@ export class Matchmaker {
     onPair,
     onGhost,
     onExpire,
+    onFailure,
     bandMax = LEVEL_BAND_MAX,
     bandStepMs = LEVEL_BAND_STEP_MS,
     ghostAfterMs = GHOST_AFTER_MS,
@@ -81,6 +82,13 @@ export class Matchmaker {
      * watching a searching screen nothing will ever end.
      */
     this.onExpire = onExpire ?? (() => {});
+    /**
+     * Match creation threw after these entries had already left the pool.
+     * Distinct from `onExpire`, which is the queue giving up honestly: this is
+     * the queue having done its job and the step after it having failed, and
+     * the two want different words in front of the player.
+     */
+    this.onFailure = onFailure ?? (() => {});
     this.bandMax = bandMax;
     this.bandStepMs = bandStepMs;
     this.ghostAfterMs = ghostAfterMs;
@@ -93,7 +101,7 @@ export class Matchmaker {
     /** @type {Map<string, string>} userId → poolKey */
     this.userPool = new Map();
     this.ticker = null;
-    this.metrics = { paired: 0, ghosted: 0, expired: 0, totalWaitMs: 0, joins: 0 };
+    this.metrics = { paired: 0, ghosted: 0, expired: 0, failed: 0, totalWaitMs: 0, joins: 0 };
   }
 
   start() {
@@ -195,9 +203,25 @@ export class Matchmaker {
         paired.add(other.userId);
         this.metrics.paired += 2;
         this.metrics.totalWaitMs += now - waiting.joinedAt + (now - other.joinedAt);
-        Promise.resolve(this.onPair(waiting, other)).catch((err) =>
-          logger.error({ err }, 'onPair failed'),
-        );
+        /**
+         * A rejection here used to be logged and nothing else, which stranded
+         * both players: they are removed from the pool immediately below, so a
+         * throw anywhere in match creation — a slow write, a topic that went
+         * unpublished between queueing and pairing — left two people out of the
+         * queue, not in a match, and never told. The client goes on widening
+         * its band caption on its own timer, so the symptom is a search that
+         * spins for ever rather than an error anyone can see or report.
+         *
+         * `onFailure` puts that back on the rails by telling them the pairing
+         * fell through, which the app already knows how to recover from.
+         */
+        Promise.resolve(this.onPair(waiting, other)).catch((err) => {
+          logger.error({ err, a: waiting.userId, b: other.userId }, 'onPair failed');
+          this.metrics.failed += 2;
+          Promise.resolve(this.onFailure?.([waiting, other])).catch((e) =>
+            logger.error({ err: e }, 'onFailure failed after onPair'),
+          );
+        });
       }
       for (const id of paired) this.removeFrom(key, id);
 
@@ -212,9 +236,16 @@ export class Matchmaker {
         this.removeFrom(key, waiting.userId);
         this.metrics.ghosted += 1;
         this.metrics.totalWaitMs += now - waiting.joinedAt;
-        Promise.resolve(this.onGhost(waiting)).catch((err) =>
-          logger.error({ err }, 'onGhost failed'),
-        );
+        // Same hazard as the pairing branch above, and the same repair: the
+        // entry is already out of the pool, so a rejection with nobody told
+        // leaves the player searching for ever.
+        Promise.resolve(this.onGhost(waiting)).catch((err) => {
+          logger.error({ err, userId: waiting.userId }, 'onGhost failed');
+          this.metrics.failed += 1;
+          Promise.resolve(this.onFailure?.([waiting])).catch((e) =>
+            logger.error({ err: e }, 'onFailure failed after onGhost'),
+          );
+        });
       }
     }
 

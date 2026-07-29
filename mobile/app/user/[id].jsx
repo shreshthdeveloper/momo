@@ -15,6 +15,7 @@ import {
   Stat,
 } from '../../src/components/ui.jsx';
 import { LeagueBadge } from '../../src/components/League.jsx';
+import ReactionSheet from '../../src/components/ReactionSheet.jsx';
 import { resolveBanner } from '../../src/lib/banner.js';
 import { flagEmoji, countryName } from '../../src/lib/country.js';
 import { ProfileBodySkeleton } from '../../src/components/Skeletons.jsx';
@@ -31,6 +32,7 @@ export default function UserProfile() {
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [reacting, setReacting] = useState(false);
 
   const load = () => api.get(`/users/${id}`).then(setProfile).catch(setError);
 
@@ -66,6 +68,7 @@ export default function UserProfile() {
   }
 
   const h2h = profile.headToHead;
+  const isFriend = profile.friendship?.status === 'accepted';
 
   return (
     <View style={styles.screen}>
@@ -149,16 +152,44 @@ export default function UserProfile() {
         </View>
 
         <View style={styles.body}>
-          {!profile.isSelf ? (
+          {/**
+            * What you can do about this person.
+            *
+            * Being friends used to render a DISABLED button reading "Friends" —
+            * the one state where there is most to do was the one state with
+            * nothing to press, and a greyed-out label is a status pretending to
+            * be a control. Once accepted it becomes the two things a friendship
+            * is for: challenge them, or say something. Everything else keeps the
+            * single button, because there is genuinely only one move.
+            */}
+          {profile.isSelf ? null : isFriend ? (
+            <View style={styles.actions}>
+              <Button
+                label="Challenge"
+                icon="bolt"
+                style={{ flex: 1 }}
+                onPress={() =>
+                  router.push({
+                    pathname: '/challenge',
+                    params: {
+                      userId: String(id),
+                      name: profile.displayName,
+                      avatarUrl: profile.avatarUrl ?? '',
+                    },
+                  })
+                }
+              />
+              <Button
+                variant="soft"
+                label="Say something"
+                icon="sparkle"
+                style={{ flex: 1 }}
+                onPress={() => setReacting(true)}
+              />
+            </View>
+          ) : (
             <Button
-              variant={profile.friendship?.status === 'accepted' ? 'soft' : 'primary'}
-              label={
-                profile.friendship?.status === 'accepted'
-                  ? 'Friends'
-                  : profile.friendship?.status === 'pending'
-                    ? 'Request sent'
-                    : 'Add friend'
-              }
+              label={profile.friendship?.status === 'pending' ? 'Request sent' : 'Add friend'}
               disabled={Boolean(profile.friendship)}
               loading={busy}
               style={{ marginBottom: space.xl }}
@@ -174,7 +205,7 @@ export default function UserProfile() {
                 }
               }}
             />
-          ) : null}
+          )}
 
           {/**
             * Someone else's topics carry a LEVEL and nothing else.
@@ -228,6 +259,8 @@ export default function UserProfile() {
           ) : null}
         </View>
       </ScrollView>
+
+      <ReactionSheet visible={reacting} person={profile} onClose={() => setReacting(false)} />
     </View>
   );
 }
@@ -285,6 +318,11 @@ const styles = StyleSheet.create({
   leagueStat: { flex: 1, alignItems: 'center', gap: 4, paddingHorizontal: space.sm },
   leagueBadge: { alignSelf: 'center' },
   body: { paddingHorizontal: layout.gutter, paddingTop: space.xl },
+  /**
+   * Two actions side by side, and only one of them filled. design.md §6.5 —
+   * one primary per screen; the second is the same size and half the voice.
+   */
+  actions: { flexDirection: 'row', gap: space.md, marginBottom: space.xl },
   section: { marginBottom: space.xl },
   /** Soft card rows — the game-list grammar. */
   row: {

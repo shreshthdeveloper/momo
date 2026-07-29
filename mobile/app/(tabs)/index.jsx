@@ -20,11 +20,13 @@ import { HomeFeedSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import CoinBalance from '../../src/components/CoinBalance.jsx';
 import TopicCard from '../../src/components/TopicCard.jsx';
+import TopicPlaySheet from '../../src/components/TopicPlaySheet.jsx';
+import { withAlpha } from '../../src/components/TopicMedallion.jsx';
 import { LeagueBadge } from '../../src/components/League.jsx';
 import SpaceHome from '../../src/components/SpaceHome.jsx';
 import { leagueFor } from '../../src/lib/league.js';
 import { streakState } from '../../src/lib/streak.js';
-import { colors, elevation, layout, space } from '../../src/theme/index.js';
+import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
 import { PUBLIC_SPACE_ID } from '../../src/shared/constants.js';
 import { ACHIEVEMENTS } from '../../src/shared/achievements.js';
 import { accountProgress } from '../../src/shared/mastery.js';
@@ -78,7 +80,7 @@ const DUO_PLAY = require('../../assets/art/duo-play.webp');
  */
 export default function Home() {
   const router = useRouter();
-  const { user, spaces, activeSpaceId, setActiveSpaceId } = useAuth();
+  const { user, spaces, activeSpaceId, setActiveSpaceId, refreshProfile } = useAuth();
   const game = useGame();
   const { config } = useProgression();
   const earned = user?.achievements?.length ?? 0;
@@ -86,6 +88,9 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
+  /** The topic whose card is open — see `TopicPlaySheet`. */
+  const [chosen, setChosen] = useState(null);
 
   const inSpace = activeSpaceId && activeSpaceId !== PUBLIC_SPACE_ID;
 
@@ -94,10 +99,19 @@ export default function Home() {
       setError(null);
       // Two different endpoints, one screen. The space home carries the
       // assignments, contests and personal progress the Arena has no concept of.
-      const data = inSpace
-        ? await api.get(`/spaces/${activeSpaceId}/home`)
-        : await api.get('/home', { spaceId: activeSpaceId });
+      //
+      // The unread count rides along rather than getting its own effect: it is
+      // wanted at exactly the moments the feed is — on arrival, on focus, on
+      // pull — and a failure to fetch it must never blank the screen behind it,
+      // hence the catch. A badge is the least important thing here.
+      const [data, inbox] = await Promise.all([
+        inSpace
+          ? api.get(`/spaces/${activeSpaceId}/home`)
+          : api.get('/home', { spaceId: activeSpaceId }),
+        api.get('/me/notifications', { limit: 1 }).catch(() => null),
+      ]);
       setFeed(data);
+      if (inbox) setUnread(inbox.unread ?? 0);
     } catch (err) {
       setError(err);
     }
@@ -110,11 +124,20 @@ export default function Home() {
 
   // The connection is opened on entering home rather than at launch, so a
   // player who never plays never holds a socket.
+  //
+  // The feed is refetched here too, WITHOUT clearing it first: the effect above
+  // owns the space switch and blanks the screen for it, but coming back from a
+  // match is not a switch, and blanking a feed that is about to be replaced by
+  // an almost identical one reads as a stutter. Refetching on focus is what
+  // makes a match's XP, rating and streak show up on the home header without a
+  // manual pull.
   const connect = game.connect;
   useFocusEffect(
     useCallback(() => {
       connect();
-    }, [connect]),
+      load();
+      refreshProfile?.().catch(() => {});
+    }, [connect, load, refreshProfile]),
   );
 
   /**
@@ -142,8 +165,13 @@ export default function Home() {
     return rows.flatMap((r) => r.topics ?? [])[0] ?? null;
   }, [feed, recent]);
 
+  /**
+   * Straight into a match, at the stake already chosen. The Arena card and the
+   * space home both use this — their whole argument is one tap and no decision,
+   * so neither of them stops to ask.
+   */
   const play = useCallback(
-    (topic) => {
+    (topic, mode) => {
       if (!topic) return;
       router.push({
         pathname: '/match/searching',
@@ -152,21 +180,56 @@ export default function Home() {
           spaceId: topic.spaceId ?? activeSpaceId,
           coverUrl: topic.coverUrl ?? '',
           name: topic.name,
+          ...(mode ? { mode } : null),
         },
       });
     },
     [router, activeSpaceId],
   );
 
+  /**
+   * The card behind a topic row, shared with the Play tab so a topic tile means
+   * the same thing in both places. The rows below used to push the topic page —
+   * which is now the link at the foot of the card rather than the only door.
+   */
+  const selectMode = game.selectMode;
+  const playChosen = useCallback(
+    (mode) => {
+      const topic = chosen;
+      if (!topic) return;
+      setChosen(null);
+      selectMode(mode);
+      play(topic, mode);
+    },
+    [chosen, selectMode, play],
+  );
+
+  const openChosenDetails = useCallback(() => {
+    const topic = chosen;
+    if (!topic) return;
+    setChosen(null);
+    router.push(`/topic/${topic.id}`);
+  }, [chosen, router]);
+
   const spaceName = feed?.space?.name ?? (inSpace ? '' : 'Public Arena');
   const firstName = (user?.displayName ?? 'there').split(' ')[0];
 
   const header = (
     <>
-      {/* Who and where on the left, what you have on the right. Two controls,
-          not five. */}
+      {/* Who and where on the left, what you have on the right. */}
       <View style={styles.header}>
-        <Avatar url={user?.avatarUrl} name={user?.displayName} size={44} />
+        {/* The face was a 44pt object at the top-left of the app's first screen
+            that did nothing at all — the one place every product on the phone
+            puts a door to your own profile. It is a button now. */}
+        <Pressable
+          onPress={() => router.push('/profile')}
+          accessibilityRole="button"
+          accessibilityLabel="Your profile"
+          hitSlop={6}
+          style={({ pressed }) => (pressed ? { opacity: 0.75 } : null)}
+        >
+          <Avatar url={user?.avatarUrl} name={user?.displayName} size={44} />
+        </Pressable>
 
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text variant="meta" color={colors.inkFaint}>
@@ -194,6 +257,7 @@ export default function Home() {
           </Pressable>
         </View>
 
+        <BellButton unread={unread} onPress={() => router.push('/notifications')} />
         <CoinBalance />
       </View>
 
@@ -331,14 +395,56 @@ export default function Home() {
                   key={topic.id}
                   variant="row"
                   topic={topic}
-                  onPress={() => router.push(`/topic/${topic.id}`)}
+                  onPress={() => setChosen(topic)}
                 />
               ))}
             </View>
           </>
         ) : null}
       </ScrollView>
+
+      <TopicPlaySheet
+        visible={chosen !== null}
+        topic={chosen}
+        rankedRating={user?.rankedRating}
+        onPlay={playChosen}
+        onDetails={openChosenDetails}
+        onClose={() => setChosen(null)}
+      />
     </SafeAreaView>
+  );
+}
+
+/**
+ * The inbox, as a header control.
+ *
+ * The count is capped at "9+" rather than growing — a badge is a signal that
+ * there is something waiting, and past a handful the exact number changes
+ * nothing about what you do next while a three-digit one starts pushing the
+ * balance beside it around.
+ *
+ * The dot is not the only carrier: the count is in the accessibility label, so
+ * a screen reader gets "Notifications, 3 unread" rather than "Notifications".
+ */
+function BellButton({ unread, onPress }) {
+  const has = unread > 0;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={has ? `Notifications, ${unread} unread` : 'Notifications'}
+      hitSlop={6}
+      style={({ pressed }) => [styles.bell, pressed && { backgroundColor: colors.hairline }]}
+    >
+      <Icon name="bell" size={19} color={has ? colors.ink : colors.inkMuted} />
+      {has ? (
+        <View style={styles.badge}>
+          <Text allowFontScaling={false} style={styles.badgeText}>
+            {unread > 9 ? '9+' : unread}
+          </Text>
+        </View>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -565,6 +671,15 @@ function LevelCard({ user, curve }) {
  * it. They are tiles rather than list rows because side by side they fill a
  * band the old screen left blank, and because neither is a place you go often
  * enough to earn a full row of its own.
+ *
+ * ── The number is the tile ───────────────────────────────────────────────────
+ *
+ * It used to be `label` at 14pt over `tiny` at 11 — two lines of near-identical
+ * type in a tile whose entire job is to report ONE figure, so the eye had to
+ * read both to find out which was the answer. The figure takes the display face
+ * at 22 now and the word under it stays quiet, which is the same hierarchy the
+ * stat cards on the profile already use. The glyph gets a well so the two tiles
+ * have an anchor at the top rather than a floating 15pt mark.
  */
 function DoorTile({ icon, tint, label, value, onPress }) {
   return (
@@ -575,11 +690,21 @@ function DoorTile({ icon, tint, label, value, onPress }) {
       style={({ pressed }) => [styles.door, pressed && { opacity: 0.75 }]}
     >
       <View style={styles.doorTop}>
-        <Icon name={icon} size={15} color={tint} />
+        <View style={[styles.doorGlyph, { backgroundColor: withAlpha(tint, 0.15) }]}>
+          <Icon name={icon} size={15} color={tint} />
+        </View>
         <View style={{ flex: 1 }} />
         <Icon name="chevronRight" size={13} color={colors.inkFaint} />
       </View>
-      <Text variant="label" numberOfLines={1}>
+      {/* `adjustsFontSizeToFit` so a four-digit rating still fits a half-width
+          tile instead of ellipsing the thing the tile exists to show. */}
+      <Text
+        allowFontScaling={false}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+        style={styles.doorValue}
+      >
         {value}
       </Text>
       <Text variant="tiny" color={colors.inkFaint} numberOfLines={1}>
@@ -631,6 +756,36 @@ const styles = StyleSheet.create({
   },
   spaceButton: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 26 },
   spaceLogo: { width: 18, height: 18, borderRadius: 5, overflow: 'hidden' },
+
+  /** 40 square plus 6 of slop — 52 of target, past both platform minimums. */
+  bell: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.sunken,
+  },
+  /**
+   * Sits half off the glyph's corner so it reads as attached to the bell rather
+   * than as a second object beside it. The canvas-coloured ring is what keeps
+   * it legible when it overlaps the well behind.
+   */
+  badge: {
+    position: 'absolute',
+    top: 1,
+    right: 1,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.rival,
+    borderWidth: 2,
+    borderColor: colors.canvas,
+  },
+  badgeText: { fontFamily: 'Inter_600SemiBold', fontSize: 10, lineHeight: 13, color: colors.onColor },
   switcher: {
     marginHorizontal: layout.gutter,
     backgroundColor: colors.canvas,
@@ -731,7 +886,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.sunken,
   },
   levelHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  levelBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 28 },
 
   doors: {
     flexDirection: 'row',
@@ -742,7 +896,7 @@ const styles = StyleSheet.create({
   door: {
     flex: 1,
     gap: 2,
-    minHeight: 78,
+    minHeight: 96,
     justifyContent: 'center',
     paddingHorizontal: layout.cardPadding,
     paddingVertical: space.md,
@@ -751,7 +905,10 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
     backgroundColor: colors.sunken,
   },
-  doorTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
+  doorTop: { flexDirection: 'row', alignItems: 'center', marginBottom: space.sm },
+  doorGlyph: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  /** The one figure the tile is for — the profile's stat face, at tile size. */
+  doorValue: { ...type.timer, color: colors.ink },
 
   rowHead: { paddingHorizontal: layout.gutter },
   recent: { paddingHorizontal: layout.gutter, paddingBottom: space.lg },

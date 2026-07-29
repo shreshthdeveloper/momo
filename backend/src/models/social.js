@@ -44,7 +44,13 @@ const challengeSchema = new Schema(
 
     status: {
       type: String,
-      enum: ['pending', 'accepted', 'declined', 'expired', 'complete'],
+      /**
+       * `cancelled` is withdrawal by either side, and it is deliberately not
+       * `declined`: declined is an answer the recipient gave, and reusing it
+       * for "the sender changed their mind" would make the two indistinguishable
+       * in any later read of the row.
+       */
+      enum: ['pending', 'accepted', 'declined', 'expired', 'complete', 'cancelled'],
       default: 'pending',
     },
     /**

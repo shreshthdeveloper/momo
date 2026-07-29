@@ -1,24 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { FlatList, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useAuth } from '../../src/state/auth.jsx';
 import { useGame } from '../../src/state/game.jsx';
-import {
-  Text,
-  ErrorNotice,
-  EmptyState,
-  SearchField,
-  Sheet,
-  Chip,
-} from '../../src/components/ui.jsx';
+import { Text, ErrorNotice, EmptyState, SearchField, Chip } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import TopicCard from '../../src/components/TopicCard.jsx';
-import { LeagueBadge } from '../../src/components/League.jsx';
-import Icon from '../../src/components/Icon.jsx';
+import TopicPlaySheet from '../../src/components/TopicPlaySheet.jsx';
 import { colors, layout, space } from '../../src/theme/index.js';
-import { MATCH_MODE, RANKED_START } from '../../src/shared/constants.js';
+import { RANKED_START } from '../../src/shared/constants.js';
 
 /**
  * Play — the topic library.
@@ -38,24 +30,23 @@ import { MATCH_MODE, RANKED_START } from '../../src/shared/constants.js';
  * of the same list (field, category chips, results) and has been folded in
  * here; there is now one topic list, one search, one set of filters.
  *
- * ── The stake is a pill, not two cards ───────────────────────────────────────
+ * ── Tapping a topic opens a card, not a page ─────────────────────────────────
  *
- * Ranked-or-quick is the most consequential choice on the screen, and it used
- * to be two 64pt explanatory cards. That was right on a sheet whose only job
- * was to ask. On a browsing screen those cards plus a title plus a search field
- * plus a filter row would have pinned two hundred points of chrome above the
- * first cover. It is a compact pill on the title row instead, and pressing it
- * opens the two cards in a sheet with all their reasoning intact.
+ * It used to push the whole topic screen — cover, mastery, leaderboard, match
+ * history — at someone who almost always wanted to start a match. A sheet with
+ * the topic's face on it and the two ways to play answers that in one tap, and
+ * carries a link to the full page for the times the answer really was "show me
+ * the board". See `TopicPlaySheet`.
  *
- * The choice persists in game state, so it is armed for every topic you open
- * until you change it — and the topic screen's button names it at the moment
- * the match is actually joined.
+ * ── The stake moved into the card, and the pill went with it ─────────────────
  *
- * ── Tapping a topic opens the topic ──────────────────────────────────────────
- *
- * Not "starts a match". One rule for every topic tile in the app, no exceptions
- * to remember. It also removes a real hazard: with a mode armed at the top of a
- * scrolling grid, tile-taps-queue means one stray thumb costs you rating.
+ * Ranked-or-quick was a pill on this header that armed a mode and remembered
+ * it, and the note that used to sit here flagged the hazard itself: with a mode
+ * armed at the top of a scrolling grid, one stray thumb costs you rating. The
+ * question is asked at the moment of commitment now, on the card, where the two
+ * options can each say what they are worth. Keeping the pill as well would have
+ * left two controls for one decision and a header that no longer governed
+ * anything below it.
  */
 export default function PlayLibrary() {
   const router = useRouter();
@@ -93,10 +84,9 @@ export default function PlayLibrary() {
   const [topics, setTopics] = useState(null);
   const [error, setError] = useState(null);
   const [category, setCategory] = useState(null);
-  const [stakeOpen, setStakeOpen] = useState(false);
+  /** The topic whose card is open. `null` is the grid, undisturbed. */
+  const [chosen, setChosen] = useState(null);
 
-  const mode = game.preferredMode;
-  const ranked = mode === MATCH_MODE.RANKED;
   const rankedRating = user?.rankedRating ?? RANKED_START;
 
   useEffect(() => {
@@ -137,24 +127,55 @@ export default function PlayLibrary() {
     if (category && topics && !categories.includes(category)) setCategory(null);
   }, [category, categories, topics]);
 
-  const choose = useCallback(
-    (next) => {
-      game.selectMode(next);
-      setStakeOpen(false);
+  /**
+   * Start the match, at the stake that was just pressed.
+   *
+   * `selectMode` is called on the way out so the rest of the app — Home's
+   * one-tap Play, the topic page's button — follows the last stake actually
+   * taken rather than a filter flipped once and forgotten.
+   */
+  const selectMode = game.selectMode;
+  const play = useCallback(
+    (mode) => {
+      const topic = chosen;
+      if (!topic) return;
+      setChosen(null);
+      selectMode(mode);
+      router.push({
+        pathname: '/match/searching',
+        params: {
+          topicId: topic.id,
+          spaceId: topic.spaceId ?? activeSpaceId,
+          coverUrl: topic.coverUrl ?? '',
+          name: topic.name,
+          mode,
+        },
+      });
     },
-    [game],
+    [chosen, selectMode, router, activeSpaceId],
   );
 
+  const openDetails = useCallback(() => {
+    const topic = chosen;
+    if (!topic) return;
+    setChosen(null);
+    router.push(`/topic/${topic.id}`);
+  }, [chosen, router]);
+
+  /**
+   * A stable identity, so the sixty cards below are not rebuilt every time the
+   * sheet opens or closes. The card it opens comes from the row itself.
+   */
   const renderTopic = useCallback(
     ({ item }) => (
       <TopicCard
         variant="grid"
         topic={item}
         style={{ flexBasis: CELL, flexGrow: 0, width: CELL, height: CELL_H, aspectRatio: undefined }}
-        onPress={() => router.push(`/topic/${item.id}`)}
+        onPress={() => setChosen(item)}
       />
     ),
-    [router, CELL, CELL_H],
+    [CELL, CELL_H],
   );
 
   const getItemLayout = useCallback(
@@ -164,34 +185,14 @@ export default function PlayLibrary() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      {/* Title and stake share a row. The stake belongs up here because it is
-          true of every card below it, not of any one of them. */}
+      {/* The title has the row to itself now that the stake is asked on the
+          card, so the caption is free to be the longer, clearer sentence that
+          used to end in an ellipsis on every phone. */}
       <View style={styles.head}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text variant="display">Play</Text>
-          {/* Short enough to survive the stake pill on a 360dp screen — the
-              longer version ended in an ellipsis on every phone. */}
-          <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
-            Pick a topic to battle on.
-          </Text>
-        </View>
-
-        <Pressable
-          onPress={() => setStakeOpen(true)}
-          accessibilityRole="button"
-          accessibilityLabel={`Playing ${ranked ? 'ranked' : 'quick play'}. Tap to change.`}
-          style={({ pressed }) => [
-            styles.stake,
-            ranked ? styles.stakeRanked : null,
-            pressed && { opacity: 0.7 },
-          ]}
-        >
-          <Icon name={ranked ? 'trophy' : 'bolt'} size={13} color={ranked ? colors.accent : colors.inkMuted} />
-          <Text variant="tiny" color={ranked ? colors.accent : colors.inkMuted}>
-            {ranked ? 'Ranked' : 'Quick'}
-          </Text>
-          <Icon name="chevronDown" size={11} color={ranked ? colors.accent : colors.inkFaint} />
-        </Pressable>
+        <Text variant="display">Play</Text>
+        <Text variant="meta" color={colors.inkFaint}>
+          Pick a topic, then choose what the match is worth.
+        </Text>
       </View>
 
       {/* Pinned, both of them: a filter you have to scroll back up to reach is
@@ -279,94 +280,24 @@ export default function PlayLibrary() {
         />
       )}
 
-      {/* The two modes, with the reasoning the pill has no room for.
+      {/* The card behind every tile: what the topic is, and the two ways in.
           leagues-and-progression.md §1 — ranked first, because it is the half
           with consequences. */}
-      <Sheet
-        visible={stakeOpen}
-        title="What is this match worth?"
-        onClose={() => setStakeOpen(false)}
-        accessibilityLabel="Choose ranked or quick play"
-      >
-        <View style={styles.modes} accessibilityRole="radiogroup">
-          <ModeCard
-            title="Ranked"
-            body="Your rating and league move."
-            selected={ranked}
-            onPress={() => choose(MATCH_MODE.RANKED)}
-            trailing={<LeagueBadge rating={rankedRating} size="sm" />}
-          />
-          <ModeCard
-            title="Quick play"
-            body="Just for fun. XP only, nothing at stake."
-            selected={!ranked}
-            onPress={() => choose(MATCH_MODE.QUICK)}
-          />
-        </View>
-      </Sheet>
+      <TopicPlaySheet
+        visible={chosen !== null}
+        topic={chosen}
+        rankedRating={rankedRating}
+        onPlay={play}
+        onDetails={openDetails}
+        onClose={() => setChosen(null)}
+      />
     </SafeAreaView>
-  );
-}
-
-/**
- * One of the two modes, as a card rather than a segment: a segmented control
- * makes the most consequential choice on the screen look like a filter.
- * Selected takes the accent border and the tick; unselected stays quiet.
- */
-function ModeCard({ title, body, trailing, selected, onPress }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="radio"
-      accessibilityState={{ selected }}
-      accessibilityLabel={`${title}. ${body}`}
-      style={({ pressed }) => [
-        styles.mode,
-        selected ? styles.modeOn : null,
-        pressed ? { opacity: 0.86 } : null,
-      ]}
-    >
-      <View style={{ flex: 1, gap: 3 }}>
-        <View style={styles.modeTitleRow}>
-          <Text variant="label" color={selected ? colors.ink : colors.inkMuted}>
-            {title}
-          </Text>
-          {trailing}
-        </View>
-        <Text variant="meta" color={colors.inkFaint}>
-          {body}
-        </Text>
-      </View>
-
-      <View style={[styles.tick, selected ? styles.tickOn : null]}>
-        {selected ? <Icon name="check" size={13} color={colors.onAccent} /> : null}
-      </View>
-    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  head: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
-    paddingHorizontal: layout.gutter,
-    paddingTop: space.md,
-  },
-  /** Small, but the whole pill is the target and it clears 44pt with hitSlop. */
-  stake: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    minHeight: 34,
-    paddingHorizontal: space.md,
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    backgroundColor: colors.sunken,
-  },
-  stakeRanked: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  head: { gap: 2, paddingHorizontal: layout.gutter, paddingTop: space.md },
 
   search: { marginHorizontal: layout.gutter, marginTop: space.md, marginBottom: space.sm },
   filterRow: { flexGrow: 0 },
@@ -384,31 +315,4 @@ const styles = StyleSheet.create({
    * height now, and stretching them to the row would undo it.
    */
   rowWrap: { gap: layout.cardGap, marginBottom: layout.cardGap, alignItems: 'flex-start' },
-
-  modes: { gap: space.sm, paddingTop: space.sm },
-  mode: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
-    // Comfortably past the 44pt minimum — two lines of type sit inside it.
-    minHeight: 64,
-    paddingHorizontal: layout.cardPadding,
-    paddingVertical: space.md,
-    borderRadius: layout.radiusInput,
-    borderWidth: 1.5,
-    borderColor: colors.hairline,
-    backgroundColor: colors.sunken,
-  },
-  modeOn: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
-  modeTitleRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' },
-  tick: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.5,
-    borderColor: colors.hairline,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tickOn: { backgroundColor: colors.accent, borderColor: colors.accent },
 });

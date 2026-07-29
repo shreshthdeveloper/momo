@@ -75,6 +75,16 @@ export const ERROR_CODE = {
    * it as an ordinary end of the search, not a failure to recover from.
    */
   NO_OPPONENT_FOUND: 'NO_OPPONENT_FOUND',
+  /**
+   * The queue found the opponent and building the match then failed.
+   *
+   * Deliberately NOT `NO_OPPONENT_FOUND`: that one is the queue working
+   * correctly and having nobody to give, and the client rightly treats it as
+   * an ordinary end of the search. This is a fault, the search was not at
+   * fault, and trying again immediately is usually the right move — which is
+   * only true of one of the two.
+   */
+  MATCH_START_FAILED: 'MATCH_START_FAILED',
 
   // Contests (protocol v2). Each one names a different thing the student can
   // do about it, which is why they are distinct codes and not one CONTEST_ERROR.

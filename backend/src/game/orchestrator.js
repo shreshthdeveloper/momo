@@ -81,6 +81,19 @@ export class GameOrchestrator {
           ERROR_CODE.NO_OPPONENT_FOUND,
           'Nobody else is playing this topic right now. Try again in a moment.',
         ),
+      /**
+       * Pairing succeeded and building the match did not. The entries are
+       * already out of the pool by the time this runs, so without it the
+       * players are told nothing at all and sit on a searching screen that
+       * nothing will ever end — the queue's own metrics counted them as
+       * paired, which is why this never showed up as a failure anywhere.
+       */
+      onFailure: (entries) =>
+        this.failPair(
+          entries,
+          ERROR_CODE.MATCH_START_FAILED,
+          'That match could not be started. Try again.',
+        ),
       ghostAfterMs: timing.ghostAfterMs ?? env.GHOST_AFTER_MS,
       humanOnlySweepAfterMs: timing.humanOnlySweepAfterMs,
       tickMs: timing.matchmakerTickMs,

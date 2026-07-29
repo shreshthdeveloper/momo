@@ -42,8 +42,34 @@ function asMode(mode) {
   return KNOWN_MODES.has(mode) ? mode : MATCH_MODE.RANKED;
 }
 
+/**
+ * How long to wait for `match:end` after forfeiting before giving up and going
+ * home. The server replies in milliseconds; this only catches a socket that
+ * died between the emit and the reply.
+ */
+const LEAVE_RESULT_TIMEOUT_MS = 6_000;
+
+/**
+ * Last-resort watchdogs on the search.
+ *
+ * The server owns the real deadlines — a ghost at 8s and a sweep at 30s
+ * (constants.js) — so in a healthy system neither of these ever fires. They
+ * exist because when the reply that ends the search goes missing, for any
+ * reason at all, the failure mode is the worst one available: a screen that
+ * looks busy for ever and reports nothing. A watchdog turns that into an error
+ * with a retry, which is recoverable and, unlike an endless spinner, gets
+ * reported.
+ *
+ * The challenge window is far longer on purpose. A challenge refuses ghosts and
+ * the server lets it wait five minutes for the other person, so anything
+ * shorter here would cut off a wait that is working exactly as designed.
+ */
+const SEARCH_WATCHDOG_MS = 35_000;
+const CHALLENGE_SEARCH_WATCHDOG_MS = 330_000;
+
 const INITIAL = {
-  status: 'idle', // idle | searching | found | countdown | playing | resolved | finished
+  // idle | searching | found | countdown | playing | resolved | leaving | finished
+  status: 'idle',
   matchId: null,
   topic: null,
   opponent: null,
@@ -63,6 +89,14 @@ const INITIAL = {
   result: null,
   error: null,
   opponentConnected: true,
+  /**
+   * Set when THIS player quit, from the moment `match:leave` is sent until the
+   * result lands. The result screen reads it to say who walked: the server's
+   * `forfeitedBy` names the quitter, but a ghost match or a dropped payload can
+   * leave it unset, and a player who just pressed "Leave and forfeit" should
+   * never be told they simply lost.
+   */
+  forfeitedByYou: false,
   /** Set for the duration of a contest entry (prd.md F7.5). */
   contestId: null,
   /**
@@ -99,7 +133,38 @@ export function GameProvider({ children }) {
    * read it without taking a new identity on every change.
    */
   const preferredModeRef = useRef(INITIAL.preferredMode);
+  /** Guards the wait for `match:end` after a forfeit — see `forfeit` below. */
+  const leaveTimerRef = useRef(null);
+  /**
+   * What was last queued for, and whether the connection dropped while it was
+   * still outstanding.
+   *
+   * The server removes a waiting player from the pool the moment their last
+   * socket goes (`handleDisconnect` → `matchmaker.leave`), and a live MATCH is
+   * restored on reconnect but a queue POSITION is not — nothing re-queues, and
+   * nothing tells the app it is no longer waiting for anything. On a mobile
+   * network that is a routine event, and its symptom is the searching screen
+   * spinning for ever: the band caption widens on a client-side timer, so it
+   * goes on looking busy long after the server has forgotten the player.
+   *
+   * `queueLostRef` is what keeps the repair honest. Re-joining on every
+   * `connect` would double-join on the FIRST one, because `joinQueue` emits
+   * through a socket that has not finished connecting yet — so the re-join
+   * only fires when a disconnect was actually seen while searching.
+   */
+  const queueRequestRef = useRef(null);
+  const queueLostRef = useRef(false);
+  /** The search watchdog — see SEARCH_WATCHDOG_MS. */
+  const searchTimerRef = useRef(null);
   const patch = useCallback((next) => setState((s) => ({ ...s, ...next })), []);
+
+  useEffect(
+    () => () => {
+      clearTimeout(leaveTimerRef.current);
+      clearTimeout(searchTimerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     stateRef.current = state;
@@ -132,8 +197,27 @@ export function GameProvider({ children }) {
       timeout: 8000,
     });
 
-    socket.on('connect', () => setConnected(true));
-    socket.on('disconnect', () => setConnected(false));
+    socket.on('connect', () => {
+      setConnected(true);
+      // The queue was dropped server-side while this socket was away. Ask for
+      // the place back rather than sitting on a screen that is waiting for an
+      // event nobody is going to send.
+      if (queueLostRef.current && stateRef.current.status === 'searching') {
+        queueLostRef.current = false;
+        const again = queueRequestRef.current;
+        if (again) {
+          socket.emit(C2S.QUEUE_JOIN, again, (ack) => {
+            if (ack && ack.ok === false) {
+              patch({ status: 'idle', error: { code: ack.code, message: ack.message } });
+            }
+          });
+        }
+      }
+    });
+    socket.on('disconnect', () => {
+      setConnected(false);
+      if (stateRef.current.status === 'searching') queueLostRef.current = true;
+    });
 
     socket.on('connect_error', (err) => {
       setConnected(false);
@@ -155,6 +239,11 @@ export function GameProvider({ children }) {
     );
 
     socket.on(S2C.MATCH_FOUND, (payload) => {
+      // The search is over, so there is no place left to ask back for and
+      // nothing for the watchdog to catch.
+      clearTimeout(searchTimerRef.current);
+      queueRequestRef.current = null;
+      queueLostRef.current = false;
       // A heavy haptic and the bed fading in ARE the announcement — the
       // fanfare stinger on top of both was one voice too many.
       heavy();
@@ -164,6 +253,15 @@ export function GameProvider({ children }) {
       patch({
         status: 'found',
         matchId: payload.matchId,
+        /**
+         * Cleared here, not on the way out of the last match. A rematch and a
+         * contest entry both `patch` their way into `searching` without going
+         * through idle, so a flag set by quitting one match survived into the
+         * next — and if the OPPONENT then quit that one, the result screen read
+         * the stale flag and told the wrong player they had left. A new match
+         * in hand is the one moment every path passes through.
+         */
+        forfeitedByYou: false,
         topic: payload.topic,
         you: payload.you,
         opponent: payload.opponent,
@@ -233,6 +331,8 @@ export function GameProvider({ children }) {
     });
 
     socket.on(S2C.MATCH_END, (payload) => {
+      // The result arrived, so the forfeit escape hatch is no longer needed.
+      clearTimeout(leaveTimerRef.current);
       // The bed fades first so the verdict stinger lands on near-silence.
       music.stop();
       if (payload.verdict === 'won') sfx.win();
@@ -271,6 +371,11 @@ export function GameProvider({ children }) {
     });
 
     socket.on(S2C.ERROR, (payload) => {
+      // The server has spoken, so neither the watchdog nor the re-join should
+      // fire on top of it.
+      clearTimeout(searchTimerRef.current);
+      queueRequestRef.current = null;
+      queueLostRef.current = false;
       music.stop();
       patch({ error: payload, status: 'idle' });
     });
@@ -366,21 +471,44 @@ export function GameProvider({ children }) {
         mode: chosen,
         preferredMode: preferredModeRef.current,
       });
-      socket.emit(
-        C2S.QUEUE_JOIN,
-        challengeId ? { challengeId } : { topicId, spaceId, mode: chosen },
-        (ack) => {
-          if (ack && ack.ok === false) {
-            patch({ status: 'idle', error: { code: ack.code, message: ack.message } });
-          }
+      // Remembered so a reconnect can ask for the place back — see the refs.
+      const request = challengeId ? { challengeId } : { topicId, spaceId, mode: chosen };
+      queueRequestRef.current = request;
+      queueLostRef.current = false;
+
+      clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = setTimeout(
+        () => {
+          if (stateRef.current.status !== 'searching') return;
+          queueRequestRef.current = null;
+          socketRef.current?.emit(C2S.QUEUE_LEAVE, {});
+          setState({
+            ...idleState(preferredModeRef.current),
+            error: {
+              code: ERROR_CODE.NO_OPPONENT_FOUND,
+              message: 'That search stopped responding. Try again.',
+            },
+          });
         },
+        challengeId ? CHALLENGE_SEARCH_WATCHDOG_MS : SEARCH_WATCHDOG_MS,
       );
+
+      socket.emit(C2S.QUEUE_JOIN, request, (ack) => {
+        if (ack && ack.ok === false) {
+          clearTimeout(searchTimerRef.current);
+          queueRequestRef.current = null;
+          patch({ status: 'idle', error: { code: ack.code, message: ack.message } });
+        }
+      });
     },
     [connect, patch],
   );
 
   const leaveQueue = useCallback(() => {
     socketRef.current?.emit(C2S.QUEUE_LEAVE, {});
+    clearTimeout(searchTimerRef.current);
+    queueRequestRef.current = null;
+    queueLostRef.current = false;
     music.stop();
     setState(idleState(preferredModeRef.current));
   }, []);
@@ -445,13 +573,34 @@ export function GameProvider({ children }) {
     [patch],
   );
 
-  /** prd.md — "Leave now and you forfeit." The copy says so before this runs. */
+  /**
+   * prd.md — "Leave now and you forfeit." The copy says so before this runs.
+   *
+   * The match is NOT torn down here. It used to be: this reset straight to idle
+   * and the screen sent the player home, so the one person in the match who had
+   * been told their rating would drop was the only one who never saw it happen
+   * — the `match:end` the server sends them landed on a state that had already
+   * forgotten there was a match. Now the quit is announced and the same result
+   * screen the winner gets is shown, with the rating change on it.
+   *
+   * The timer is the escape hatch. `match:end` normally arrives in well under a
+   * second, but a socket that dies between the emit and the reply would
+   * otherwise strand the player on a board they can no longer play.
+   */
   const forfeit = useCallback(() => {
     const s = stateRef.current;
-    if (s.matchId) socketRef.current?.emit(C2S.MATCH_LEAVE, { matchId: s.matchId });
+    if (!s.matchId) {
+      setState(idleState(preferredModeRef.current));
+      return;
+    }
+    socketRef.current?.emit(C2S.MATCH_LEAVE, { matchId: s.matchId });
     music.stop();
-    setState(idleState(preferredModeRef.current));
-  }, []);
+    patch({ status: 'leaving', forfeitedByYou: true });
+    clearTimeout(leaveTimerRef.current);
+    leaveTimerRef.current = setTimeout(() => {
+      if (stateRef.current.status === 'leaving') setState(idleState(preferredModeRef.current));
+    }, LEAVE_RESULT_TIMEOUT_MS);
+  }, [patch]);
 
   /** The mode of a rematch is the server's to decide; `match:found` says so. */
   const rematch = useCallback(() => {

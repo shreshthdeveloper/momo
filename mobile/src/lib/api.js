@@ -15,20 +15,41 @@ const KEY_ACCESS = 'mimo.accessToken';
 const KEY_REFRESH = 'mimo.refreshToken';
 
 /**
- * A physical Android device cannot reach the host's `localhost`. Expo exposes
- * the packager's host, which is the same machine running the API in
- * development, so we derive the API origin from it.
+ * Where the API lives.
+ *
+ * Release builds talk to the deployed server (`extra.apiUrl`). Development
+ * builds talk to whichever machine is running the packager: a physical Android
+ * device cannot reach the host's `localhost`, and Expo exposes the packager's
+ * host, which is the same machine running the API.
+ *
+ * The split is on `__DEV__` rather than on the configured string, because the
+ * moment the production URL is the only one configured, a "does it contain
+ * localhost" test sends `npm start` straight at production.
  */
 function resolveBaseUrl() {
-  const configured = Constants.expoConfig?.extra?.apiUrl;
+  // An explicit override wins, so a build can be aimed at staging or at a
+  // colleague's machine without editing app.json.
+  const override = process.env.EXPO_PUBLIC_API_URL;
+  if (override) return trimSlash(override);
+
+  const extra = Constants.expoConfig?.extra ?? {};
+
+  if (!__DEV__) return trimSlash(extra.apiUrl ?? 'https://wms.distrx.io');
+
+  const configured = extra.apiUrlDev;
   const hostUri = Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.debuggerHost;
 
   if (hostUri && configured?.includes('localhost')) {
     const host = hostUri.split(':')[0];
     return `http://${host}:4000`;
   }
-  if (configured) return configured;
+  if (configured) return trimSlash(configured);
   return Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000';
+}
+
+/** `https://host/` + `/api/v1` would otherwise request `//api/v1`. */
+function trimSlash(url) {
+  return url.replace(/\/+$/, '');
 }
 
 export const BASE_URL = resolveBaseUrl();

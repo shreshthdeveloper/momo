@@ -21,6 +21,15 @@ const notificationPrefsSchema = new Schema(
   {
     friendChallenge: { type: Boolean, default: true },
     friendAccepted: { type: Boolean, default: true },
+    /**
+     * Its own toggle rather than sharing `friendChallenge`. A challenge is an
+     * invitation with a two-minute clock on it — missing one costs something —
+     * and a reaction is somebody saying "GG". Anybody who wants the first and
+     * not the second needs a switch that separates them, and lumping the
+     * chattier of the two under the more urgent one is how people end up
+     * silencing both.
+     */
+    friendReaction: { type: Boolean, default: true },
     rankPassed: { type: Boolean, default: true },
     streakAtRisk: { type: Boolean, default: true },
     contestNew: { type: Boolean, default: true },

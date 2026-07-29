@@ -337,6 +337,31 @@ export const CONTEST_STARTING_SOON_MS = 15 * 60 * 1000;
 // ── Assignments (prd.md F8.5.5, F7.4) ──────────────────────────────────────
 export const ASSIGNMENT_MAX_MATCHES = 50;
 
+// ── Friend challenges (prd.md §6.3) ────────────────────────────────────────
+/**
+ * A challenge is a live invitation, not a letter.
+ *
+ * It used to sit unanswered for 24 hours, which read as generous and was
+ * actually the opposite: pairing puts the two of them in a private pool that
+ * refuses ghosts, so a challenge only ever becomes a match if BOTH are in the
+ * app at the same moment. A 24-hour window cannot deliver that — it just meant
+ * the Friends screen filled with invitations that had no chance of resolving,
+ * and every one of them had to be scrolled past.
+ *
+ * Two minutes says what the feature actually is: I am here now, are you? An
+ * invitation that lapses is a far smaller cost than a list of dead ones, and
+ * re-sending is one tap.
+ */
+export const CHALLENGE_ACCEPT_WINDOW_MS = 2 * 60 * 1000;
+/**
+ * And once accepted, the same again to actually get into the match — the
+ * accepting player still has to reach the queue, and the challenger still has
+ * to be there when they do.
+ */
+export const CHALLENGE_PLAY_WINDOW_MS = 2 * 60 * 1000;
+/** One place for the wording, so the copy cannot drift from the number. */
+export const CHALLENGE_ACCEPT_WINDOW_LABEL = '2 minutes';
+
 // ── Access ─────────────────────────────────────────────────────────────────
 export const INTERESTS_MIN = 3;
 export const INTERESTS_MAX = 8;
@@ -462,3 +487,48 @@ export const SPACE_ACCENTS = [
   '#5CD1D6', // teal
   '#C9A227', // brass
 ];
+
+/**
+ * ── Reactions, which is as close to chat as this app gets ──────────────────
+ *
+ * prd.md §2, §6.8 and §14 all exclude in-app chat from v1, and the reasoning in
+ * §6.8 is the part worth keeping: a message thread built at low user counts is
+ * a visibly empty room, and an empty room makes a product feel abandoned rather
+ * than new. Free text between students inside an organization also means owning
+ * a moderation queue, a block list that actually works, and a report path for
+ * every message — three features, none of which is the game.
+ *
+ * A fixed set of sends gets most of what people actually want out of chat here
+ * (acknowledge the match, ask for another) and none of the cost. There is no
+ * keyboard, so there is nothing to moderate; the payload is a KEY, and the
+ * words are written here rather than by the sender.
+ *
+ * The `message` completes a sentence beginning with the sender's display name —
+ * "Priya wants a rematch" — so the notification reads as one line rather than a
+ * name stapled to a quote.
+ *
+ * `icon` names a glyph in the app's own icon set, deliberately NOT an emoji.
+ * Emoji render differently on every Android OEM and several of the obvious
+ * choices here are skin-toned or gendered by default; a drawn glyph is the same
+ * mark for everybody and is already the rest of the app's language.
+ */
+export const FRIEND_REACTIONS = [
+  { key: 'gg', label: 'GG', icon: 'medal', message: 'says GG' },
+  { key: 'nice', label: 'Nice one', icon: 'sparkle', message: 'says nice one' },
+  { key: 'fire', label: 'On fire', icon: 'flame', message: 'says you are on fire' },
+  { key: 'rematch', label: 'Rematch?', icon: 'bolt', message: 'wants a rematch' },
+  { key: 'next_time', label: 'Next time', icon: 'target', message: 'will get you next time' },
+  { key: 'come_play', label: 'Come play', icon: 'play', message: 'wants to play a round' },
+];
+
+export const FRIEND_REACTION_KEYS = FRIEND_REACTIONS.map((r) => r.key);
+
+/**
+ * One reaction per friend per minute.
+ *
+ * The whole feature is a tap, which is exactly what makes it spammable: without
+ * a floor, "send" held down is a notification firehose aimed at one person.
+ * A minute is long enough that nobody can be buried and short enough that the
+ * back-and-forth people actually want still works.
+ */
+export const FRIEND_REACTION_COOLDOWN_MS = 60 * 1000;

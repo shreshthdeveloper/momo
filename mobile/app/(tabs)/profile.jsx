@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Share, StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { api } from '../../src/lib/api.js';
@@ -69,7 +69,7 @@ const FORM_MARK = {
  */
 export default function Profile() {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, signOut, refreshProfile } = useAuth();
   const adminSpace = useAdminSpace();
   const isSuperadmin = useIsSuperadmin();
   const [stats, setStats] = useState(null);
@@ -102,9 +102,25 @@ export default function Profile() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  /**
+   * On focus, not on mount.
+   *
+   * Stats and recent matches are exactly the things a match just changed, and
+   * this tab is where a player goes to look at them straight afterwards. As a
+   * mount-only fetch it showed the record from whenever the tab was first
+   * opened — a win added nothing until the list was dragged down by hand.
+   * `refreshProfile()` goes with it: the header reads coins, level and rating
+   * off the cached auth user, which a match changes on the server and nothing
+   * was invalidating on the client. Its failure is swallowed because a stale
+   * header is a far better outcome than an error state over a screen whose
+   * own data loaded fine.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      load();
+      refreshProfile?.().catch(() => {});
+    }, [load, refreshProfile]),
+  );
 
   /**
    * Share the profile.
