@@ -2,9 +2,9 @@ import { Topic, Match, User, Replay, Question, Space, Challenge } from '../model
 import { rebuildPeriodSnapshot } from '../services/leaderboardService.js';
 import { runMonthlyCycleIfDue } from '../services/seasonService.js';
 import { notify } from '../services/notificationService.js';
-import { runContestLifecycle } from '../services/contestService.js';
+import { runContestLifecycle, rollDailyChallenges } from '../services/contestService.js';
 import { remindDueAssignments } from '../services/assignmentService.js';
-import { istDateKey, istYesterdayKey } from '../lib/dates.js';
+import { istDateKey, istYesterdayKey, istDaysBetween } from '../lib/dates.js';
 import { logger } from '../lib/logger.js';
 import { QUESTION_STATUS } from '../shared/constants.js';
 
@@ -104,6 +104,17 @@ export function startJobs() {
    * immediately rather than at the next tick.
    */
   every(MINUTE, 'contest-lifecycle', () => runContestLifecycle(), { runAtStart: true });
+
+  /**
+   * The daily challenge, generated hourly rather than once at midnight.
+   *
+   * Hourly because the trigger is "does today's paper exist", which stays true
+   * until the work is done — so a deploy over midnight, a restart, or an
+   * organization that switched the feature on at 11am all get today's paper rather
+   * than waiting for tomorrow. Creating it is idempotent by unique index, so the
+   * twenty-three redundant runs cost one indexed query each.
+   */
+  every(HOUR, 'daily-challenge', () => rollDailyChallenges(), { runAtStart: true });
 
   // Daily 09:00 IST — "assignment due tomorrow" (prd.md §6.9).
   dailyAt(9, 0, 'assignment-reminders', () => remindDueAssignments());
@@ -317,11 +328,65 @@ export async function expireChallenges() {
 export async function evaluateStreaks() {
   const yesterday = istYesterdayKey();
   const today = istDateKey();
+
+  /**
+   * Freezes are spent before anything is broken.
+   *
+   * A freeze covers one missed day, so a gap of N days needs N of them — miss a
+   * fortnight and two freezes cannot save you, which is the point. They are spent
+   * by moving `lastPlayedOn` forward to yesterday, not by setting a flag: that
+   * leaves `advanceStreak` and the break query below reading exactly the same
+   * fields they always have, and means a frozen day cannot accidentally
+   * *increment* the streak — it only stops it falling.
+   *
+   * Bounded rather than unbounded: this is a nightly sweep, and every candidate
+   * here is someone who owns a freeze and missed a day, which is a small set.
+   */
+  const thawable = await User.find(
+    {
+      'streak.current': { $gt: 0 },
+      'streak.freezes': { $gt: 0 },
+      'streak.lastPlayedOn': { $nin: [yesterday, today, null] },
+    },
+    { streak: 1, notificationPrefs: 1 },
+  )
+    .limit(20_000)
+    .lean();
+
+  let frozen = 0;
+  for (const user of thawable) {
+    const gap = istDaysBetween(user.streak.lastPlayedOn, today);
+    // `gap` counts days to today; the days actually MISSED excludes today, which
+    // is not over yet and which the player may still play.
+    const missed = gap === null ? null : gap - 1;
+    if (missed === null || missed < 1) continue;
+    if (missed > (user.streak.freezes ?? 0)) continue; // Cannot be saved; falls to the break below.
+
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $inc: { 'streak.freezes': -missed },
+        $set: { 'streak.lastPlayedOn': yesterday, 'streak.frozenOn': yesterday },
+      },
+    );
+    frozen += 1;
+
+    await notify(user._id, {
+      type: 'streak_at_risk',
+      prefKey: 'streakAtRisk',
+      title: `${user.streak.current}-day streak saved`,
+      body:
+        missed === 1
+          ? 'A streak freeze covered yesterday. Play today to keep it going.'
+          : `${missed} streak freezes covered the days you missed. Play today to keep it going.`,
+    }).catch(() => {});
+  }
+
   const result = await User.updateMany(
     { 'streak.current': { $gt: 0 }, 'streak.lastPlayedOn': { $nin: [yesterday, today, null] } },
     { $set: { 'streak.current': 0 } },
   );
-  return { broken: result.modifiedCount };
+  return { broken: result.modifiedCount, frozen };
 }
 
 /** tech.md §10 — daily 20:00 IST. Notify players at risk of losing a streak. */

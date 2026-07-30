@@ -80,21 +80,35 @@ export const TopicProgressRow = memo(function TopicProgressRow({ topic, onPress 
 export const MatchHistoryRow = memo(function MatchHistoryRow({ match: m, onPress }) {
   const won = m.verdict === 'won';
   const lost = m.verdict === 'lost';
-  const fill = won ? colors.correctSoft : lost ? colors.wrongSoft : colors.sunken;
-  const ink = won ? colors.correct : lost ? colors.wrong : colors.inkMuted;
+  /**
+   * A drill, which is a row with no other side to it.
+   *
+   * Left to the general case this row claimed three things that were not true:
+   * "Draw" (nobody drew), "vs opponent" (there was none) and a score of "5–0"
+   * against them. The server reports the verdict as `solo` and sends no
+   * opponent; either would do, and reading both means a row cannot end up
+   * half-converted.
+   */
+  const solo = m.verdict === 'solo' || !m.opponent;
+  const fill = solo ? colors.sunken : won ? colors.correctSoft : lost ? colors.wrongSoft : colors.sunken;
+  const ink = solo ? colors.inkMuted : won ? colors.correct : lost ? colors.wrong : colors.inkMuted;
 
   return (
     <Pressable
       onPress={() => onPress(m.id)}
       accessibilityRole="button"
-      accessibilityLabel={`${won ? 'Won' : lost ? 'Lost' : 'Drew'} ${m.topic?.name ?? ''} against ${
-        m.opponent?.displayName ?? 'an opponent'
-      }, ${m.you?.score} to ${m.opponent?.score}`}
+      accessibilityLabel={
+        solo
+          ? `Practised ${m.topic?.name ?? ''} on your own, scored ${m.you?.score}`
+          : `${won ? 'Won' : lost ? 'Lost' : 'Drew'} ${m.topic?.name ?? ''} against ${
+              m.opponent?.displayName ?? 'an opponent'
+            }, ${m.you?.score} to ${m.opponent?.score}`
+      }
       style={({ pressed }) => [styles.match, pressed && styles.pressed]}
     >
       <View style={[styles.verdict, { backgroundColor: fill }]}>
         <Text variant="tiny" color={ink}>
-          {won ? 'Won' : lost ? 'Lost' : 'Draw'}
+          {solo ? 'Solo' : won ? 'Won' : lost ? 'Lost' : 'Draw'}
         </Text>
       </View>
 
@@ -103,13 +117,15 @@ export const MatchHistoryRow = memo(function MatchHistoryRow({ match: m, onPress
           {m.topic?.name}
         </Text>
         <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
-          vs {m.opponent?.displayName ?? 'opponent'}
+          {solo ? 'Practice on your own' : `vs ${m.opponent?.displayName ?? 'opponent'}`}
         </Text>
       </View>
 
       <View style={{ alignItems: 'flex-end' }}>
+        {/* One score, not a scoreline. A dash with nothing after it reads as a
+            missing number rather than a missing opponent. */}
         <Text style={[type.label, styles.score]}>
-          {m.you?.score}–{m.opponent?.score}
+          {solo ? m.you?.score : `${m.you?.score}–${m.opponent?.score}`}
         </Text>
         {m.you?.rankedDelta ? (
           <Text variant="meta" color={m.you.rankedDelta > 0 ? colors.correct : colors.wrong}>
@@ -117,7 +133,9 @@ export const MatchHistoryRow = memo(function MatchHistoryRow({ match: m, onPress
           </Text>
         ) : m.ranked === false ? (
           <Text variant="meta" color={colors.inkFaint}>
-            Quick
+            {/* The mode, when nothing moved. "Quick" for every unranked row was
+                wrong the moment practice shipped as a second one. */}
+            {solo ? 'Practice' : m.mode === 'contest' ? 'Contest' : 'Quick'}
           </Text>
         ) : null}
       </View>

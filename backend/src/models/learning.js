@@ -86,12 +86,41 @@ const contestSchema = new Schema(
     openedNotifiedAt: { type: Date, default: null },
 
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+
+    /**
+     * What kind of contest this is — an admin's event, or the organization's
+     * automatic daily paper.
+     *
+     * A daily challenge IS a contest: same frozen paper, same one attempt, same
+     * standings, same lifecycle. Giving it its own model would have meant a second
+     * copy of all four, and two copies of "everyone answered the same questions"
+     * is how the two quietly stop being the same. All it needs is a label, so the
+     * console can present it as recurring furniture rather than as an event
+     * somebody scheduled, and so the generator can find yesterday's.
+     */
+    kind: { type: String, enum: ['standard', 'daily'], default: 'standard' },
+    /**
+     * The IST calendar day a daily belongs to, `YYYY-MM-DD`. Null on a standard
+     * contest — and it is what makes the generator idempotent, via the unique
+     * index below. A job that runs twice, or two processes that run it at once,
+     * cannot produce two papers for one day.
+     */
+    dailyOn: { type: String, default: null },
   },
   { timestamps: true },
 );
 
 contestSchema.index({ spaceId: 1, status: 1, startsAt: -1 });
 contestSchema.index({ spaceId: 1, endsAt: -1 });
+/**
+ * One daily per organization per day, enforced by the database rather than by
+ * the generator checking first and writing second — which is the same race under
+ * a longer name.
+ */
+contestSchema.index(
+  { spaceId: 1, dailyOn: 1 },
+  { unique: true, partialFilterExpression: { dailyOn: { $type: 'string' } } },
+);
 /** The lifecycle job's working set — every contest whose clock may have moved. */
 contestSchema.index({ status: 1, startsAt: 1 });
 
@@ -258,3 +287,196 @@ assignmentProgressSchema.index({ userId: 1, spaceId: 1 });
 assignmentProgressSchema.index({ assignmentId: 1, completedAt: 1 });
 
 export const AssignmentProgress = mongoose.model('AssignmentProgress', assignmentProgressSchema);
+
+// ── Knockout tournaments (a bracket between classmates) ────────────────────
+
+/**
+ * A single-elimination bracket inside one organization.
+ *
+ * Contests are one paper, one attempt, one table — excellent for measuring a
+ * class and useless as an *event*. A bracket has a story: quarter-finals on
+ * Tuesday, a semi somebody nearly lost, a final with a winner whose name goes on
+ * a screen. That is a different thing to schedule, and it is the thing that makes
+ * students talk about the app to each other.
+ *
+ * ── What this deliberately does NOT own ─────────────────────────────────────
+ *
+ * How a tie is played. Every tie is a `Challenge` row — the private two-person
+ * queue that already exists (game/matchmaker.js) and that already pairs exactly
+ * two named people, with no ghost, on a chosen topic. So a bracket is scheduling
+ * and bookkeeping on top of a match type the product already had, rather than a
+ * second way to play a match.
+ */
+const tournamentTieSchema = new Schema(
+  {
+    /** Position within the round, 0-based. Ties `2k` and `2k+1` feed tie `k` next. */
+    position: { type: Number, required: true },
+    aUserId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    bUserId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    /** The private challenge these two play. Absent on a bye. */
+    challengeId: { type: Schema.Types.ObjectId, ref: 'Challenge', default: null },
+    matchId: { type: Schema.Types.ObjectId, ref: 'Match', default: null },
+    winnerId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    /** True when the winner advanced without playing — an unpaired slot. */
+    bye: { type: Boolean, default: false },
+    decidedAt: { type: Date, default: null },
+  },
+  { _id: false },
+);
+
+const tournamentRoundSchema = new Schema(
+  {
+    index: { type: Number, required: true },
+    /** "Quarter-final", "Final" — computed at seeding from the bracket size. */
+    name: { type: String },
+    ties: { type: [tournamentTieSchema], default: [] },
+    completedAt: { type: Date, default: null },
+  },
+  { _id: false },
+);
+
+const tournamentSchema = new Schema(
+  {
+    spaceId: { type: Schema.Types.ObjectId, ref: 'Space', required: true },
+    name: { type: String, required: true, trim: true, maxlength: 80 },
+    topicId: { type: Schema.Types.ObjectId, ref: 'Topic', required: true },
+
+    /** 4, 8 or 16. The bracket is padded to this with byes. */
+    size: { type: Number, default: 8 },
+    /** Empty means the whole organization may enter. */
+    batchIds: [{ type: Schema.Types.ObjectId, ref: 'Batch' }],
+
+    status: {
+      type: String,
+      /**
+       * `open` is sign-up, `running` is play. They are separate because the
+       * bracket is seeded at the transition — once seeded, who is in it can no
+       * longer change, and a status that conflated the two would have to answer
+       * "can somebody still join" from a timestamp.
+       */
+      enum: ['open', 'running', 'complete', 'cancelled'],
+      default: 'open',
+    },
+
+    entrants: [
+      {
+        _id: false,
+        userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        displayName: { type: String },
+        avatarUrl: { type: String },
+        /** Snapshot at seeding: their topic rating, which decided the seeding. */
+        rating: { type: Number, default: null },
+        seed: { type: Number, default: null },
+      },
+    ],
+
+    rounds: { type: [tournamentRoundSchema], default: [] },
+    championId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+
+    startedAt: { type: Date, default: null },
+    completedAt: { type: Date, default: null },
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  },
+  { timestamps: true },
+);
+
+tournamentSchema.index({ spaceId: 1, status: 1, createdAt: -1 });
+/** The completion hook's lookup: which tie does this finished challenge settle? */
+tournamentSchema.index({ 'rounds.ties.challengeId': 1 });
+
+export const Tournament = mongoose.model('Tournament', tournamentSchema);
+
+// ── Live class sessions ────────────────────────────────────────────────────
+
+/**
+ * A teacher hosts, the class joins on their phones, everybody answers the same
+ * question at the same time, and the board is on the projector.
+ *
+ * ── Why this is not a Match ──────────────────────────────────────────────────
+ *
+ * `LiveMatch` is built for exactly two players and says so throughout: it
+ * destructures `const [a, b] = this.players`, it derives a verdict from one score
+ * against another, and every payload it emits has a `you` and an `opponent`. None
+ * of that survives thirty players. Bending it would put thirty-player edge cases
+ * inside the object that runs every ranked match in the product, to serve a mode
+ * that has no verdict, no rating and no opponent — so a session runs on its own
+ * engine, and the two share the scoring functions rather than the machinery.
+ *
+ * ── Why the document holds the answers ───────────────────────────────────────
+ *
+ * A session is minutes long and a classroom's wifi is not a datacentre's. The live
+ * state lives in memory for speed, and every resolved round is written here — so a
+ * server restart mid-lesson costs the current question rather than the lesson, and
+ * the teacher can still show the board afterwards.
+ */
+const sessionAnswerSchema = new Schema(
+  {
+    roundIndex: { type: Number, required: true },
+    optionIndex: { type: Number, default: null },
+    elapsedMs: { type: Number, default: null },
+    isCorrect: { type: Boolean, default: false },
+    points: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
+const sessionParticipantSchema = new Schema(
+  {
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    displayName: { type: String },
+    avatarUrl: { type: String },
+    score: { type: Number, default: 0 },
+    correctCount: { type: Number, default: 0 },
+    answers: { type: [sessionAnswerSchema], default: [] },
+    joinedAt: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
+const classSessionSchema = new Schema(
+  {
+    spaceId: { type: Schema.Types.ObjectId, ref: 'Space', required: true },
+    topicId: { type: Schema.Types.ObjectId, ref: 'Topic', required: true },
+    hostId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    name: { type: String, trim: true, maxlength: 80 },
+
+    /**
+     * What students type to get in.
+     *
+     * A code rather than a link, because the room this is designed for has the
+     * code on a projector and thirty people typing it. Unique only among LIVE
+     * sessions — see the partial index — so codes are reusable once a lesson ends
+     * and stay short enough to read from the back of a classroom.
+     */
+    code: { type: String, required: true, uppercase: true },
+
+    status: { type: String, enum: ['lobby', 'live', 'ended'], default: 'lobby' },
+
+    /** Frozen when the host starts. Everybody sits the same paper, in one order. */
+    questionIds: [{ type: Schema.Types.ObjectId, ref: 'Question' }],
+    roundDurationMs: { type: Number, default: 20000 },
+    /** -1 in the lobby; the index of the question on screen once live. */
+    currentRound: { type: Number, default: -1 },
+
+    participants: { type: [sessionParticipantSchema], default: [] },
+
+    startedAt: { type: Date, default: null },
+    endedAt: { type: Date, default: null },
+  },
+  { timestamps: true },
+);
+
+classSessionSchema.index({ spaceId: 1, status: 1, createdAt: -1 });
+classSessionSchema.index({ hostId: 1, createdAt: -1 });
+/**
+ * A code identifies exactly one joinable session at a time. Partial rather than
+ * plain-unique so an ended session keeps its code in the record without reserving
+ * it forever — a school running a session a day would otherwise exhaust the
+ * readable end of the alphabet inside a term.
+ */
+classSessionSchema.index(
+  { code: 1 },
+  { unique: true, partialFilterExpression: { status: { $in: ['lobby', 'live'] } } },
+);
+
+export const ClassSession = mongoose.model('ClassSession', classSessionSchema);

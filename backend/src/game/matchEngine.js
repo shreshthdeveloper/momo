@@ -42,8 +42,13 @@ const noopTransport = {
  *
  * `winnerId` is authoritative because it already accounts for forfeits;
  * scores are only consulted when nobody won and nobody quit.
+ *
+ * A drill has no opponent, so it has no verdict — `'solo'` is tested before
+ * `isVoid` because a drill nobody finished is still a drill, and every reward
+ * rule downstream keys off this word. See `complete()` for why that matters.
  */
 function verdictOf(summary, userId, me, them) {
+  if (!them) return 'solo';
   if (summary.isVoid) return 'void';
   if (summary.winnerId) return summary.winnerId === userId ? 'won' : 'lost';
   if (summary.isDraw) return 'draw';
@@ -435,12 +440,26 @@ export class LiveMatch {
     }
 
     const [a, b] = this.players;
+    /**
+     * A drill has one player, and one player cannot win.
+     *
+     * Without this branch the score comparison below decided it: with no `b`,
+     * `a.score > (b?.score ?? 0)` made the solo player the winner of every
+     * practice run they scored a single point in. That verdict then paid the win
+     * bonus, incremented the public win count and armed the win achievements —
+     * all off a match with nobody on the other side.
+     *
+     * `isDraw` deliberately stays false. A drill is not a draw either; it has no
+     * result of that kind at all, and anything reading `isDraw` as "the scores
+     * were level" would be just as wrong as reading a win.
+     */
+    const isSolo = this.players.length === 1;
     // tech.md §9.7 — if both dropped, nobody's rating moves.
     const bothGone = this.players.every((p) => p.forfeited);
     let winnerId = null;
     let isDraw = false;
 
-    if (bothGone) {
+    if (isSolo || bothGone) {
       isDraw = false;
     } else if (a.forfeited) {
       winnerId = b.userId;
@@ -537,6 +556,19 @@ export class LiveMatch {
 
       const payload = {
         matchId: this.id,
+        /**
+         * What was played, so the result screen can say what happened.
+         *
+         * Without it the screen has exactly one signal — whether an opponent
+         * exists — and that signal cannot tell a self-race from a real match. A
+         * self-race HAS a second player (your own recorded run), so beating your
+         * best was being announced as "YOU WIN! · Well played", which is the app
+         * congratulating you on defeating yourself and never once naming the run
+         * you actually beat. `matchService` even documents the intended copy —
+         * "the result screen says you beat your best" — and the screen had no way
+         * to know it should.
+         */
+        mode: this.mode,
         /**
          * Derived from the outcome, not from the scores. A forfeit is a win
          * for the player who stayed even when both scores are level — deriving

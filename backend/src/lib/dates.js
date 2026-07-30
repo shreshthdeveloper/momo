@@ -19,6 +19,41 @@ export function istYesterdayKey(date = new Date()) {
   return istDateKey(new Date(date.getTime() - 24 * 60 * 60 * 1000));
 }
 
+/**
+ * Whole days from one `YYYY-MM-DD` key to another — `to` minus `from`.
+ *
+ * Both keys are already IST calendar days, so this is deliberately plain UTC
+ * arithmetic on midnight: shifting them into IST a second time would be applying
+ * the offset twice, and around a month boundary that is an off-by-one in the one
+ * calculation nobody would think to check.
+ *
+ * Negative when `to` is earlier. Returns null if either key is missing or
+ * unparseable, so a caller has to decide what an absent history means rather than
+ * being handed a plausible zero.
+ */
+export function istDaysBetween(from, to) {
+  if (!from || !to) return null;
+  const a = Date.parse(`${from}T00:00:00Z`);
+  const b = Date.parse(`${to}T00:00:00Z`);
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  return Math.round((b - a) / (24 * 60 * 60 * 1000));
+}
+
+/**
+ * The two instants that bracket one IST calendar day, as real Dates.
+ *
+ * `2026-07-30` in IST begins at 18:30 UTC on the 29th and ends at 18:30 UTC on
+ * the 30th. Anything that needs a day as a *window* — a daily challenge's start
+ * and end — has to be built from that, not from the server's own midnight, or the
+ * window moves when the machine does. `end` is exclusive.
+ */
+export function istDayBoundsUtc(dayKey) {
+  const midnightUtc = Date.parse(`${dayKey}T00:00:00Z`);
+  if (Number.isNaN(midnightUtc)) return null;
+  const start = midnightUtc - IST_OFFSET_MINUTES * 60_000;
+  return { start: new Date(start), end: new Date(start + 24 * 60 * 60 * 1000) };
+}
+
 /** ISO week bucket, `2026-W30`. */
 export function isoWeekKey(date = new Date()) {
   const d = new Date(date.getTime() + IST_OFFSET_MINUTES * 60_000);

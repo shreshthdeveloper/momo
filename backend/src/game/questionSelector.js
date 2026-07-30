@@ -116,6 +116,22 @@ export async function selectQuestions(topic, players, options = {}) {
     count = ROUNDS_PER_MATCH,
     language = DEFAULT_LANGUAGE,
     excludeSeen = true,
+    /**
+     * A specific deck to deal first, in this order — the mistakes drill.
+     *
+     * These are deliberate repeats, which is why they are taken before the
+     * "recently seen" exclusion rather than through it: the whole request is
+     * "serve me the questions I got wrong", and the machinery below exists to
+     * avoid exactly that. Anything short of `count` still backfills from the
+     * ordinary path, so a deck of three yields a full match rather than a
+     * three-round one.
+     *
+     * Caller-supplied ids are NOT trusted to be legitimate. They are re-checked
+     * here against this topic, its allowed origin banks, published status and the
+     * match language — the same filter every other question on this path passes,
+     * because a list of ids is exactly the shape a tenant-boundary bug takes.
+     */
+    deckIds = null,
   } = options;
 
   const origins = allowedOriginsFor(topic);
@@ -143,13 +159,42 @@ export async function selectQuestions(topic, players, options = {}) {
     }
   };
 
+  /**
+   * The deck goes in first, before the difficulty mix gets a say.
+   *
+   * A revision drill has no business being balanced across easy/medium/hard: the
+   * questions are chosen by the player having missed them, and reshaping that set
+   * to hit a difficulty target would drop the very ones they most need. The mix
+   * still governs whatever backfill is needed to reach `count`.
+   */
+  if (deckIds?.length) {
+    const ids = deckIds.map((id) => new mongoose.Types.ObjectId(String(id)));
+    const docs = await Question.find({
+      _id: { $in: ids },
+      topicIds: topicId,
+      origin: { $in: origins },
+      status: QUESTION_STATUS.PUBLISHED,
+      [`content.${language}`]: { $exists: true },
+    }).lean();
+
+    // `$in` does not preserve the caller's order, and the order is the priority.
+    const rank = new Map(ids.map((id, i) => [String(id), i]));
+    docs.sort((a, b) => rank.get(String(a._id)) - rank.get(String(b._id)));
+    take(docs.slice(0, count));
+  }
+
   for (const [difficulty, want] of Object.entries(mix)) {
+    if (picked.length >= count) break;
     take(
       await sampleByDifficulty({
         topicId,
         origins,
         difficulty,
-        count: want,
+        // Never overshoot: with a deck already in hand the mix is a backfill, and
+        // asking for the full quota would deal a fourteen-question match's worth
+        // of candidates for `slice` to throw away — taking deck entries out of
+        // the match at random in the process.
+        count: Math.min(want, count - picked.length),
         exclude: seen,
         language,
       }),

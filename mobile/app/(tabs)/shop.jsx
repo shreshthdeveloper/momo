@@ -17,6 +17,7 @@ import Icon from '../../src/components/Icon.jsx';
 import CoinBalance from '../../src/components/CoinBalance.jsx';
 import ChestCarousel from '../../src/components/ChestCarousel.jsx';
 import Chest from '../../src/components/Chest.jsx';
+import { StreakFlame, StreakSheet } from '../../src/components/StreakFlame.jsx';
 import ShopShelf from '../../src/components/ShopShelf.jsx';
 import Takeover, { eventFromChest } from '../../src/components/Takeover.jsx';
 import { faceName, faceSource, faceUri } from '../../src/lib/avatar.js';
@@ -258,6 +259,36 @@ export default function Shop() {
   }, [offer, buying, load, refreshProfile]);
 
   /**
+   * The freeze, bought from its own sheet.
+   *
+   * The sheet closes only on success. A failure leaves it open with the notice
+   * showing above it, because the one thing a player needs after a refused
+   * purchase is the price and the button, still there — closing the sheet would
+   * make them find their way back to it to try again.
+   */
+  const [freezeOpen, setFreezeOpen] = useState(false);
+  const [freezing, setFreezing] = useState(false);
+  const [freezeError, setFreezeError] = useState(null);
+  const buyFreeze = useCallback(async () => {
+    if (freezing) return;
+    setFreezing(true);
+    setFreezeError(null);
+    setSpent(null);
+    try {
+      const result = await api.post('/me/streak-freeze', {});
+      // Both: `/me/rewards` holds the balance this screen draws, and the profile
+      // holds the streak the flame draws. Reloading one leaves the other stale.
+      await Promise.all([load(), refreshProfile?.()]);
+      setFreezeOpen(false);
+      setSpent({ name: 'A streak freeze', coins: result?.spent ?? 0 });
+    } catch (err) {
+      setFreezeError(err);
+    } finally {
+      setFreezing(false);
+    }
+  }, [freezing, load, refreshProfile]);
+
+  /**
    * One tap, three meanings, decided by what the tile is. Owned equips on the
    * spot; for sale opens the sheet; chest-only explains itself, because a tile
    * that does nothing when tapped is a tile a player assumes is broken.
@@ -275,15 +306,33 @@ export default function Shop() {
   );
 
   const shelf = tab === 'avatar' ? avatars : banners;
+  /** How many are sitting there unopened — the mark on the Chests tab. */
+  const readyCount = unopened.length;
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      {/* The header is the balance. Nothing else belongs up here: this screen
-          has exactly one piece of state a player needs at all times. */}
+      {/* The header carries the two account-level facts and nothing else: what
+          you can spend, and what you are holding. Both are true no matter which
+          shelf is showing, which is precisely what earns a place up here — and
+          why the freeze belongs beside the balance rather than in the scroll. */}
       <TabHeader
         title="Shop"
         caption="Win coins. Spend them here."
-        right={<CoinBalance value={balance} onPress={null} />}
+        right={
+          <View style={styles.headerRight}>
+            {/* The same flame as Home's top bar, opening the same sheet. The
+                Shop is where coins are spent, so it keeps a door to the one
+                thing on this screen that is not a look. */}
+            <StreakFlame
+              streak={user?.streak}
+              onPress={() => {
+                setFreezeError(null);
+                setFreezeOpen(true);
+              }}
+            />
+            <CoinBalance value={balance} onPress={null} />
+          </View>
+        }
       />
 
       <ErrorNotice error={error} onRetry={load} />
@@ -298,16 +347,23 @@ export default function Shop() {
         <ShopSkeleton />
       ) : (
         <>
-          {/* ── The window, as a rail of cases rather than a stack of them.
-              Two chest cards, each with its own twenty-slot carousel, filled
-              the screen twice over before a single price tag came into view —
-              a shop whose display case blocks the shelves. Each chest is one
-              tappable seal now, and the case itself opens over the shop. */}
-          <ChestCards chests={chestCards} onPick={setViewing} />
-
-          {/* ── The shelves. Pinned, not scrolled: this is the shop's own
-              navigation, and a player switching from avatars to banners should
-              not have to scroll back up to the control that does it. */}
+          {/**
+           * Four panes, and the chests are one of them.
+           *
+           * The chests used to live ABOVE this control, permanently, which meant
+           * every visit to the shop opened on a block of things you cannot buy
+           * before a single price tag came into view — and it was the block that
+           * kept getting the layout wrong, because it was the one part of the
+           * screen with no structure holding it.
+           *
+           * As a pane it inherits the structure the catalogue already has, and
+           * the shelves start at the top of the screen where a shop's shelves
+           * belong. The gold dot is what stops that being a loss: a chest ready
+           * to open is marked on the tab whichever pane you are looking at.
+           *
+           * Pinned, not scrolled: this is the shop's own navigation, and
+           * navigation that scrolls away is navigation people stop using.
+           */}
           <Segmented
             style={styles.tabs}
             value={tab}
@@ -316,6 +372,7 @@ export default function Shop() {
               { value: 'avatar', label: 'Avatars' },
               { value: 'banner', label: 'Banners' },
               { value: 'title', label: 'Titles' },
+              { value: 'chest', label: 'Chests', dot: readyCount > 0 },
             ]}
           />
 
@@ -334,7 +391,9 @@ export default function Shop() {
               />
             }
           >
-            {tab === 'title' ? (
+            {tab === 'chest' ? (
+              <ChestPane chests={chestCards} ready={readyCount} onPick={setViewing} />
+            ) : tab === 'title' ? (
               <View style={styles.titles}>
                 <Text variant="meta" color={colors.inkFaint} style={styles.titleNote}>
                   Titles are not for sale. One arrives every fifth account level.
@@ -384,6 +443,22 @@ export default function Shop() {
         onClose={() => setViewing(null)}
       />
 
+      <StreakSheet
+        visible={freezeOpen}
+        streak={user?.streak}
+        balance={balance}
+        busy={freezing}
+        /** A refusal has to be readable WHERE it happened. The screen's own
+         *  notice sits behind the modal, so a failed buy would have looked like
+         *  a button that simply did nothing. */
+        error={freezeError}
+        onBuy={buyFreeze}
+        onClose={() => {
+          setFreezeError(null);
+          setFreezeOpen(false);
+        }}
+      />
+
       <BuySheet
         offer={offer}
         balance={balance}
@@ -404,29 +479,44 @@ export default function Shop() {
 }
 
 /**
- * The chests, as square cards side by side.
+ * The chests pane, two cards across.
  *
- * Three shapes, and the middle one is the reason for this one.
+ * ── The shapes this has been ─────────────────────────────────────────────────
  *
- * They began as full-width cards stacked, each carrying its own twenty-slot
- * carousel and a button. Two of those is a screen and a half of window display
- * before the first thing you can actually buy — a shop where the display case
- * stands in front of the shelves.
+ * Full-width cards stacked, each carrying its own twenty-slot carousel — a
+ * screen and a half of window display before the first thing you can buy. Then
+ * a rail of 56pt seals, which solved the height and lost the chest: two grey
+ * rounded squares with padlocks read as disabled controls, not as treasure.
+ * Then cards two across, which was right except that a third chest stretched to
+ * the full width on its own row. Then a horizontal scroller, which fixed the
+ * stretching by hiding it — the third chest was permanently half off the right
+ * edge — and needed a stated height, which is what cut the cards top and bottom
+ * the moment the content did not fit inside the number.
  *
- * The fix went too far the other way: a rail of 56pt seals with a caption. It
- * solved the height and lost the chest. Two grey rounded squares with padlocks
- * in them read as disabled controls, not as treasure, and at that size the name
- * underneath is the only thing saying otherwise.
+ * Every one of those was the same underlying problem: this block had no place of
+ * its own, so it kept being reshaped to fit above a control it had no relation
+ * to. It has a pane now. The grid inside it is the plain one — `flexGrow: 0` so
+ * the odd one out keeps its size instead of filling the row, and no stated
+ * height at all, so there is no number for the content to outgrow.
  *
- * So: a square card each, two across, big enough to carry the seal AND say what
- * the chest is and what it wants from you. Still a fraction of the old height,
- * still opens the real case on press, and it looks like something worth having.
+ * ── It says what it is for ───────────────────────────────────────────────────
+ *
+ * A pane can be arrived at deliberately, which the old block could not, so it
+ * can afford the sentence the block never had room for: these are the free ones,
+ * and this is what makes them open.
  */
-function ChestCards({ chests, onPick }) {
+function ChestPane({ chests, ready, onPick }) {
   if (!chests.length) return null;
 
   return (
-    <View style={styles.chests}>
+    <View>
+      <Text variant="meta" color={colors.inkFaint} style={styles.chestNote}>
+        {ready > 0
+          ? `${ready === 1 ? 'One chest is' : `${ready} chests are`} ready to open. Chests are never bought — they arrive for climbing.`
+          : 'Chests are never bought. They arrive for climbing, and open free.'}
+      </Text>
+
+      <View style={styles.chests}>
       {chests.map((chest) => (
         <Pressable
           key={`${chest.key}:${chest.period ?? 'locked'}`}
@@ -444,7 +534,7 @@ function ChestCards({ chests, onPick }) {
           ]}
         >
           <View style={styles.seal}>
-            <Chest size={54} state={chest.ready ? 'ready' : 'locked'} />
+            <Chest size={52} state={chest.ready ? 'ready' : 'locked'} />
             {/* The one unread-style mark in the app, and it earns it: this is
                 a thing waiting to be collected, not a notification. */}
             {chest.ready ? <View style={styles.sealDot} /> : null}
@@ -454,6 +544,7 @@ function ChestCards({ chests, onPick }) {
             variant="label"
             color={chest.ready ? colors.ink : colors.inkMuted}
             numberOfLines={1}
+            style={styles.chestName}
           >
             {chest.name}
           </Text>
@@ -461,11 +552,13 @@ function ChestCards({ chests, onPick }) {
             variant="tiny"
             color={chest.ready ? colors.gold : colors.inkFaint}
             numberOfLines={1}
+            style={styles.chestName}
           >
             {chest.ready ? 'Ready to open' : (chest.triggerLabel ?? 'Locked')}
           </Text>
         </Pressable>
-      ))}
+        ))}
+      </View>
     </View>
   );
 }
@@ -732,12 +825,17 @@ function requirementOf(row) {
   return null;
 }
 
-/** The wait, in the shape of the answer: a case, the tabs, and two shelves. */
+/** The wait, in the shape of the answer: the rail, the tabs, and two shelves. */
 function ShopSkeleton() {
   return (
     <View style={styles.content}>
-      <Skeleton height={240} radius={layout.radiusCard} />
-      <Skeleton height={40} radius={layout.radiusPill} style={{ marginTop: space.xl }} />
+      {/* The tabs land first now that the chests are behind one of them, so
+          the wait is the shape of the pane that actually opens. */}
+      <Skeleton
+        height={48}
+        radius={layout.radiusPill}
+        style={{ marginHorizontal: layout.gutter }}
+      />
       {[0, 1].map((i) => (
         <View key={i} style={{ marginTop: space.xl }}>
           <Skeleton width={130} height={13} radius={7} />
@@ -757,30 +855,58 @@ const styles = StyleSheet.create({
   /** The shelves bleed to the screen edge, so gutters live on their children. */
   content: { paddingTop: space.md, paddingBottom: layout.dockClearance },
 
-  // ── The chest cards ──────────────────────────────────────────────────────
+  // ── The header ───────────────────────────────────────────────────────────
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  // ── The chests ───────────────────────────────────────────────────────────
+  /**
+   * A plain wrapping grid. No scroller, and no stated height.
+   *
+   * The rail was a mistake twice over. A horizontal `ScrollView` has no
+   * intrinsic height, so it had to be told one — and a container with a fixed
+   * height around content that grows with the system font scale is a clipping
+   * bug waiting for the first person who has ever touched their font settings.
+   * It also hid whatever did not fit off the right edge, which on three chests
+   * meant the third one was permanently half-visible.
+   *
+   * A grid has neither problem. Nothing is off-screen, and nothing is cut.
+   */
+  chestNote: {
+    paddingHorizontal: layout.gutter,
+    paddingTop: space.lg,
+    paddingBottom: space.md,
+  },
   chests: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: layout.cardGap,
     paddingHorizontal: layout.gutter,
-    paddingBottom: space.xs,
   },
   /**
-   * `flexBasis: 48%` with a stated height rather than an `aspectRatio` — an
-   * aspect ratio inside a wrapping row is at the mercy of the row's own
-   * `alignItems`, which is exactly how the Play grid ended up invisible.
+   * `flexGrow: 0` is the whole fix for the odd one out.
+   *
+   * The original grid had `flexGrow: 1`, so a third chest landed alone on the
+   * second row and stretched to the full width — the same shelf drawing two
+   * different objects. Growing is what caused that; a basis that does not grow
+   * leaves the third card the same size as the first two, sitting under them.
+   *
+   * `minHeight` rather than `height`: the card is sized by what is in it, and a
+   * row of them matches because a wrapping row stretches its children to the
+   * tallest. That is the property that makes clipping impossible rather than
+   * merely unlikely — there is no number here for the content to outgrow.
    */
   chestCard: {
     flexBasis: '48%',
-    flexGrow: 1,
-    height: 132,
+    flexGrow: 0,
+    minHeight: 132,
     alignItems: 'center',
     justifyContent: 'center',
     gap: space.xs,
-    paddingHorizontal: space.md,
+    paddingHorizontal: space.sm,
+    paddingVertical: space.lg,
     borderRadius: layout.radiusCard,
     borderWidth: 1,
   },
+  chestName: { textAlign: 'center' },
   chestCardReady: {
     backgroundColor: colors.goldSoft,
     borderColor: 'rgba(245, 182, 46, 0.38)',

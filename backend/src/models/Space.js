@@ -41,6 +41,14 @@ const spaceSchema = new Schema(
       allowPublicProfiles: { type: Boolean, default: false },
       /** prd.md F6.7 — an institute may prefer real opponents only. */
       allowGhosts: { type: Boolean, default: true },
+      /**
+       * One paper a day for the whole organization, generated automatically.
+       *
+       * Off by default, and deliberately: a daily challenge sends a notification
+       * every morning, and an organization that did not ask for that should not
+       * discover it happening. Turning it on is a decision an admin makes once.
+       */
+      dailyChallenge: { type: Boolean, default: false },
     },
 
     status: {

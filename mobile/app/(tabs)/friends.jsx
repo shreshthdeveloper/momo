@@ -328,6 +328,10 @@ export default function Friends() {
                           params: {
                             challengeId: c.id,
                             opponent: c.opponent?.displayName ?? '',
+                            // The waiting screen draws their face while the
+                            // invitation is out — the server does not name them
+                            // until the match actually starts.
+                            avatarUrl: c.opponent?.avatarUrl ?? '',
                             name: c.topic?.name ?? '',
                           },
                         })
@@ -446,6 +450,20 @@ const FriendRow = memo(function FriendRow({ friend: f, onOpen, onPlay, onReact }
         ? `Rating ${f.overallRating}`
         : (f.city ?? 'Offline');
 
+  /**
+   * The rivalry, which is the reason to open this list twice.
+   *
+   * The server has computed `headToHead` all along — the versus screen and the
+   * profile both show it — and the one screen where you pick who to challenge said
+   * nothing about who is ahead. That is the number that turns a roster into a
+   * reason to press Play.
+   *
+   * Drawn only once they have actually played. A 0–0 against everybody makes the
+   * whole list look like a league table nobody has entered.
+   */
+  const h2h = f.headToHead?.played ? f.headToHead : null;
+  const ahead = h2h ? h2h.wins - h2h.losses : 0;
+
   return (
     <Pressable
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
@@ -454,7 +472,9 @@ const FriendRow = memo(function FriendRow({ friend: f, onOpen, onPlay, onReact }
       // Presence is announced, not just tinted green: a screen reader gets
       // nothing from the dot, and online is the fact that decides whether
       // challenging is worth doing at all.
-      accessibilityLabel={`${f.displayName}, ${f.isOnline ? 'online now' : 'offline'}. Open profile.`}
+      accessibilityLabel={`${f.displayName}, ${f.isOnline ? 'online now' : 'offline'}${
+        h2h ? `. You have won ${h2h.wins} and lost ${h2h.losses} against them` : ''
+      }. Open profile.`}
     >
       <View>
         <Avatar url={f.avatarUrl} name={f.displayName} size={44} />
@@ -481,6 +501,19 @@ const FriendRow = memo(function FriendRow({ friend: f, onOpen, onPlay, onReact }
           >
             {line}
           </Text>
+          {/* Wins first, always — it is your row, so the number that reads as
+              "yours" has to be in the same position on every one of them. The
+              colour is the standing, so a glance down the list finds the rival
+              you are behind without reading a single figure. */}
+          {h2h ? (
+            <Text
+              variant="meta"
+              color={ahead > 0 ? colors.correct : ahead < 0 ? colors.wrong : colors.inkFaint}
+              numberOfLines={1}
+            >
+              {`·  ${h2h.wins}–${h2h.losses}`}
+            </Text>
+          ) : null}
         </View>
       </View>
 

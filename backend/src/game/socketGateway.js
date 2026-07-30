@@ -1,6 +1,8 @@
 import { Server } from 'socket.io';
 import { GameOrchestrator } from './orchestrator.js';
 import { registry } from './registry.js';
+import { sessions } from './classSession.js';
+import { sessionByCode } from '../services/classSessionService.js';
 import { verifyAccessToken, loadAuthenticatedUser } from '../services/authService.js';
 import {
   GAME_NAMESPACE,
@@ -74,6 +76,10 @@ export function createSocketGateway(httpServer, { timing = {} } = {}) {
     toMatch(matchId, event, payload) {
       nsp.to(`match:${matchId}`).emit(event, payload);
     },
+    /** The classroom: everybody in one lesson, host included. */
+    toRoom(sessionId, event, payload) {
+      nsp.to(`session:${sessionId}`).emit(event, payload);
+    },
   };
 
   const orchestrator = new GameOrchestrator({ transport, timing });
@@ -88,6 +94,8 @@ export function createSocketGateway(httpServer, { timing = {} } = {}) {
    */
   setRealtime({
     toUser: (userId, event, payload) => transport.toPlayer(userId, event, payload),
+    /** The classroom, for sessions created over REST by a host. */
+    toRoom: (sessionId, event, payload) => transport.toRoom(sessionId, event, payload),
   });
 
   const limiter = new RateLimiter({
@@ -97,6 +105,13 @@ export function createSocketGateway(httpServer, { timing = {} } = {}) {
     // A contest allows one entry, so this is only ever guarding retries after
     // an error. Tight on purpose.
     [C2S.CONTEST_ENTER]: { max: 6, windowMs: 60_000 },
+    /**
+     * A session answer is one per question per person, so this only ever catches
+     * a stuck finger. Generous because thirty phones answering at once is the
+     * normal case, not the attack.
+     */
+    [C2S.SESSION_ANSWER]: { max: 90, windowMs: 60_000 },
+    [C2S.SESSION_JOIN]: { max: 20, windowMs: 60_000 },
   });
 
   // ── Handshake ────────────────────────────────────────────────────────────
@@ -198,7 +213,7 @@ export function createSocketGateway(httpServer, { timing = {} } = {}) {
 
     socket.on(
       C2S.QUEUE_JOIN,
-      guard(C2S.QUEUE_JOIN, async ({ topicId, spaceId, mode, challengeId }) => {
+      guard(C2S.QUEUE_JOIN, async ({ topicId, spaceId, mode, challengeId, deck }) => {
         const result = await orchestrator.joinQueue({
           user: socket.data.user,
           topicId,
@@ -207,6 +222,12 @@ export function createSocketGateway(httpServer, { timing = {} } = {}) {
           // A friend challenge (prd.md §6.3). With one, the topic and the mode
           // are read from the challenge and everything else here is ignored.
           challengeId,
+          /**
+           * Which paper to deal — `'mistakes'` for the revision drill. Only the
+           * name of a deck crosses the wire; which questions are in it is resolved
+           * server-side from this player's own history.
+           */
+          deck,
         });
         // Join the match room once one exists, so match-wide emits reach here.
         const match = registry.matchForUser(user.id);
@@ -265,6 +286,112 @@ export function createSocketGateway(httpServer, { timing = {} } = {}) {
         const snapshot = orchestrator.snapshotFor(user.id);
         if (snapshot) socket.join(`match:${snapshot.matchId}`);
         return { snapshot };
+      }),
+    );
+
+    // ── Live class sessions (protocol v5) ──────────────────────────────────
+    //
+    // Deliberately not routed through the orchestrator. The orchestrator owns
+    // matchmaking and 1v1 matches; a session has neither, and hanging it off the
+    // same object would put thirty-player state inside the thing that runs every
+    // ranked match. It talks to the session runner directly.
+
+    socket.on(
+      C2S.SESSION_JOIN,
+      guard(C2S.SESSION_JOIN, async ({ code }) => {
+        const stored = await sessionByCode(socket.data.user, code);
+        const runner = sessions.get(String(stored._id));
+        if (!runner) {
+          throw new AppError(409, ERROR_CODE.BAD_REQUEST, 'That session is no longer running.');
+        }
+
+        runner.join({
+          id: user.id,
+          displayName: socket.data.user.displayName,
+          avatarUrl: socket.data.user.avatarUrl,
+        });
+        socket.join(`session:${runner.id}`);
+
+        // The lobby's roster is live, so everybody sees the room filling up —
+        // which is the only thing on screen while the class arrives.
+        transport.toRoom(runner.id, S2C.SESSION_ROSTER, {
+          sessionId: runner.id,
+          roster: runner.roster(),
+        });
+        return { snapshot: runner.snapshot({ forUserId: user.id }) };
+      }),
+    );
+
+    socket.on(
+      C2S.SESSION_ANSWER,
+      guard(C2S.SESSION_ANSWER, async ({ sessionId, roundIndex, optionIndex }) => {
+        const runner = sessions.get(sessionId);
+        if (!runner) throw new AppError(404, ERROR_CODE.MATCH_NOT_FOUND, 'That session has ended.');
+        const result = runner.answer(user.id, { roundIndex, optionIndex });
+        if (!result.ok) {
+          fail(result.code, 'That answer could not be accepted.');
+          return { ok: false, code: result.code };
+        }
+        return { accepted: true };
+      }),
+    );
+
+    /**
+     * Host-only, all three. The check is `runner.hostId`, read from the session
+     * the server created — never from anything in the frame — so a student who
+     * knows the event name cannot drive somebody else's lesson.
+     */
+    const asHost = (runner) => {
+      if (!runner) throw new AppError(404, ERROR_CODE.MATCH_NOT_FOUND, 'That session has ended.');
+      if (String(runner.hostId) !== String(user.id)) {
+        throw new AppError(403, ERROR_CODE.BAD_REQUEST, 'Only the host can do that.');
+      }
+      return runner;
+    };
+
+    socket.on(
+      C2S.SESSION_START,
+      guard(C2S.SESSION_START, async ({ sessionId }) => {
+        const runner = asHost(sessions.get(sessionId));
+        return { started: runner.start() };
+      }),
+    );
+
+    socket.on(
+      C2S.SESSION_NEXT,
+      guard(C2S.SESSION_NEXT, async ({ sessionId }) => {
+        const runner = asHost(sessions.get(sessionId));
+        return { advanced: runner.nextRound() };
+      }),
+    );
+
+    socket.on(
+      C2S.SESSION_END,
+      guard(C2S.SESSION_END, async ({ sessionId }) => {
+        const runner = asHost(sessions.get(sessionId));
+        await runner.end();
+        return { ended: true };
+      }),
+    );
+
+    socket.on(
+      C2S.SESSION_LEAVE,
+      guard(C2S.SESSION_LEAVE, async ({ sessionId }) => {
+        const runner = sessions.get(sessionId);
+        socket.leave(`session:${sessionId}`);
+        /**
+         * Leaving the room does NOT remove the score. A student who backgrounds
+         * the app is still in the lesson and still on the board; erasing their
+         * score because their phone locked would be the most visible bug this
+         * feature could have — it happens in front of the whole class.
+         */
+        if (runner) {
+          transport.toRoom(runner.id, S2C.SESSION_ROSTER, {
+            sessionId: runner.id,
+            roster: runner.roster(),
+          });
+        }
+        return { left: true };
       }),
     );
 

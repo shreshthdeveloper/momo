@@ -40,6 +40,8 @@ import {
   LEAGUE_DIVISION_WIDTH,
   RANKED_FLOOR,
   UNLOCK_KIND,
+  STREAK_FREEZE_PRICE,
+  STREAK_FREEZE_MAX,
 } from '../shared/constants.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
@@ -1118,6 +1120,62 @@ export async function buyCosmetic(user, { type, key, expectedPrice = null }) {
   const balance = Math.max(0, (user.coins ?? 0) - item.price);
   logger.info({ userId: String(user._id), key: item.key, price: item.price }, 'cosmetic bought');
   return { item, coins: balance, spent: item.price };
+}
+
+/**
+ * Buy one streak freeze.
+ *
+ * Separate from `buyCosmetic` because it is a different kind of thing, and the
+ * differences are all load-bearing: a freeze is consumable rather than owned, so
+ * `grantedPerks` is the wrong home and "you already own that" is the wrong
+ * refusal; it is stocked at a fixed price rather than from the superadmin
+ * catalogue; and it is capped by how many you HOLD rather than by whether you have
+ * one. Forcing it through the cosmetics path would have meant four exceptions
+ * inside a function whose whole job is that there are none.
+ *
+ * The cap is enforced in the same atomic update as the debit. Checking first and
+ * writing second is the bug that lets two quick taps buy a third freeze — and
+ * unlike a cosmetic, buying the same thing twice is legitimate here, so
+ * `$addToSet` is not there to save us.
+ */
+export async function buyStreakFreeze(user) {
+  const result = await User.updateOne(
+    {
+      _id: user._id,
+      coins: { $gte: STREAK_FREEZE_PRICE },
+      // `$lt` on a field that may be absent on older documents: Mongo treats a
+      // missing field as less than any number, which is the answer we want.
+      'streak.freezes': { $lt: STREAK_FREEZE_MAX },
+    },
+    { $inc: { coins: -STREAK_FREEZE_PRICE, 'streak.freezes': 1 } },
+  );
+
+  if (!result.modifiedCount) {
+    const fresh = await User.findById(user._id, { coins: 1, streak: 1 }).lean();
+    const held = fresh?.streak?.freezes ?? 0;
+    if (held >= STREAK_FREEZE_MAX) {
+      throw new ConflictError(
+        held === 1
+          ? 'You already have a streak freeze in hand.'
+          : `You can hold ${STREAK_FREEZE_MAX} streak freezes at a time.`,
+        'FREEZE_LIMIT',
+      );
+    }
+    throw new BadRequestError(
+      `A streak freeze costs ${formatCoins(STREAK_FREEZE_PRICE)} coins. You have ${formatCoins(
+        fresh?.coins ?? 0,
+      )}.`,
+      'NOT_ENOUGH_COINS',
+    );
+  }
+
+  const fresh = await User.findById(user._id, { coins: 1, streak: 1 }).lean();
+  logger.info({ userId: String(user._id), price: STREAK_FREEZE_PRICE }, 'streak freeze bought');
+  return {
+    coins: fresh?.coins ?? 0,
+    freezes: fresh?.streak?.freezes ?? 0,
+    spent: STREAK_FREEZE_PRICE,
+  };
 }
 
 /** Tests truncate collections between cases; the cache has to follow. */

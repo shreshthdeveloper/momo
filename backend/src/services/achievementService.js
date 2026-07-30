@@ -48,6 +48,20 @@ export async function evaluateAchievements({
    * days" never fired on the seventh day — it waited for the eighth.
    */
   streak,
+  /**
+   * A drill or a self-race — play rather than a match (`UNRECORDED_MODES`).
+   *
+   * Either can earn the achievements that are about *answering* — fast hands,
+   * topic level, the streak — and none of the ones that are about a match.
+   *
+   * The line is drawn there because neither has an opponent worth beating and
+   * neither has a limit on retries. "Perfect" reads "all seven in one match", and a
+   * badge that can be ground out alone, or against a recording of yourself on
+   * questions you have already seen, is worth nothing to the player who earned it
+   * the hard way. The win-based ones exclude themselves via the verdict; this flag
+   * is for the two that count differently.
+   */
+  unrecorded = false,
 }) {
   const already = new Set((user.achievements ?? []).map((a) => a.key));
   const earned = [];
@@ -55,12 +69,24 @@ export async function evaluateAchievements({
     if (!already.has(key)) earned.push(key);
   };
 
-  if (verdict === 'won' && (user.matchesWon ?? 0) === 0) award('first_win');
-  if (correctCount === ROUNDS_PER_MATCH) award('perfect_match');
-  if (verdict === 'won' && opponentRating - ratingBefore >= 200) award('giant_slayer');
+  /**
+   * A win only counts when it was a win over somebody.
+   *
+   * A self-race legitimately ends in `'won'` — the result screen says "you beat
+   * your best", and it should — so every rule below that reads the verdict has to
+   * exclude it explicitly. Without this, "First win" is earned by beating a
+   * recording of yourself, which is the first thing a new player would do.
+   */
+  const beatSomebody = verdict === 'won' && !unrecorded;
+
+  if (beatSomebody && (user.matchesWon ?? 0) === 0) award('first_win');
+  if (!unrecorded && correctCount === ROUNDS_PER_MATCH) award('perfect_match');
+  if (beatSomebody && opponentRating - ratingBefore >= 200) award('giant_slayer');
   if (level >= 10) award('topic_level_10');
   if ((streak?.current ?? user.streak?.current ?? 0) >= 7) award('streak_7');
-  if ((user.matchesPlayed ?? 0) + 1 >= 100) award('centurion');
+  // `+ 1` for the match being finalised — an unrecorded mode is not one, and does
+  // not increment `matchesPlayed` either, so it must not be counted here.
+  if ((user.matchesPlayed ?? 0) + (unrecorded ? 0 : 1) >= 100) award('centurion');
   if (maxSpeedAnswer) award('fast_hands');
 
   if (!earned.length) return [];

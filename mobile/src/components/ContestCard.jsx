@@ -54,8 +54,17 @@ export default function ContestCard({ contest, onPress }) {
       {hot ? <View style={styles.hotShape} pointerEvents="none" /> : null}
 
       <View style={styles.head}>
+        {/**
+         * A daily is named for its date, so the date is the wrong headline —
+         * "Daily Challenge · 30 Jul" on the 30th of July says the same thing
+         * twice and buries the one word that matters. It reads as "Today's
+         * challenge" while it is today's, and keeps its full name afterwards in
+         * the past list, where the date IS the distinguishing part.
+         */}
         <Text variant="label" numberOfLines={1} style={{ flex: 1 }} color={fg}>
-          {contest.name}
+          {contest.kind === 'daily' && contest.phase === 'open'
+            ? "Today's challenge"
+            : contest.name}
         </Text>
         <View style={[styles.pill, { backgroundColor: status.pill }]}>
           {status.live ? <View style={styles.liveDot} /> : null}

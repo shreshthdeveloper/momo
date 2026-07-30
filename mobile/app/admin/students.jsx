@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useAdminSpace, useAdminPermissions } from '../../src/lib/admin.js';
+import { useExport, csvName } from '../../src/lib/download.js';
 import {
   Text,
   Avatar,
@@ -49,6 +50,7 @@ export default function AdminStudents() {
   const router = useRouter();
   const adminSpace = useAdminSpace();
   const { canManageStudents } = useAdminPermissions(adminSpace);
+  const { exporting, error: exportError, run } = useExport();
   const params = useLocalSearchParams();
 
   const [status, setStatus] = useState(params.status === 'pending' ? 'pending' : 'active');
@@ -270,7 +272,10 @@ export default function AdminStudents() {
         ) : null}
       </View>
 
+      {/* Two notices, one slot: a failed load offers a retry, a failed export
+          does not — retrying an export is the button that just failed. */}
       <ErrorNotice error={error} onRetry={load} />
+      <ErrorNotice error={exportError} />
 
       {!rows && !error ? (
         <ListSkeleton rows={7} />
@@ -307,8 +312,23 @@ export default function AdminStudents() {
           }
         >
           {/* What is on screen, out of what matched — the same component and
-              the same wording as every other list in both consoles. */}
-          <CountRow shown={shown.length} total={total} noun="student" />
+              the same wording as every other list in both consoles. Export lives
+              in its action slot, which is what that slot is for: it is the one
+              screen-level thing an admin wants that is not the primary action.
+              The roster route has existed since F8.6.6 with nothing calling it,
+              so a teacher's only way to a spreadsheet was to retype it. */}
+          <CountRow
+            shown={shown.length}
+            total={total}
+            noun="student"
+            action={exporting ? 'Exporting…' : 'Export'}
+            onAction={() =>
+              run('/admin/reports/students.csv', {
+                query: { spaceId: adminSpace?.id },
+                filename: csvName(adminSpace?.name, 'students'),
+              })
+            }
+          />
 
           <ListCard>
           {shown.map((row, i) => (

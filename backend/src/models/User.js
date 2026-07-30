@@ -141,6 +141,18 @@ const userSchema = new Schema(
       longest: { type: Number, default: 0 },
       /** Stored as YYYY-MM-DD in IST so a streak means a calendar day, not 24h. */
       lastPlayedOn: { type: String, default: null },
+      /**
+       * Streak freezes held, bought with coins (coins-and-cosmetics.md — the one
+       * consumable in the shop).
+       *
+       * A freeze covers ONE missed day. The nightly `evaluateStreaks` job spends
+       * them when it finds a gap, and it spends them by moving `lastPlayedOn`
+       * forward rather than by writing a flag — which means the streak arithmetic
+       * everywhere else needs no knowledge of freezes at all.
+       */
+      freezes: { type: Number, default: 0 },
+      /** The last day a freeze was spent on, so the app can say so once. */
+      frozenOn: { type: String, default: null },
     },
 
     interests: [{ type: Schema.Types.ObjectId, ref: 'Topic' }],

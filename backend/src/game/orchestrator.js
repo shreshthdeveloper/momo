@@ -3,15 +3,17 @@ import { Question, Topic, Space, User, Contest } from '../models/index.js';
 import { LiveMatch } from './matchEngine.js';
 import { Matchmaker } from './matchmaker.js';
 import { registry } from './registry.js';
-import { selectQuestions, buildRound } from './questionSelector.js';
+import { selectQuestions, buildRound, allowedOriginsFor } from './questionSelector.js';
 import {
   findReplay,
+  bestReplayFor,
   markReplayUsed,
   buildSyntheticOpponent,
   bindSyntheticScript,
   syntheticIdentity,
 } from './ghostService.js';
 import { createLiveMatchRecord, finalizeMatch, headToHead } from '../services/matchService.js';
+import { mistakeQuestionIds } from '../services/mistakeService.js';
 import { getRatingValue, getRatingEntry } from '../services/ratingService.js';
 import { resolvePlayableTopic, resolveScope } from '../services/spaceService.js';
 import { playableChallenge, markChallengePlayed } from '../services/friendService.js';
@@ -23,8 +25,10 @@ import {
 import { S2C, ERROR_CODE } from '../shared/protocol.js';
 import {
   ROUNDS_PER_MATCH,
+  SOLO_COUNTDOWN_MS,
   ROUND_DURATION_MS,
   MATCH_MODE,
+  DECK,
   MIN_PUBLISHED_QUESTIONS_TO_LIVE,
   DEFAULT_LANGUAGE,
   GHOST_AFTER_MS,
@@ -64,7 +68,12 @@ const MISSED_RESULT_TTL_MS = 120_000;
  * (leagues-and-progression.md §1). A contest is entered by id from the contest
  * screen, and a challenge is created rather than queued for.
  */
-const QUEUEABLE_MODES = [MATCH_MODE.QUICK, MATCH_MODE.RANKED, MATCH_MODE.PRACTICE];
+const QUEUEABLE_MODES = [
+  MATCH_MODE.QUICK,
+  MATCH_MODE.RANKED,
+  MATCH_MODE.PRACTICE,
+  MATCH_MODE.SELF,
+];
 
 /**
  * Wires matchmaking, question selection, the engine, the registry and
@@ -140,7 +149,22 @@ export class GameOrchestrator {
    * client that has not been updated keeps the game it had rather than
    * silently losing its ladder. The current client always names its mode.
    */
-  async joinQueue({ user, topicId, spaceId, mode = MATCH_MODE.RANKED, challengeId = null }) {
+  async joinQueue({
+    user,
+    topicId,
+    spaceId,
+    mode = MATCH_MODE.RANKED,
+    challengeId = null,
+    /**
+     * Which questions to deal, when it is not "whatever comes next".
+     *
+     * `'mistakes'` is the revision deck: the questions this player got wrong and
+     * has not since got right. Practice only — a deck of known-missed questions
+     * is a deliberate repeat, and repeats in a mode that moves a rating would be
+     * both an advantage and a corruption of what the rating measures.
+     */
+    deck = null,
+  }) {
     if (registry.matchForUser(user.id)) {
       throw new AppError(409, ERROR_CODE.ALREADY_IN_MATCH, 'You are already in a match.');
     }
@@ -178,6 +202,20 @@ export class GameOrchestrator {
 
     if (!challenge && !QUEUEABLE_MODES.includes(mode)) {
       throw new AppError(400, ERROR_CODE.BAD_REQUEST, 'That is not a mode you can queue for.');
+    }
+
+    if (deck && deck !== DECK.MISTAKES) {
+      throw new AppError(400, ERROR_CODE.BAD_REQUEST, 'Unknown deck.');
+    }
+    if (deck && mode !== MATCH_MODE.PRACTICE) {
+      // Stated as its own error rather than quietly ignoring the deck: a client
+      // that asked for revision and silently got an ordinary match would look
+      // like the deck was empty.
+      throw new AppError(
+        400,
+        ERROR_CODE.BAD_REQUEST,
+        'A revision deck can only be played as practice.',
+      );
     }
 
     const { topic, scope } = await resolvePlayableTopic(user, topicId, spaceId);
@@ -255,18 +293,78 @@ export class GameOrchestrator {
       challengeId: challenge ? String(challenge._id) : null,
     };
 
-    // Practice is ghost-only by definition — skip the queue entirely. With no
-    // ghost to give it there is no practice match to build, and saying so is
-    // better than queueing them for a live opponent they did not ask for.
+    /**
+     * Practice has NO OPPONENT — and that is the whole point.
+     *
+     * It used to be ghost-only: skip the queue, hand over an invented opponent
+     * immediately. Which made Practice the one place in the product that
+     * *proved* ghosts exist. An opponent that arrives in zero seconds, every
+     * time, on the one mode that never touches your rating, is not a subtle
+     * signal — and a player who works out that practice opponents are invented
+     * has no reason left to believe the ones in Quick and Ranked are not.
+     * F6.7.5 asks that the player never be able to tell; the surest way to
+     * honour that is to never put a ghost anywhere it can be identified.
+     *
+     * So practice is a solo drill: you, the questions, the clock. Nothing on
+     * screen claims an opponent, so nothing invites the question. The match
+     * engine already copes — `opponentOf` returns undefined, every payload
+     * guards it, and the round advances when `currentAnswers.size` reaches
+     * `players.length`, which is one.
+     */
     if (mode === MATCH_MODE.PRACTICE) {
-      if (!entry.allowGhosts) {
+      /**
+       * The revision deck is resolved here, from the player's own match history,
+       * and never accepted from the client. The ids are the questions they got
+       * wrong; a client that could name them could name any question in any
+       * space, and `selectQuestions` re-filters them for the same reason.
+       *
+       * An empty deck is an error rather than a silent fallback to a normal
+       * drill. "Revise your mistakes" turning into seven questions you have never
+       * seen is the kind of quiet substitution that makes a player stop trusting
+       * the button.
+       */
+      let deckIds = null;
+      if (deck === DECK.MISTAKES) {
+        deckIds = await mistakeQuestionIds(user.id, topic._id, {
+          limit: ROUNDS_PER_MATCH,
+          origins: allowedOriginsFor(topic),
+          language: entry.language,
+        });
+        if (!deckIds.length) {
+          throw new AppError(
+            409,
+            ERROR_CODE.BAD_REQUEST,
+            'Nothing to revise here — you have got all of these right since.',
+          );
+        }
+      }
+      await this.createSoloMatch(entry, { deckIds });
+      return { status: 'searching', topicId: entry.topicId };
+    }
+
+    /**
+     * A self-race skips the queue for the same reason practice does: the opponent
+     * is already on disk. There is nobody to wait for.
+     */
+    if (mode === MATCH_MODE.SELF) {
+      /**
+       * Checked here, not inside `createSelfMatch`, so the refusal rides back on
+       * the ack rather than as an error event.
+       *
+       * They are not the same to a client: an ack failure is answered where the
+       * button was pressed, while an error event arrives after the app has already
+       * pushed the searching screen — so the player watches a globe spin and then
+       * gets bounced. Same rule as the empty revision deck above.
+       */
+      const best = await bestReplayFor(user.id, topic._id);
+      if (!best) {
         throw new AppError(
           409,
           ERROR_CODE.NO_OPPONENT_FOUND,
-          'Practice needs a practice opponent, and they are switched off here.',
+          'Play this topic once and your best run becomes something to beat.',
         );
       }
-      await this.createGhostMatch(entry);
+      await this.createSelfMatch(entry, { best });
       return { status: 'searching', topicId: entry.topicId };
     }
 
@@ -373,6 +471,184 @@ export class GameOrchestrator {
    * prd.md F6.4.3 / §6.7 — a replay of a real past game on this topic at a
    * similar skill, or a synthetic opponent where none exists yet.
    */
+  /**
+   * A one-player match: practice.
+   *
+   * Deliberately NOT `createGhostMatch` with the ghost left out. This never
+   * looks for a replay and never builds a synthetic opponent, so there is no
+   * path by which a practice run can acquire an opponent — including when a
+   * future change to the ghost builder forgets that practice exists.
+   *
+   * `allowGhosts` is not consulted: a space that switched invented opponents off
+   * has no objection to a player drilling alone, and refusing them practice
+   * because of a setting about opponents would be a strange reading of it.
+   */
+  async createSoloMatch(waiting, { deckIds = null } = {}) {
+    const topic = await Topic.findById(oid(waiting.topicId)).lean();
+    if (!topic) return this.failPair([waiting], ERROR_CODE.TOPIC_UNAVAILABLE, 'Topic unavailable.');
+
+    // Same call the ghost path makes: `excludeSeen` defaults on, so a drill
+    // prefers questions this player has not met yet. A revision deck is the one
+    // case that wants the opposite, and says so with `deckIds`.
+    const questions = await selectQuestions(topic, [waiting], {
+      count: ROUNDS_PER_MATCH,
+      language: waiting.language,
+      deckIds,
+    });
+    if (questions.length < ROUNDS_PER_MATCH) {
+      return this.failPair(
+        [waiting],
+        ERROR_CODE.TOPIC_NOT_LIVE,
+        'This topic does not have enough questions yet.',
+      );
+    }
+
+    const rounds = questions.map((q) =>
+      buildRound(q, { language: waiting.language, durationMs: waiting.roundDurationMs }),
+    );
+
+    return this.startMatch({
+      topic,
+      // One entry. Everything downstream reads `players.length`, so the round
+      // resolves on this player's answer alone and `opponent` is null in every
+      // payload the client receives.
+      players: [
+        {
+          userId: waiting.userId,
+          displayName: waiting.displayName,
+          avatarUrl: waiting.avatarUrl,
+          banner: waiting.banner ?? null,
+          country: waiting.country ?? null,
+          city: waiting.city ?? null,
+          rating: waiting.rating,
+          level: waiting.level ?? 1,
+          rankedRating: waiting.rankedRating ?? RANKED_START,
+          isGhost: false,
+        },
+      ],
+      rounds,
+      mode: waiting.mode,
+      language: waiting.language,
+      roundDurationMs: waiting.roundDurationMs,
+    });
+  }
+
+  /**
+   * You against your own best run on this topic.
+   *
+   * `Replay` has stored a complete answer script for every decent match since
+   * F6.7.1, and until now the only thing that ever read one was the ghost picker —
+   * so the richest record a player has of their own play was invisible to them and
+   * spent entirely on strangers. This is that data pointed back at its owner.
+   *
+   * ── Why it is disclosed, when a ghost never is ───────────────────────────────
+   *
+   * Every argument for hiding a replay's identity is an argument for showing this
+   * one. A ghost is masked because it belongs to somebody else and playing them
+   * without their knowledge would disclose their result; here the person the run
+   * belongs to is the person watching it, so the name, the face and the date are
+   * theirs to see. It is also the whole point: "beat your best" means nothing if
+   * the app will not say whose best it is.
+   *
+   * ── Why it cannot be ranked, and pays nothing ────────────────────────────────
+   *
+   * The paper is the one that run was played on, so the player has seen every
+   * question. Re-running it until it wins is a couple of taps. `MATCH_MODE.SELF`
+   * is therefore in `UNRECORDED_MODES` — participation XP and mastery stats, no
+   * coins, no W/L record, no assignment credit, and never harvested as a replay
+   * for anybody else.
+   */
+  async createSelfMatch(waiting, { best: preloaded = null } = {}) {
+    const topic = await Topic.findById(oid(waiting.topicId)).lean();
+    if (!topic) return this.failPair([waiting], ERROR_CODE.TOPIC_UNAVAILABLE, 'Topic unavailable.');
+
+    // Normally handed in by `joinQueue`, which has already refused the no-run
+    // case on the ack. Re-read only if a caller did not, so this stays correct
+    // when called directly.
+    const best = preloaded ?? (await bestReplayFor(waiting.userId, topic._id));
+    if (!best) {
+      return this.failPair(
+        [waiting],
+        ERROR_CODE.NO_OPPONENT_FOUND,
+        'Play this topic once and your best run becomes something to beat.',
+      );
+    }
+
+    /**
+     * The ORIGINAL paper, in its original order. A different set of questions
+     * would make the recorded answers meaningless — the script is a list of
+     * choices indexed by round, so round 3 has to be the question round 3 was.
+     */
+    const docs = await Question.find({ _id: { $in: best.questionIds } }).lean();
+    const byId = new Map(docs.map((d) => [String(d._id), d]));
+    const ordered = best.questionIds.map((id) => byId.get(String(id))).filter(Boolean);
+
+    if (ordered.length !== ROUNDS_PER_MATCH) {
+      // A question has been retired since. The run is unrepeatable rather than
+      // broken, and saying so beats dealing six rounds against a seven-round score.
+      return this.failPair(
+        [waiting],
+        ERROR_CODE.NO_OPPONENT_FOUND,
+        'That run cannot be replayed — some of its questions have changed since.',
+      );
+    }
+
+    const rounds = ordered.map((q) =>
+      buildRound(q, { language: waiting.language, durationMs: waiting.roundDurationMs }),
+    );
+
+    return this.startMatch({
+      topic,
+      players: [
+        {
+          userId: waiting.userId,
+          displayName: waiting.displayName,
+          avatarUrl: waiting.avatarUrl,
+          banner: waiting.banner ?? null,
+          country: waiting.country ?? null,
+          city: waiting.city ?? null,
+          rating: waiting.rating,
+          level: waiting.level ?? 1,
+          rankedRating: waiting.rankedRating ?? RANKED_START,
+          isGhost: false,
+        },
+        {
+          /**
+           * Your own name and face, on purpose — and a fresh id, because the
+           * engine keys players by `userId` and two entries sharing one id would
+           * make every lookup ambiguous. The client is told which side is the
+           * recording by `isSelf` and by the date.
+           */
+          userId: String(new mongoose.Types.ObjectId()),
+          displayName: waiting.displayName,
+          avatarUrl: waiting.avatarUrl,
+          banner: waiting.banner ?? null,
+          country: waiting.country ?? null,
+          city: waiting.city ?? null,
+          rating: best.playerRating ?? waiting.rating,
+          level: best.playerLevel ?? waiting.level ?? 1,
+          rankedRating: waiting.rankedRating ?? RANKED_START,
+          /**
+           * `isGhost` is what makes the engine drive it from the script. It is a
+           * statement about how the seat is played, not about who is in it — and
+           * `isGhost` also keeps the finaliser from writing a rating for a player
+           * who does not exist, which is exactly right here.
+           */
+          isGhost: true,
+          /** Read by the client to label the seat honestly. */
+          isSelf: true,
+          recordedAt: best.createdAt,
+          sourceMatchId: String(best.matchId),
+          script: best.answers,
+        },
+      ],
+      rounds,
+      mode: waiting.mode,
+      language: waiting.language,
+      roundDurationMs: waiting.roundDurationMs,
+    });
+  }
+
   async createGhostMatch(waiting) {
     /**
      * Refusing ghosts has to mean refusing *both* kinds.
@@ -667,7 +943,25 @@ export class GameOrchestrator {
       players,
       roundDurationMs,
       roundResultMs: this.timing.roundResultMs,
-      countdownMs: this.timing.countdownMs,
+      /**
+       * A one-player match does not pay for a ceremony it never sees.
+       *
+       * The countdown exists to cover the versus screen, and `searching.jsx`
+       * routes a match with no opponent straight to the board — so for a drill
+       * this was five and a half seconds of an empty question card. See
+       * `SOLO_COUNTDOWN_MS`.
+       *
+       * A self-race is NOT included: it has two players and it does show the
+       * versus screen, with your own recorded run on the other side. Keyed on
+       * the player count rather than on the mode for exactly that reason — the
+       * question is "is there a second face to introduce", and the player count
+       * is the only thing that actually answers it.
+       *
+       * A test-supplied override still wins, because the suites that set it run
+       * drills too and expect their own pacing.
+       */
+      countdownMs:
+        this.timing.countdownMs ?? (players.length === 1 ? SOLO_COUNTDOWN_MS : undefined),
       disconnectGraceMs: this.timing.disconnectGraceMs,
       transport: this.transport,
       hooks: {

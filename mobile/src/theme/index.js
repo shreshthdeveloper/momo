@@ -172,6 +172,22 @@ export const colors = {
    * and the hairline still draws the edge.
    */
   nightRaised: '#272236',
+  /**
+   * The same surface, under the name eight screens were already calling it.
+   *
+   * `colors.card` was referenced by the mistakes deck, the class table, the
+   * tournament list and detail, the live session, the shop's freeze card, the
+   * Play revision banner and SpaceHome — and it was never defined. Undefined is
+   * not an error in a style object; it is `backgroundColor: undefined`, which is
+   * transparent. So every one of those cards has been drawing its border onto
+   * the bare field with nothing inside, which is exactly the "flat, unfinished"
+   * look they were reported as having.
+   *
+   * An alias rather than a new value: they all wanted the raised surface, and a
+   * ninth colour that happens to equal the eighth is how a palette starts
+   * drifting.
+   */
+  card: '#272236',
 
   /** Text sitting on any saturated fill. */
   onColor: '#FFFFFF',

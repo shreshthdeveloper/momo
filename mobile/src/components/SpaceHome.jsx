@@ -1,12 +1,14 @@
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
-import { Text, ProgressBar, EmptyState, SectionHeader, Card, Stat } from './ui.jsx';
+import { Text, ProgressBar, EmptyState, SectionHeader, Card, Stat, Button } from './ui.jsx';
 import TopicCard from './TopicCard.jsx';
 import AssignmentCard from './AssignmentCard.jsx';
 import ContestCard from './ContestCard.jsx';
 import { TopicGlyph } from './Illustration.jsx';
+import Icon from './Icon.jsx';
 import { colors, layout, space } from '../theme/index.js';
+import { MATCH_MODE } from '../shared/constants.js';
 
 /**
  * design.md §8.12 — space home.
@@ -83,6 +85,38 @@ export default function SpaceHome({ feed, onPlay, header }) {
         </View>
       ) : null}
 
+      {/**
+       * 1.5 — the three things that only exist inside an organization.
+       *
+       * A row of three, above contests, because each is a *place* rather than a
+       * task: join the lesson your teacher just started, see where your class
+       * stands, see who is left in the bracket. None of them belongs in the
+       * assignment list (they have no deadline) or the topic row (they are not
+       * topics), and all three were unreachable without them.
+       */}
+      <View style={styles.section}>
+        <View style={styles.shortcuts}>
+          <Shortcut
+            icon="play"
+            label="Join a session"
+            hint="With a code"
+            onPress={() => router.push('/session')}
+          />
+          <Shortcut
+            icon="ranks"
+            label="Class table"
+            hint="Your class vs theirs"
+            onPress={() => router.push('/class-table')}
+          />
+          <Shortcut
+            icon="trophy"
+            label="Tournaments"
+            hint="Knockout brackets"
+            onPress={() => router.push('/tournaments')}
+          />
+        </View>
+      </View>
+
       {/* 2. Contests — the thing with a clock on it. */}
       {live.length > 0 ? (
         <View style={styles.section}>
@@ -125,7 +159,14 @@ export default function SpaceHome({ feed, onPlay, header }) {
       )}
 
       {/* 4. Personal progress. */}
-      {feed.performance ? <Performance performance={feed.performance} accent={accent} /> : null}
+      {feed.performance ? (
+        <Performance
+          performance={feed.performance}
+          accent={accent}
+          spaceId={feed.space?.id}
+          onPlay={onPlay}
+        />
+      ) : null}
 
       {/* 5. Finished contests, last — a record rather than a call to action. */}
       {finished.length > 0 ? (
@@ -152,6 +193,33 @@ export default function SpaceHome({ feed, onPlay, header }) {
 }
 
 /**
+ * One of the three organization shortcuts.
+ *
+ * Icon over two lines of type, three across. The hint is not decoration: "Class
+ * table" alone is a noun nobody has met before, and one line saying what it
+ * compares is the difference between a tile people press and a tile people
+ * ignore.
+ */
+function Shortcut({ icon, label, hint, onPress }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}. ${hint}`}
+      style={({ pressed }) => [styles.shortcut, pressed && { opacity: 0.7 }]}
+    >
+      <Icon name={icon} size={20} color={colors.accent} />
+      <Text variant="label" numberOfLines={1} style={{ marginTop: space.xs }}>
+        {label}
+      </Text>
+      <Text variant="tiny" color={colors.inkFaint} numberOfLines={1}>
+        {hint}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
  * prd.md F7.6 — "accuracy per topic, average response time, weakest topics,
  * improvement over time".
  *
@@ -159,7 +227,7 @@ export default function SpaceHome({ feed, onPlay, header }) {
  * list reads it as a report card; a student given one topic reads it as a next
  * step.
  */
-function Performance({ performance, accent }) {
+function Performance({ performance, accent, spaceId, onPlay }) {
   const weakest = performance.weakest?.[0];
   const improvement = performance.improvement;
 
@@ -215,6 +283,34 @@ function Performance({ performance, accent }) {
               Weakest right now — {weakest.name}, {Math.round(weakest.accuracy)}%
             </Text>
             <ProgressBar value={weakest.accuracy} max={100} color={accent} height={6} />
+            {/**
+             * The next step, as a step.
+             *
+             * The note above this function has always claimed that naming one topic
+             * makes it "a next step" rather than a report card — but there was no
+             * step: a name, a percentage and a bar, and nothing to press. Telling a
+             * student their weakest subject and leaving them to go and find it is
+             * the report card the design was trying not to be.
+             *
+             * Practice rather than ranked. Being handed your worst topic and dropped
+             * into a rated match is a punishment; drilling it alone is the thing a
+             * student would actually choose.
+             */}
+            {weakest.topicId && onPlay ? (
+              <Button
+                variant="soft"
+                size="sm"
+                fullWidth={false}
+                label="Practise this on your own"
+                style={styles.weakestAction}
+                onPress={() =>
+                  onPlay(
+                    { id: weakest.topicId, name: weakest.name, spaceId },
+                    MATCH_MODE.PRACTICE,
+                  )
+                }
+              />
+            ) : null}
           </View>
         ) : null}
       </Card>
@@ -240,5 +336,17 @@ const styles = StyleSheet.create({
   stats: { flexDirection: 'row', alignItems: 'center' },
   statDivider: { width: 1, height: 28, backgroundColor: colors.hairline },
   weakest: { marginTop: space.md, gap: space.sm },
+  weakestAction: { marginTop: space.xs, alignSelf: 'flex-start' },
+  shortcuts: { flexDirection: 'row', gap: space.sm },
+  shortcut: {
+    flex: 1,
+    minHeight: 84,
+    paddingHorizontal: space.sm,
+    paddingVertical: space.md,
+    borderRadius: layout.radiusInput,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    backgroundColor: colors.card,
+  },
   quiet: { paddingHorizontal: layout.gutter, textAlign: 'center' },
 });

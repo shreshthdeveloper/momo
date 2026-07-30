@@ -13,11 +13,9 @@ import {
   ErrorNotice,
   Avatar,
   ProgressBar,
-  SectionHeader,
   IconButton,
   Skeleton,
 } from '../../src/components/ui.jsx';
-import { ProfileBodySkeleton } from '../../src/components/Skeletons.jsx';
 import { LeagueProgress } from '../../src/components/League.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import { signOutCopy } from '../../src/lib/account.js';
@@ -27,10 +25,6 @@ import CoinBalance from '../../src/components/CoinBalance.jsx';
 import { ACHIEVEMENTS } from '../../src/shared/achievements.js';
 import { useAdminSpace, useIsSuperadmin } from '../../src/lib/admin.js';
 import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
-import { TopicProgressRow, MatchHistoryRow } from '../../src/components/ProfileRows.jsx';
-
-/** How many of each list the profile shows before handing over to its own page. */
-const PREVIEW = 5;
 
 /**
  * One past result, as a mark.
@@ -76,6 +70,8 @@ export default function Profile() {
   const isSuperadmin = useIsSuperadmin();
   const [stats, setStats] = useState(null);
   const [matches, setMatches] = useState([]);
+  /** `[{ topic, count }]` — what is owed, per subject. */
+  const [mistakes, setMistakes] = useState([]);
 
   /**
    * How many achievements there are, and how many are yours.
@@ -94,17 +90,28 @@ export default function Profile() {
   const [signingOut, setSigningOut] = useState(false);
 
   const topTopics = stats?.topTopics ?? [];
-
-  /** Stable identities, so the memoised rows stay memoised across a refresh. */
-  const openTopic = useCallback((topicId) => router.push(`/topic/${topicId}`), [router]);
-  const openReview = useCallback((matchId) => router.push(`/review/${matchId}`), [router]);
+  const mistakeTotal = mistakes.reduce((sum, row) => sum + (row.count ?? 0), 0);
 
   const load = useCallback(async () => {
     try {
       setError(null);
-      const [s, m] = await Promise.all([api.get('/me/stats'), api.get('/matches', { limit: 10 })]);
+      const [s, m, d] = await Promise.all([
+        api.get('/me/stats'),
+        api.get('/matches', { limit: 10 }),
+        /**
+         * The revision deck, for the fourth door below.
+         *
+         * Swallowed rather than caught with the others: the deck is an addition
+         * to this screen, not part of it, and a failure here must not put an
+         * error banner over a profile whose own data loaded fine. The door
+         * simply reads "nothing to revise", which is also what it says when the
+         * deck is genuinely empty — and that is the truthful fallback.
+         */
+        api.get('/me/mistakes').catch(() => null),
+      ]);
       setStats(s);
       setMatches(m.items ?? []);
+      if (d) setMistakes(d.items ?? []);
     } catch (err) {
       setError(err);
     }
@@ -301,12 +308,19 @@ export default function Profile() {
               }
               label="Win rate"
             />
+            {/* The label carries the freeze, because the freeze is only ever
+                interesting NEXT to the number it protects — on its own it is a
+                noun nobody asked about. */}
             <StatTile
               icon="bolt"
               tint={colors.optionC}
               soft={colors.amberSoft}
               value={stats?.streak?.current ?? 0}
-              label="Day streak"
+              label={
+                stats?.streak?.freezes > 0
+                  ? `Day streak · ${stats.streak.freezes} freeze${stats.streak.freezes === 1 ? '' : 's'}`
+                  : 'Day streak'
+              }
             />
             {/* The balance sits with the other two because it is a measure of
                 play like they are, not a wallet bolted onto the profile — it is
@@ -426,78 +440,76 @@ export default function Profile() {
           ) : null}
 
           {!stats ? (
-            <ProfileBodySkeleton />
+            <DoorsSkeleton />
           ) : (
             <>
-              {/* Achievements, as a door rather than a shelf.
-                  The strip of badges that used to sit here appeared only once
-                  something had been earned, so a new player saw nothing at all
-                  and reasonably concluded there was nothing to see. A row that
-                  is always here, always says how many there are, and opens the
-                  full list is the whole fix. */}
-              <Pressable
-                onPress={() => router.push('/achievements')}
-                accessibilityRole="button"
-                accessibilityLabel={`Achievements, ${earnedCount} of ${totalCount} earned`}
-                style={({ pressed }) => [styles.door, pressed && styles.pressed]}
-              >
-                <View style={styles.medal}>
-                  <Icon name="trophy" size={16} color={colors.gold} />
-                </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text variant="label">Achievements</Text>
-                  <Text variant="meta" color={colors.inkMuted}>
-                    {earnedCount} of {totalCount} earned
-                    {earnedCount < totalCount ? ' · see what is left' : ''}
-                  </Text>
-                </View>
-                <Icon name="chevronRight" size={16} color={colors.inkMuted} />
-              </Pressable>
-
               {/**
-                * Five, and a door to the rest.
+                * The four rooms, two across.
                 *
-                * Both of these lists used to render everything the server sent
-                * — ten topics and ten matches — which on an active account was
-                * a profile you scrolled past rather than read, and on a very
-                * active one was still a silent truncation at ten with nothing
-                * saying so. Five is a glance; "See all" is the answer to the
-                * question the glance raises.
+                * This was a full-width Achievements row followed by two inline
+                * previews — five topics with progress bars, then five matches
+                * with scores and rating moves — each under its own section
+                * header with a "See all". Three headings, twelve rows and two
+                * kinds of list, all of it a preview of somewhere else.
+                *
+                * It made the profile long without making it informative: the
+                * rows were too short to be the list and too long to be a link,
+                * and the screen ended in a scroll rather than a shape.
+                *
+                * Four tiles instead. Each one names a room, says how much is in
+                * it, and opens it. The lists still exist in full, one tap away,
+                * where they are the whole screen rather than the top five of it.
+                *
+                * Revise is one of the four because it belongs with these: it is
+                * a room of your own play, like the other three, and this is the
+                * screen about your own play. It sat on the Play tab, where it
+                * competed with sixty topic cards for a press.
                 */}
-              {topTopics.length > 0 ? (
-                <View style={styles.section}>
-                  <SectionHeader
-                    title="Your topics"
-                    action={topTopics.length > PREVIEW ? 'See all' : undefined}
-                    onAction={
-                      topTopics.length > PREVIEW ? () => router.push('/my-topics') : undefined
-                    }
-                  />
-                  {topTopics.slice(0, PREVIEW).map((t) => (
-                    <TopicProgressRow key={t.topicId} topic={t} onPress={openTopic} />
-                  ))}
-                </View>
-              ) : null}
-
-              {matches.length > 0 ? (
-                <View style={styles.section}>
-                  <SectionHeader
-                    title="Recent matches"
-                    action={matches.length > PREVIEW ? 'See all' : undefined}
-                    onAction={matches.length > PREVIEW ? () => router.push('/history') : undefined}
-                  />
-                  {/* The right-hand column is a score over a rating move, and a
-                      green "+16" beside a score reads as points won unless
-                      something says otherwise. It is said once, over the column,
-                      rather than on every row. */}
-                  <Text variant="tiny" color={colors.inkFaint} style={styles.legend}>
-                    Score, and the ranked rating it moved
-                  </Text>
-                  {matches.slice(0, PREVIEW).map((m) => (
-                    <MatchHistoryRow key={m.id} match={m} onPress={openReview} />
-                  ))}
-                </View>
-              ) : null}
+              <View style={styles.doors}>
+                <DoorTile
+                  icon="book"
+                  tint={colors.accent}
+                  soft={colors.accentSoft}
+                  title="Your topics"
+                  meta={
+                    topTopics.length
+                      ? `${topTopics.length} played`
+                      : 'Nothing played yet'
+                  }
+                  onPress={() => router.push('/my-topics')}
+                />
+                <DoorTile
+                  icon="history"
+                  tint={colors.optionA}
+                  soft="rgba(59, 130, 246, 0.14)"
+                  title="Recent matches"
+                  meta={matches.length ? `Last ${matches.length}` : 'No matches yet'}
+                  onPress={() => router.push('/history')}
+                />
+                <DoorTile
+                  icon="trophy"
+                  tint={colors.gold}
+                  soft={colors.goldSoft}
+                  title="Achievements"
+                  meta={`${earnedCount} of ${totalCount}`}
+                  onPress={() => router.push('/achievements')}
+                />
+                {/* The one door that is about work owed rather than work done,
+                    so it is the one that carries a count worth acting on. */}
+                <DoorTile
+                  icon="target"
+                  tint={colors.optionC}
+                  soft={colors.amberSoft}
+                  title="Revise"
+                  meta={
+                    mistakeTotal > 0
+                      ? `${mistakeTotal} to put right`
+                      : 'Nothing to revise'
+                  }
+                  dim={mistakeTotal === 0}
+                  onPress={() => router.push('/mistakes')}
+                />
+              </View>
             </>
           )}
 
@@ -659,6 +671,61 @@ function StatTile({ icon, tint, soft, value, label, onPress }) {
   );
 }
 
+/**
+ * The wait, in the shape of the four doors.
+ *
+ * Not `ProfileBodySkeleton` any more: that one is shared with the public
+ * profile, which still lists topics and matches inline and would be left
+ * pretending to be a grid. A four-tile wait costs eight lines here and keeps
+ * both screens honest about what is coming.
+ */
+function DoorsSkeleton() {
+  return (
+    <View style={styles.doors}>
+      {[0, 1, 2, 3].map((i) => (
+        <Skeleton key={i} height={104} radius={layout.radiusCard} style={styles.doorWait} />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * One room of your own play: what it is, how much is in it, and the way in.
+ *
+ * A sibling of `StatTile` rather than a variant of it, because they answer
+ * different questions and must not be confused: a stat tile is a NUMBER about
+ * you and does nothing when pressed; this is a DOOR. Hence the chevron, which
+ * the stat tiles deliberately do not have.
+ *
+ * `dim` is for a door with nothing behind it. It stays pressable — an empty
+ * revision deck is a screen worth reading, since it says every question you have
+ * ever missed you have since got right — but it should not be competing for the
+ * eye with the three that have something in them.
+ */
+function DoorTile({ icon, tint, soft, title, meta, dim, onPress }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. ${meta}.`}
+      style={({ pressed }) => [styles.door, dim && styles.doorDim, pressed && styles.pressed]}
+    >
+      <View style={styles.doorHead}>
+        <View style={[styles.doorGlyph, { backgroundColor: soft }]}>
+          <Icon name={icon} size={17} color={tint} />
+        </View>
+        <Icon name="chevronRight" size={15} color={colors.inkFaint} />
+      </View>
+      <Text variant="label" numberOfLines={1}>
+        {title}
+      </Text>
+      <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
+        {meta}
+      </Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
   content: { paddingBottom: layout.dockClearance },
@@ -801,29 +868,51 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  door: {
+  /**
+   * Four doors, two across.
+   *
+   * `flexBasis: 48%` with `flexGrow: 0` — the same shape as the chest grid, and
+   * for the same reason: a fifth door one day must sit under the first four at
+   * their size, not stretch across the row.
+   */
+  doors: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
-    backgroundColor: colors.accentSoft,
-    borderRadius: layout.radiusInput,
-    padding: space.lg,
+    flexWrap: 'wrap',
+    gap: layout.cardGap,
     marginBottom: space.xl,
   },
-  section: { marginBottom: space.xl },
-  badges: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  badge: {
+  door: {
+    flexBasis: '48%',
+    flexGrow: 0,
+    gap: 2,
+    minHeight: 104,
+    justifyContent: 'center',
+    paddingHorizontal: layout.cardPadding,
+    paddingVertical: space.lg,
+    borderRadius: layout.radiusCard,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    backgroundColor: colors.card,
+  },
+  /** Nothing behind it. Still a door, just not one asking to be opened. */
+  doorDim: { opacity: 0.62 },
+  /** `width` rather than `flexBasis`: Skeleton takes a width prop, not flex. */
+  doorWait: { flexBasis: '48%', flexGrow: 0 },
+  doorHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.sunken,
-    borderRadius: layout.radiusPill,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
+    justifyContent: 'space-between',
+    marginBottom: space.sm,
+  },
+  doorGlyph: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   between: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.sm },
-  legend: { textAlign: 'right', marginTop: -space.sm, marginBottom: space.sm },
-  pressed: { backgroundColor: colors.sunken },
+  pressed: { backgroundColor: colors.canvas },
   account: {
     marginTop: space.md,
     paddingTop: space.xl,

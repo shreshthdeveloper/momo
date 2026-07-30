@@ -235,12 +235,19 @@ export default function MatchScreen() {
     ],
   });
 
+  /**
+   * A drill with no opponent. Read from the match rather than the mode, so the
+   * screen is right even if some future mode also arrives without one.
+   */
+  const solo = !game.opponent;
+
   // One line under the header for whatever the moment needs said.
   const statusLine = game.status === 'leaving'
     ? { text: 'leaving the match…', tone: colors.wrong }
-    : !game.opponentConnected
+    : // Both of these speak about somebody who is not there in a solo drill.
+      !solo && !game.opponentConnected
     ? { text: 'opponent reconnecting', tone: 'rgba(255,255,255,0.55)' }
-    : game.status === 'playing' && game.opponentAnswered && !game.yourAnswer
+    : !solo && game.status === 'playing' && game.opponentAnswered && !game.yourAnswer
       ? { text: `${game.opponent?.displayName ?? 'Rival'} has locked in`, tone: colors.goldWarn }
       : {
           // Says exactly what the scoring does: the round pays double, and a
@@ -287,20 +294,31 @@ export default function MatchScreen() {
             </Text>
           </View>
 
-          <View style={[styles.corner, styles.cornerRight]}>
-            <View style={[styles.cornerText, styles.cornerTextRight]}>
-              <Text variant="meta" color="rgba(255,255,255,0.66)" numberOfLines={1} style={styles.cornerName}>
-                {game.opponent?.displayName ?? 'Rival'}
-              </Text>
-              <RollingNumber value={game.scores.opponent} color={colors.rival} style={styles.score} />
+          {/**
+           * The right-hand corner is the opponent, so a solo drill has no right
+           * -hand corner. Not a "Rival" placeholder scoring zero: that reads as
+           * an opponent who is losing badly, which is worse than no opponent at
+           * all and is the exact ambiguity practice is meant to remove. The
+           * clock stays centred because the corner keeps its width.
+           */}
+          {solo ? (
+            <View style={[styles.corner, styles.cornerRight]} />
+          ) : (
+            <View style={[styles.corner, styles.cornerRight]}>
+              <View style={[styles.cornerText, styles.cornerTextRight]}>
+                <Text variant="meta" color="rgba(255,255,255,0.66)" numberOfLines={1} style={styles.cornerName}>
+                  {game.opponent?.displayName ?? 'Rival'}
+                </Text>
+                <RollingNumber value={game.scores.opponent} color={colors.rival} style={styles.score} />
+              </View>
+              <Avatar
+                url={game.opponent?.avatarUrl}
+                name={game.opponent?.displayName}
+                size={40}
+                ring="rival"
+              />
             </View>
-            <Avatar
-              url={game.opponent?.avatarUrl}
-              name={game.opponent?.displayName}
-              size={40}
-              ring="rival"
-            />
-          </View>
+          )}
         </View>
 
         <Text variant="meta" color={statusLine.tone} style={styles.statusLine} numberOfLines={1}>
@@ -419,7 +437,10 @@ export default function MatchScreen() {
             hairlines. */}
         <View style={styles.railBand} pointerEvents="none">
           <ScoreRail side="left" score={game.scores.you} max={maxScore} tone={colors.onColor} track="transparent" />
-          <ScoreRail side="right" score={game.scores.opponent} max={maxScore} tone={colors.rival} track="transparent" />
+          {/* No rival rail with nobody in the rival seat. */}
+          {solo ? null : (
+            <ScoreRail side="right" score={game.scores.opponent} max={maxScore} tone={colors.rival} track="transparent" />
+          )}
         </View>
 
         {/* design.md §10 — "Leave now and you forfeit." The copy names the

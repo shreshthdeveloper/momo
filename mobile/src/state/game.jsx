@@ -550,7 +550,7 @@ export function GameProvider({ children }) {
   );
 
   const joinQueue = useCallback(
-    (topicId, { spaceId, mode, challengeId } = {}) => {
+    (topicId, { spaceId, mode, challengeId, deck } = {}) => {
       /**
        * A friend challenge decides its own terms.
        *
@@ -575,8 +575,17 @@ export function GameProvider({ children }) {
         mode: chosen,
         preferredMode: preferredModeRef.current,
       });
-      // Remembered so a reconnect can ask for the place back — see the refs.
-      const request = challengeId ? { challengeId } : { topicId, spaceId, mode: chosen };
+      /**
+       * Remembered so a reconnect can ask for the place back — see the refs.
+       *
+       * `deck` travels with it because a re-join must ask for the same paper. Only
+       * the deck's NAME is sent; which questions are in it is resolved server-side
+       * from this player's own history, so a reconnect that lands after the deck
+       * has changed gets today's answer rather than a stale list of ids.
+       */
+      const request = challengeId
+        ? { challengeId }
+        : { topicId, spaceId, mode: chosen, ...(deck ? { deck } : {}) };
       queueRequestRef.current = request;
       queueLostRef.current = false;
 
@@ -783,6 +792,19 @@ export function GameProvider({ children }) {
       connected,
       /** Whether the match in hand moves the ranked rating and the league. */
       isRanked: RATED_MODES.includes(state.mode),
+      /**
+       * The live socket, for the one consumer that needs its own events.
+       *
+       * A live class session is a set of frames on this connection rather than a
+       * connection of its own — a classroom is thirty phones on one access point,
+       * and opening a second socket per phone to carry a second event namespace
+       * would be the wrong trade. Exposed rather than proxied because the session
+       * provider binds and unbinds five handlers of its own, and wrapping each of
+       * them here would put session vocabulary inside the match state.
+       *
+       * Read `connected` before using it: it is null until the first connect.
+       */
+      socket: socketRef.current,
       connect,
       disconnect,
       selectMode,
@@ -795,6 +817,8 @@ export function GameProvider({ children }) {
       declineRematch,
       reset,
     }),
+    // `connected` is in the list and flips on every (re)connect, which is what
+    // republishes `socketRef.current` — a ref alone would never re-run this.
     [state, connected, connect, disconnect, selectMode, joinQueue, leaveQueue, enterContest, answer, forfeit, rematch, declineRematch, reset],
   );
 

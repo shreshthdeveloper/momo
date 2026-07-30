@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { User, Notification } from '../models/index.js';
 import { Friendship, Challenge } from '../models/social.js';
 import { Topic, Match } from '../models/index.js';
-import { headToHead } from './matchService.js';
+import { headToHead, headToHeadMany as headToHeadHelper } from './matchService.js';
 import { notify } from './notificationService.js';
 import { BadRequestError, NotFoundError, ConflictError, ForbiddenError } from '../lib/errors.js';
 import {
@@ -164,6 +164,25 @@ export async function listFriends(user) {
     if (row.status === 'accepted') friends.push(entry);
     else if (String(row.requestedBy) === String(user._id)) outgoing.push(entry);
     else incoming.push(entry);
+  }
+
+  /**
+   * The record against each friend — "you are 4–3 against Garv".
+   *
+   * `headToHead` was computed and sent on the versus screen and on a profile, and
+   * nowhere in the app said it on the list where you choose who to challenge. A
+   * rivalry is the thing that makes a friends list worth opening twice, and the
+   * number was already being calculated.
+   *
+   * Friends only. A pending request is not a rivalry, and offering a scoreline to
+   * somebody who has not accepted you yet reads as needling.
+   */
+  const records = await headToHeadHelper(user._id, friends.map((f) => f.id));
+  for (const friend of friends) {
+    // Absent rather than zeroed when they have never played: the row draws
+    // nothing at all, which is the truth, instead of a 0–0 that looks like a
+    // rivalry yet to start.
+    friend.headToHead = records.get(friend.id) ?? null;
   }
 
   return { friends, incoming, outgoing };

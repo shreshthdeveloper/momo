@@ -11,7 +11,14 @@ export { Rating } from './Rating.js';
 export { Match } from './Match.js';
 export { Replay } from './Replay.js';
 export { Friendship, Challenge } from './social.js';
-export { Contest, ContestEntry, Assignment, AssignmentProgress } from './learning.js';
+export {
+  Contest,
+  ContestEntry,
+  Assignment,
+  AssignmentProgress,
+  Tournament,
+  ClassSession,
+} from './learning.js';
 export { OtpRequest, RefreshToken, Batch, Report, AuditLog, Notification } from './ops.js';
 export { LeaderboardSnapshot } from './LeaderboardSnapshot.js';
 export { Cosmetic, ProgressionConfig, Chest, ChestGrant } from './progression.js';

@@ -2,7 +2,12 @@ import mongoose from 'mongoose';
 import { Rating, User } from '../models/index.js';
 import { nextRating, overallRatingFrom } from '../shared/elo.js';
 import { levelForXp, xpForMatch } from '../shared/mastery.js';
-import { ELO_START, OVERALL_RATING_TOPIC_COUNT, RANKED_START } from '../shared/constants.js';
+import {
+  ELO_START,
+  OVERALL_RATING_TOPIC_COUNT,
+  RANKED_START,
+  isUnrecordedMode,
+} from '../shared/constants.js';
 
 const oid = (v) => new mongoose.Types.ObjectId(String(v));
 
@@ -89,10 +94,39 @@ export async function applyMatchOutcome({
   row.rating = ratingAfter;
   row.peakRating = Math.max(row.peakRating ?? ratingBefore, ratingAfter);
   if (ratingAfter !== ratingBefore) row.reachedRatingAt = new Date();
-  row.matchesPlayed += 1;
-  if (verdict === 'won') row.wins += 1;
-  else if (verdict === 'lost') row.losses += 1;
-  else row.draws += 1;
+  /**
+   * A drill is play, not a match. So is a self-race.
+   *
+   * The XP and the answer counts below are the whole point of both — they are
+   * what makes the mastery bar move and what the weakest-topic report reads. The
+   * win/loss record is a different kind of number: there was no opponent, so
+   * none of the three columns is true, and falling through to `draws` would
+   * claim the scores were level with somebody who was never there.
+   *
+   * `matchesPlayed` stays put for a less obvious reason — it is the leaderboard's
+   * tiebreak, where FEWER matches ranks higher at equal rating. Counting drills
+   * there would quietly penalise the mode we most want people to use.
+   *
+   * ── Why the mode, and not just the verdict ─────────────────────────────────
+   *
+   * This tested `verdict !== 'solo'` alone, and a self-race is not solo: it has
+   * two entries, so it ends in a real `won`/`lost`/`draw` against the recording.
+   * Every one of those was landing in this topic's W–L–D and bumping
+   * `matchesPlayed` — a win over nobody, bankable on demand by re-running your
+   * own best until you beat it, and moving a leaderboard tiebreak while doing so.
+   *
+   * `matchService` has always gated the ACCOUNT-level `matchesPlayed/matchesWon`
+   * on `unrecorded`, which is `verdict === 'solo' || isUnrecordedMode(mode)`. The
+   * per-topic row is the same record at a smaller scale and now asks the same
+   * question, so the two can no longer disagree about the same match.
+   */
+  const unrecorded = verdict === 'solo' || isUnrecordedMode(mode);
+  if (!unrecorded) {
+    row.matchesPlayed += 1;
+    if (verdict === 'won') row.wins += 1;
+    else if (verdict === 'lost') row.losses += 1;
+    else row.draws += 1;
+  }
   row.xp = xpAfter;
   row.level = levelAfter;
   row.correctAnswers += correctCount;

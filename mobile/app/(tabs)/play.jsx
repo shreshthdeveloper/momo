@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
-import { useRouter } from 'expo-router';
+import { FlatList, StyleSheet, useWindowDimensions } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useAuth } from '../../src/state/auth.jsx';
@@ -10,7 +10,6 @@ import {
   ErrorNotice,
   EmptyState,
   SearchField,
-  Chip,
   TabHeader,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
@@ -35,7 +34,7 @@ import { RANKED_START } from '../../src/shared/constants.js';
  * dashboard — where you stand and one button to play. This is the library, and
  * it is the only place in the app that lists topics. `/search` was a third copy
  * of the same list (field, category chips, results) and has been folded in
- * here; there is now one topic list, one search, one set of filters.
+ * here; there is now one topic list and one search.
  *
  * ── Tapping a topic opens a card, not a page ─────────────────────────────────
  *
@@ -90,7 +89,6 @@ export default function PlayLibrary() {
   const [query, setQuery] = useState('');
   const [topics, setTopics] = useState(null);
   const [error, setError] = useState(null);
-  const [category, setCategory] = useState(null);
   /** The topic whose card is open. `null` is the grid, undisturbed. */
   const [chosen, setChosen] = useState(null);
 
@@ -117,22 +115,61 @@ export default function PlayLibrary() {
     };
   }, [query, activeSpaceId]);
 
-  // The categories the results actually contain, rather than a fixed taxonomy —
-  // a filter that can return nothing is worse than no filter.
-  const categories = useMemo(
-    () => [...new Set((topics ?? []).map((t) => t.categoryName).filter(Boolean))],
-    [topics],
-  );
-  const shown = useMemo(
-    () => (category ? (topics ?? []).filter((t) => t.categoryName === category) : (topics ?? [])),
-    [topics, category],
+  /**
+   * The revision deck, fetched once per visit to this tab.
+   *
+   * The screen-level button this used to feed moved to the profile, where it
+   * sits with the other three rooms of your own play. What it still buys is the
+   * PER-TOPIC count, which is the more useful half: it is what lets the play
+   * sheet offer "revise" on exactly the topics that have something to revise,
+   * with the number in the label. Refetched on focus because drilling a topic is
+   * how those numbers change, and a player comes straight back here afterwards.
+   */
+  const [mistakes, setMistakes] = useState([]);
+  const [bestRuns, setBestRuns] = useState([]);
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      // Both indexes at once. Each answers "what else could this topic be" for
+      // every tile on screen, and neither is worth a round trip per tap.
+      Promise.all([
+        api.get('/me/mistakes').catch(() => null),
+        api.get('/me/best-runs').catch(() => null),
+      ])
+        // Silent: these are additions to this screen, not parts of it. A failure
+        // must not put an error banner over the topic library.
+        .then(([deck, runs]) => {
+          if (!alive) return;
+          if (deck) setMistakes(deck.items ?? []);
+          if (runs) setBestRuns(runs.items ?? []);
+        })
+        .catch(() => {});
+      return () => {
+        alive = false;
+      };
+    }, []),
   );
 
-  // A category can vanish under a new search. Clearing the filter beats showing
-  // an empty grid under a chip that is no longer on screen.
-  useEffect(() => {
-    if (category && topics && !categories.includes(category)) setCategory(null);
-  }, [category, categories, topics]);
+  const mistakeCounts = useMemo(
+    () => new Map(mistakes.map((row) => [row.topic.id, row.count])),
+    [mistakes],
+  );
+  const bestByTopic = useMemo(
+    () => new Map(bestRuns.map((row) => [row.topic.id, row])),
+    [bestRuns],
+  );
+
+  /**
+   * The whole list. There is no category filter any more.
+   *
+   * A scrolling row of category chips sat between the search and the grid, and
+   * it was three bad things at once: it looked like tabs without being tabs, it
+   * hid most of its own options off the right edge with nothing to say so, and
+   * it was a second way to narrow a list that already has a search field
+   * directly above it. Searching is the filter.
+   */
+  const shown = topics ?? [];
+
 
   /**
    * Start the match, at the stake that was just pressed.
@@ -143,7 +180,7 @@ export default function PlayLibrary() {
    */
   const selectMode = game.selectMode;
   const play = useCallback(
-    (mode) => {
+    (mode, { deck } = {}) => {
       const topic = chosen;
       if (!topic) return;
       setChosen(null);
@@ -156,6 +193,9 @@ export default function PlayLibrary() {
           coverUrl: topic.coverUrl ?? '',
           name: topic.name,
           mode,
+          // Omitted rather than sent empty: expo-router stringifies params, and
+          // `deck: ''` would arrive as a deck the server has to reject.
+          ...(deck ? { deck } : {}),
         },
       });
     },
@@ -197,8 +237,8 @@ export default function PlayLibrary() {
           used to end in an ellipsis on every phone. */}
       <TabHeader title="Play" caption="Pick a topic, then choose what the match is worth." />
 
-      {/* Pinned, both of them: a filter you have to scroll back up to reach is
-          a filter people stop using. */}
+      {/* Pinned: a search you have to scroll back up to reach is a search
+          people stop using. */}
       <SearchField
         style={styles.search}
         value={query}
@@ -208,30 +248,6 @@ export default function PlayLibrary() {
         autoCapitalize="none"
         returnKeyType="search"
       />
-
-      {categories.length > 1 ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          /**
-           * `flexGrow: 0` and a centred content container, both load-bearing:
-           * a horizontal ScrollView is still a flex child of this column, so
-           * without them a row of 38pt chips stretches into giant ovals.
-           */
-          style={styles.filterRow}
-          contentContainerStyle={styles.filters}
-        >
-          <Chip label="All" active={category === null} onPress={() => setCategory(null)} />
-          {categories.map((name) => (
-            <Chip
-              key={name}
-              label={name}
-              active={category === name}
-              onPress={() => setCategory(category === name ? null : name)}
-            />
-          ))}
-        </ScrollView>
-      ) : null}
 
       <ErrorNotice error={error} />
 
@@ -243,7 +259,7 @@ export default function PlayLibrary() {
           title={query ? 'Nothing matches that' : 'No topics yet'}
           body={
             query
-              ? 'Try a shorter search, or clear the category filter.'
+              ? 'Try a shorter search.'
               : 'Topics appear here once your organization publishes one, or the Arena has one live.'
           }
           actionLabel={query ? 'Clear search' : undefined}
@@ -274,10 +290,19 @@ export default function PlayLibrary() {
            * layout and a window of seven there is nothing left for it to save.
            */
           ListHeaderComponent={
-            <Text variant="meta" color={colors.inkFaint} style={styles.count}>
-              {shown.length} {shown.length === 1 ? 'topic' : 'topics'}
-              {category ? ` in ${category}` : ''}
-            </Text>
+            <>
+              {/**
+               * The deck, offered where "what should I play" is asked.
+               *
+               * Only when there is something in it — a permanent row reading "0 to
+               * revise" is a reproach, and this feature only works if arriving at it
+               * feels useful. It sits above the count rather than below the header so
+               * it scrolls away: it is a suggestion, not a fixture.
+               */}
+              <Text variant="meta" color={colors.inkFaint} style={styles.count}>
+                {shown.length} {shown.length === 1 ? 'topic' : 'topics'}
+              </Text>
+            </>
           }
         />
       )}
@@ -289,6 +314,10 @@ export default function PlayLibrary() {
         visible={chosen !== null}
         topic={chosen}
         rankedRating={rankedRating}
+        /** Only this topic's owed questions, so the option can name the number. */
+        mistakeCount={chosen ? (mistakeCounts.get(chosen.id) ?? 0) : 0}
+        /** And this topic's best run, so "beat your best" can name the score. */
+        bestRun={chosen ? (bestByTopic.get(chosen.id) ?? null) : null}
         onPlay={play}
         onDetails={openDetails}
         onClose={() => setChosen(null)}
@@ -301,15 +330,9 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
 
   search: { marginHorizontal: layout.gutter, marginTop: space.md, marginBottom: space.sm },
-  filterRow: { flexGrow: 0 },
-  filters: {
-    paddingHorizontal: layout.gutter,
-    gap: space.sm,
-    paddingVertical: space.sm,
-    alignItems: 'center',
-  },
 
   count: { paddingBottom: space.sm },
+
   grid: { paddingHorizontal: layout.gutter, paddingBottom: layout.dockClearance },
   /**
    * `flex-start` rather than the default `stretch`: the cells carry their own

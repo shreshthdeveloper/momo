@@ -24,6 +24,7 @@ import { useConsolePath } from '../src/lib/admin.js';
 import { GameProvider } from '../src/state/game.jsx';
 import { ProgressionProvider } from '../src/state/progression.jsx';
 import { NotificationsProvider } from '../src/state/notifications.jsx';
+import { SessionProvider } from '../src/state/session.jsx';
 import NotificationBanner from '../src/components/NotificationBanner.jsx';
 import Splash from '../src/components/Splash.jsx';
 import { colors, motion } from '../src/theme/index.js';
@@ -125,6 +126,23 @@ function RootNavigator() {
       {/* The two lists the profile previews five of. */}
       <Stack.Screen name="my-topics" />
       <Stack.Screen name="history" />
+      {/* The revision deck — the questions you got wrong and have not since got
+          right. Reached from the banner on Play, and a row per subject inside. */}
+      <Stack.Screen name="mistakes" />
+      {/* Class against class, inside an organization. */}
+      <Stack.Screen name="class-table" />
+      {/* The brackets in this organization, and one of them. */}
+      <Stack.Screen name="tournaments" />
+      <Stack.Screen name="tournament/[id]" />
+      {/**
+       * A live class session.
+       *
+       * `gestureEnabled: false` for the same reason a match has it: swiping back
+       * out of a question you are being timed on, in front of a class, is not a
+       * gesture anybody meant to make. Leaving is the header's back button, which
+       * tells the room.
+       */}
+      <Stack.Screen name="session" options={{ gestureEnabled: false }} />
       <Stack.Screen name="join" options={{ presentation: 'modal' }} />
     </Stack>
   );
@@ -165,7 +183,13 @@ export default function RootLayout() {
                   match is on the board, because the one place it must never
                   appear is over a question with a clock running. */}
               <NotificationsProvider>
-                <Boot />
+                {/* Inside the game provider too, and for the same reason: a live
+                    class session rides on the game socket rather than opening a
+                    second one — thirty phones on one classroom access point is
+                    the constraint the whole feature has to survive. */}
+                <SessionProvider>
+                  <Boot />
+                </SessionProvider>
               </NotificationsProvider>
             </GameProvider>
           </ProgressionProvider>

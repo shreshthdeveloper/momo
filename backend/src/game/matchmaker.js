@@ -2,6 +2,8 @@ import {
   LEVEL_BAND_MAX,
   LEVEL_BAND_STEP_MS,
   GHOST_AFTER_MS,
+  GHOST_JITTER_MS,
+  GHOST_JITTER_SHARE,
   QUEUE_SWEEP_AFTER_MS,
   HUMAN_ONLY_SWEEP_AFTER_MS,
 } from '../shared/constants.js';
@@ -147,7 +149,35 @@ export class Matchmaker {
       return 'paired';
     }
 
-    pool.push({ ...entry, level: levelOf(entry), band: 0, joinedAt: Date.now() });
+    /**
+     * Each waiting player gets their OWN ghost deadline, a little early.
+     *
+     * A fixed deadline is a tell. Live pairing happens whenever the other person
+     * happens to queue — 1s, 4s, 6s — but a ghost arrived at 8.0s every single
+     * time. Two matches is enough to notice that the fast opponents and the
+     * bang-on-eight-seconds opponents are different kinds of thing, and once a
+     * player suspects that, the illusion is worth nothing.
+     *
+     * Jittered DOWNWARD only. `ghostAfterMs` is a promise from prd.md F6.4.3 —
+     * nobody waits longer than this — so the deadline may arrive early but never
+     * late. On the shipped 8s that puts arrivals between roughly 5s and 8s,
+     * which overlaps the window live pairing actually uses.
+     *
+     * The window is a SHARE of the configured deadline, not a flat 3s. Tests and
+     * the `GHOST_AFTER_MS` env override run this queue at 50–600ms, and a fixed
+     * subtraction — or a fixed floor — would swamp those entirely: a 4.5s floor
+     * against a 50ms deadline turns a millisecond test into a hung one. Capped
+     * by `GHOST_JITTER_MS` so the real deadline still gets the full spread.
+     */
+    const window_ = Math.min(GHOST_JITTER_MS, Math.floor(this.ghostAfterMs * GHOST_JITTER_SHARE));
+    const deadline = this.ghostAfterMs - Math.floor(Math.random() * (window_ + 1));
+    pool.push({
+      ...entry,
+      level: levelOf(entry),
+      band: 0,
+      joinedAt: Date.now(),
+      ghostAfterMs: Math.max(1, deadline),
+    });
     this.pools.set(key, pool);
     this.userPool.set(String(entry.userId), key);
     return 'queued';
@@ -232,7 +262,8 @@ export class Matchmaker {
       const remaining = this.pools.get(key) ?? [];
       for (const waiting of [...remaining]) {
         if (!acceptsGhost(waiting)) continue;
-        if (now - waiting.joinedAt < this.ghostAfterMs) continue;
+        // The entry's own jittered deadline, not the shared constant.
+        if (now - waiting.joinedAt < (waiting.ghostAfterMs ?? this.ghostAfterMs)) continue;
         this.removeFrom(key, waiting.userId);
         this.metrics.ghosted += 1;
         this.metrics.totalWaitMs += now - waiting.joinedAt;

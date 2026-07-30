@@ -1,10 +1,10 @@
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Text, Sheet } from './ui.jsx';
+import { Text, Sheet, Badge } from './ui.jsx';
 import Icon from './Icon.jsx';
 import TopicMedallion from './TopicMedallion.jsx';
 import { LeagueBadge } from './League.jsx';
 import { colors, layout, space } from '../theme/index.js';
-import { MATCH_MODE } from '../shared/constants.js';
+import { DECK, MATCH_MODE } from '../shared/constants.js';
 
 /**
  * Tap a topic, get a card: what it is, and the two ways to play it.
@@ -32,7 +32,26 @@ import { MATCH_MODE } from '../shared/constants.js';
  * is now set by the last stake a player actually took rather than by a filter
  * they flipped once.
  */
-export default function TopicPlaySheet({ visible, topic, rankedRating, onPlay, onDetails, onClose }) {
+export default function TopicPlaySheet({
+  visible,
+  topic,
+  rankedRating,
+  /**
+   * How many questions in THIS topic the player got wrong and has not since got
+   * right. Zero hides the option entirely — an always-present "revise 0" would be
+   * a dead control, and it is the count that makes the offer worth reading.
+   */
+  mistakeCount = 0,
+  /**
+   * Your best recorded run on THIS topic — `{ score, recordedAt }` — or null if
+   * you have never finished one. Null hides the option: a race against a run that
+   * does not exist is a button that fails.
+   */
+  bestRun = null,
+  onPlay,
+  onDetails,
+  onClose,
+}) {
   if (!topic) return null;
 
   const level = topic.viewer?.level;
@@ -82,6 +101,57 @@ export default function TopicPlaySheet({ visible, topic, rankedRating, onPlay, o
           body="Just for fun. XP only, nothing at stake."
           onPress={() => onPlay(MATCH_MODE.QUICK)}
         />
+        {/**
+         * Third, and framed as what it is: no opponent at all.
+         *
+         * The wording matters more than it looks. "Practice" against an unnamed
+         * opponent would invite the question the whole ghost design exists to
+         * avoid — so the body line says outright that nobody is on the other
+         * side. A player who reads "on your own" never wonders who they played.
+         */}
+        <PlayOption
+          title="Practice on your own"
+          body="No opponent, no rating. Just the questions and the clock."
+          onPress={() => onPlay(MATCH_MODE.PRACTICE)}
+        />
+        {/**
+         * The revision deck, offered at the moment the topic was chosen.
+         *
+         * This is the one place the offer is worth more than on its own screen: the
+         * player has already decided what subject they want, and the answer to
+         * "what should I play in it" is *the things you got wrong* far more often
+         * than it is "seven more at random". It sits last because it is the
+         * narrowest choice, and only appears when there is something in it.
+         */}
+        {mistakeCount > 0 ? (
+          <PlayOption
+            title="Revise your mistakes"
+            body={
+              mistakeCount === 1
+                ? 'One question you got wrong. On your own, no rating.'
+                : `${mistakeCount} questions you got wrong. On your own, no rating.`
+            }
+            trailing={<Badge tone="amber" label={String(mistakeCount)} />}
+            onPress={() => onPlay(MATCH_MODE.PRACTICE, { deck: DECK.MISTAKES })}
+          />
+        ) : null}
+        {/**
+         * Your own best run, offered by name and by date.
+         *
+         * The only place in the product a replay is played back undisguised — and
+         * that is not an exception to the ghost rule so much as the proof of it:
+         * a replay is masked when it belongs to somebody else, and this one
+         * belongs to the person reading. Naming the score is what makes it a
+         * target rather than a curiosity.
+         */}
+        {bestRun ? (
+          <PlayOption
+            title="Beat your best"
+            body={`Your ${bestRun.score} from ${formatRunDate(bestRun.recordedAt)}, played back. Same questions.`}
+            trailing={<Badge tone="quiet" label={String(bestRun.score)} />}
+            onPress={() => onPlay(MATCH_MODE.SELF)}
+          />
+        ) : null}
       </View>
 
       {/* Everything the old destination had — the topic board, your mastery,
@@ -99,6 +169,23 @@ export default function TopicPlaySheet({ visible, topic, rankedRating, onPlay, o
       </Pressable>
     </Sheet>
   );
+}
+
+/**
+ * "today", "yesterday", or a date — the shortest true thing.
+ *
+ * A run from four hours ago described as "30 Jul" reads as ancient history and
+ * makes the target feel unbeatable; one from March described as "yesterday" would
+ * be a lie. The two recent cases are the ones a player will actually see most.
+ */
+function formatRunDate(iso) {
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return 'an earlier run';
+  const days = Math.floor((Date.now() - then.getTime()) / 86_400_000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days} days ago`;
+  return then.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
 /**

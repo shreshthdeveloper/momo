@@ -20,8 +20,12 @@ import {
   CONTEST_MAX_QUESTIONS,
   QUESTION_STATUS,
   SPACE_ROLE,
+  DAILY_QUESTION_COUNT,
+  DAILY_MIN_PER_TOPIC,
+  TOPIC_STATUS,
 } from '../shared/constants.js';
 import { maxScoreForRounds } from '../shared/scoring.js';
+import { istDateKey, istDayBoundsUtc } from '../lib/dates.js';
 
 const oid = (v) => new mongoose.Types.ObjectId(String(v));
 
@@ -344,6 +348,14 @@ export function shapeContest(contest) {
     id: String(doc._id),
     name: doc.name,
     description: doc.description ?? null,
+    /**
+     * `'daily'` marks the organization's automatic paper. The client uses it to
+     * present a daily as recurring furniture — a card that says "today's" — rather
+     * than as an event somebody scheduled, and the admin console uses it to keep
+     * 365 rows a year out of the contest list's foreground.
+     */
+    kind: doc.kind ?? 'standard',
+    dailyOn: doc.dailyOn ?? null,
     topics: (doc.topicIds ?? []).map((t) =>
       t?._id ? { id: String(t._id), name: t.name, coverUrl: t.coverUrl ?? null } : { id: String(t) },
     ),
@@ -727,6 +739,116 @@ function ordinal(n) {
  * transition is guarded by the status it moves out of, and every notification
  * by a timestamp that is set when it is sent.
  */
+/**
+ * Generate today's daily challenge for every organization that wants one.
+ *
+ * ── Why this is a contest and not a new thing ────────────────────────────────
+ *
+ * A daily challenge needs a frozen paper everyone sits, one attempt each, a
+ * standings table and a window with a start and an end. That is the definition of
+ * a contest, line for line. So this creates one, marks it `kind: 'daily'`, and
+ * lets the lifecycle job open it, close it, notify about it and finalise it —
+ * none of which needed a single change. The whole feature is the scheduling.
+ *
+ * ── The window ───────────────────────────────────────────────────────────────
+ *
+ * Midnight to midnight, IST. A fixed window is the point: "same questions for
+ * everyone, today" is a thing a class can talk about at break, and a rolling
+ * 24-hour window from whenever you first opened the app is not.
+ *
+ * ── Idempotency ──────────────────────────────────────────────────────────────
+ *
+ * Guaranteed by a unique index on `{spaceId, dailyOn}`, not by looking first. The
+ * job runs hourly, may run on several processes, and restarts at deploy — every
+ * one of those is a second call for the same day, and a duplicate-key error is
+ * the correct, boring outcome.
+ */
+export async function rollDailyChallenges(now = new Date()) {
+  const day = istDateKey(now);
+  const result = { created: 0, skipped: 0 };
+
+  /**
+   * tenant-ok: like the lifecycle job below, this is platform-wide by definition
+   * — it is the tick that gives every organization its paper. Each space's
+   * contest is written under that space's own id.
+   */
+  const spaces = await Space.find(
+    { status: 'active', 'settings.dailyChallenge': true },
+    { _id: 1, name: 1, settings: 1 },
+  ).lean();
+
+  for (const space of spaces) {
+    /**
+     * Only topics that are actually playable. A daily drawn from a topic with
+     * nine published questions would open and immediately fail to deal a paper,
+     * and it would do it every morning without anybody being told why.
+     */
+    const topics = await Topic.find(
+      {
+        spaceId: space._id,
+        status: TOPIC_STATUS.PUBLISHED,
+        publishedQuestionCount: { $gte: DAILY_MIN_PER_TOPIC },
+      },
+      { _id: 1 },
+    ).lean();
+
+    if (!topics.length) {
+      result.skipped += 1;
+      continue;
+    }
+
+    /**
+     * The window, in IST. `istDayBoundsUtc` returns the instants that IST
+     * midnight corresponds to — building this from the server's local midnight
+     * would give a different paper window on a machine in another timezone,
+     * which is exactly the class of bug that only shows up in production.
+     */
+    const { start, end } = istDayBoundsUtc(day);
+
+    try {
+      await Contest.create({
+        spaceId: space._id,
+        name: `Daily Challenge · ${formatDailyDate(day)}`,
+        description: 'Today’s paper. Same questions for everyone, one attempt.',
+        topicIds: topics.map((t) => t._id),
+        questionCount: DAILY_QUESTION_COUNT,
+        selectionMode: 'auto',
+        questionIds: [],
+        startsAt: start,
+        endsAt: end,
+        batchIds: [],
+        standingsVisibility: STANDINGS_VISIBILITY.LIVE,
+        /**
+         * Scheduled, not live — the lifecycle job opens it, which is what freezes
+         * the paper. Creating it live would leave a contest open with an empty
+         * question set until the next tick.
+         */
+        status: CONTEST_STATUS.SCHEDULED,
+        kind: 'daily',
+        dailyOn: day,
+        createdBy: null,
+      });
+      result.created += 1;
+    } catch (err) {
+      // 11000 is the unique index doing its job: today's paper already exists.
+      if (err?.code === 11000) {
+        result.skipped += 1;
+        continue;
+      }
+      logger.error({ err, spaceId: String(space._id), day }, 'daily challenge creation failed');
+    }
+  }
+
+  return result;
+}
+
+/** `2026-07-30` → `30 Jul`, for the contest's name. */
+function formatDailyDate(day) {
+  const [, month, date] = day.split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${Number(date)} ${months[Number(month) - 1] ?? ''}`.trim();
+}
+
 export async function runContestLifecycle(now = new Date()) {
   const result = { opened: 0, closed: 0, notifiedSoon: 0 };
 

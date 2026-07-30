@@ -54,6 +54,25 @@ const SECTIONS = [
         icon: 'calendar',
         match: ['assignments', 'assignment-new', 'assignment-detail'],
       },
+      /**
+       * The two event shapes, beside the two paper shapes.
+       *
+       * A live session is a lesson and a bracket is a competition, but from this
+       * console both are "a thing you set up and then run", which is what
+       * Learning already means here.
+       */
+      {
+        route: 'sessions',
+        label: 'Live sessions',
+        icon: 'play',
+        match: ['sessions', 'session-report'],
+      },
+      {
+        route: 'tournaments',
+        label: 'Tournaments',
+        icon: 'ranks',
+        match: ['tournaments', 'tournament-detail'],
+      },
     ],
   },
   {

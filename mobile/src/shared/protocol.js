@@ -29,8 +29,13 @@
  * so a friend request sent while you were on any other screen was invisible
  * until you went looking. Additive again: a client that does not listen simply
  * keeps reading the inbox the old way.
+ *
+ * **5** — Adds the live class session: the `session:*` events in both
+ * directions. A whole mode rather than a field, and still additive — a version-4
+ * client never sends `session:join`, is therefore never in a session room, and so
+ * never hears one either.
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 /** Oldest client the server will still talk to. */
 export const MIN_SUPPORTED_PROTOCOL_VERSION = 1;
 
@@ -46,6 +51,23 @@ export const C2S = {
   MATCH_RESUME: 'match:resume',
   /** prd.md F7.5 — entered by contest id, never by topic. Protocol v2. */
   CONTEST_ENTER: 'contest:enter',
+
+  // ── Live class sessions (protocol v5) ────────────────────────────────────
+  /** Join by the code on the projector. */
+  SESSION_JOIN: 'session:join',
+  SESSION_LEAVE: 'session:leave',
+  SESSION_ANSWER: 'session:answer',
+  /** Host only: freeze the paper and deal question one. */
+  SESSION_START: 'session:start',
+  /**
+   * Host only: move on.
+   *
+   * The existence of this event IS the design — a round resolves on its own
+   * clock and then waits, so the teacher can talk about the answer before the
+   * class is dragged to the next question.
+   */
+  SESSION_NEXT: 'session:next',
+  SESSION_END: 'session:end',
 };
 
 /** Server → client. */
@@ -81,6 +103,20 @@ export const S2C = {
    * standing rather than waiting to be visited.
    */
   NOTIFICATION: 'notification',
+
+  // ── Live class sessions (protocol v5) ────────────────────────────────────
+  /** The whole screen, on join and on reconnect. */
+  SESSION_STATE: 'session:state',
+  /** Somebody came or went — the lobby's roster, live. */
+  SESSION_ROSTER: 'session:roster',
+  /** A question is on screen. Never carries the answer key. */
+  SESSION_ROUND: 'session:round',
+  /** How many are in, so the room can watch the count climb. Never who or what. */
+  SESSION_ANSWERED: 'session:answered',
+  /** The key, the spread of what the class chose, and the board. */
+  SESSION_ROUND_RESULT: 'session:round_result',
+  SESSION_ENDED: 'session:ended',
+
   ERROR: 'error',
 };
 

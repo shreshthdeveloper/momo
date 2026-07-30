@@ -1013,6 +1013,8 @@ export default async function adminRoutes(app) {
               properties: {
                 roundDurationMs: { type: 'integer', minimum: 5000, maximum: 60000 },
                 allowGhosts: { type: 'boolean' },
+                /** One automatic paper a day for the whole organization. */
+                dailyChallenge: { type: 'boolean' },
               },
             },
           },

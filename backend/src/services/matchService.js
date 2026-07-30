@@ -5,6 +5,7 @@ import { advanceStreak, evaluateAchievements, ACHIEVEMENT_BY_KEY } from './achie
 import { notify } from './notificationService.js';
 import { recordEntryResult, contestPlacementFor } from './contestService.js';
 import { applyMatchToAssignments } from './assignmentService.js';
+import { recordTieResult } from './tournamentService.js';
 import { outcomeFor, verdictFor } from '../shared/scoring.js';
 import { ratingBandOf } from '../shared/elo.js';
 import { coinsForMatch, effectiveAccountLevel } from '../shared/mastery.js';
@@ -12,7 +13,13 @@ import { nextUnlock } from '../shared/perks.js';
 import { promotionAward } from '../shared/league.js';
 import { progression, rewardsForLevels } from './progressionService.js';
 import { awardChests } from './chestService.js';
-import { MATCH_MODE, ROUNDS_PER_MATCH, MAX_ROUND_SCORE, RANKED_START } from '../shared/constants.js';
+import {
+  MATCH_MODE,
+  ROUNDS_PER_MATCH,
+  MAX_ROUND_SCORE,
+  RANKED_START,
+  isUnrecordedMode,
+} from '../shared/constants.js';
 import { logger } from '../lib/logger.js';
 
 const oid = (v) => new mongoose.Types.ObjectId(String(v));
@@ -116,13 +123,23 @@ export async function finalizeMatch(summary) {
 
     const opponent = summary.players.find((p) => p.userId !== player.userId);
     const opponentRating = opponent?.rating ?? player.rating;
-    const verdict = summary.isVoid
-      ? 'draw'
-      : summary.winnerId
-        ? summary.winnerId === player.userId
-          ? 'won'
-          : 'lost'
-        : 'draw';
+    /**
+     * `'solo'` is tested first, and stays first even for a drill that was
+     * abandoned. It is the word every reward rule downstream keys off — the XP
+     * bonus, the coin award, the W/L record, the achievements — and the one
+     * thing that is unconditionally true about a one-player match is that
+     * nothing was won, lost or drawn. See `verdictOf` in game/matchEngine.js,
+     * which reaches the same word for the client from the same reasoning.
+     */
+    const verdict = !opponent
+      ? 'solo'
+      : summary.isVoid
+        ? 'draw'
+        : summary.winnerId
+          ? summary.winnerId === player.userId
+            ? 'won'
+            : 'lost'
+          : 'draw';
 
     const myAnswers = rounds
       .map((r) => r.answers.find((a) => String(a.userId) === player.userId))
@@ -278,18 +295,65 @@ export async function finalizeMatch(summary) {
       }
     }
 
+    /**
+     * Practice does not do homework.
+     *
+     * "An assignment is satisfied by ordinary play" is the right rule and it is
+     * why this hangs off the finaliser at all — but practice is deliberately the
+     * one mode with no opponent, no rating and no limit on retries. A "60%
+     * accuracy over 3 matches" requirement is a real bar in a match and a
+     * formality alone: keep drilling and the running accuracy crosses it
+     * eventually. The teacher set a bar for playing; this keeps it one.
+     *
+     * Gated on the mode rather than on `verdict === 'solo'` because the reason is
+     * about stakes, not about how many people were in the room — which is also why
+     * a self-race is excluded by the same list: the questions are ones the student
+     * has already answered, so a "60% over 3 matches" bar would be met by
+     * repetition rather than by learning.
+     */
+    if (!isUnrecordedMode(summary.mode)) {
+      try {
+        outcome.assignmentsCompleted = await applyMatchToAssignments({
+          spaceId: summary.spaceId,
+          topicId: summary.topicId,
+          userId: player.userId,
+          correctCount: player.correctCount,
+          answeredCount: totalAnswers,
+          level: outcome.level ?? 0,
+          playedAt: new Date(summary.completedAt),
+        });
+      } catch (err) {
+        logger.error({ err, userId: player.userId }, 'assignment progress failed');
+      }
+    }
+  }
+
+  /**
+   * A bracket tie, if this match was one.
+   *
+   * Keyed on the challenge, because that is the object a tournament created and
+   * therefore the only id it can be certain belongs to it. Every ordinary friend
+   * challenge reaches here too and costs one indexed lookup that finds nothing.
+   *
+   * Outside the per-player loop: a tie has one result, not one per player.
+   */
+  if (summary.challengeId) {
     try {
-      outcome.assignmentsCompleted = await applyMatchToAssignments({
-        spaceId: summary.spaceId,
-        topicId: summary.topicId,
-        userId: player.userId,
-        correctCount: player.correctCount,
-        answeredCount: totalAnswers,
-        level: outcome.level ?? 0,
-        playedAt: new Date(summary.completedAt),
+      await recordTieResult({
+        challengeId: summary.challengeId,
+        matchId: summary.matchId,
+        winnerId: summary.winnerId,
+        // For the level-scores tiebreak — whoever answered faster goes through.
+        players: summary.players.map((p) => ({
+          userId: p.userId,
+          totalResponseMs: summary.rounds.reduce((sum, round) => {
+            const mine = round.answers.find((a) => String(a.userId) === String(p.userId));
+            return sum + (mine?.elapsedMs ?? 0);
+          }, 0),
+        })),
       });
     } catch (err) {
-      logger.error({ err, userId: player.userId }, 'assignment progress failed');
+      logger.error({ err, challengeId: summary.challengeId }, 'tournament advance failed');
     }
   }
 
@@ -401,6 +465,24 @@ async function updatePlayerProfile({ summary, player, verdict, outcome, opponent
   const matchCoins = summary.isVoid ? 0 : coinsForMatch({ verdict, mode: summary.mode });
   const coinsEarned = matchCoins + levelRewards.coins + (outcome.promotion?.coins ?? 0);
 
+  /**
+   * Play, not a match — the same rule the topic row follows in
+   * `applyMatchOutcome`, applied to the account.
+   *
+   * It still pays XP and it still extends the streak, because both of those
+   * measure showing up and both of these modes are showing up. What they stay out
+   * of is the public record: `matchesWon / matchesPlayed` is the win rate on the
+   * profile and in `/me`, and neither mode has an opponent worth claiming — a drill
+   * has none at all, a self-race has a recording of you that can be re-run until it
+   * loses. Incrementing only the denominator would be worse than incrementing both:
+   * practising would visibly damage a number the player never agreed to stake.
+   *
+   * Two conditions because they say different things, and either alone has been
+   * wrong before. `verdict === 'solo'` is a fact about the match — nobody was
+   * there. `isUnrecordedMode` is a policy about the mode — this does not count.
+   */
+  const unrecorded = verdict === 'solo' || isUnrecordedMode(summary.mode);
+
   const earned = await evaluateAchievements({
     user,
     verdict,
@@ -411,14 +493,17 @@ async function updatePlayerProfile({ summary, player, verdict, outcome, opponent
     maxSpeedAnswer,
     // The streak this match just made, not the one it started with.
     streak,
+    unrecorded,
   });
 
   await User.updateOne(
     { _id: user._id },
     {
       $inc: {
-        matchesPlayed: 1,
-        matchesWon: verdict === 'won' ? 1 : 0,
+        matchesPlayed: unrecorded ? 0 : 1,
+        // A self-race can end in `'won'`, and should — the result screen says
+        // "you beat your best". It is simply not a win over anybody.
+        matchesWon: verdict === 'won' && !unrecorded ? 1 : 0,
         totalXp: outcome.xpEarned ?? 0,
         coins: coinsEarned,
         cheatFlags: player.flags ?? 0,
@@ -589,7 +674,15 @@ async function rollUpQuestionStats(rounds) {
  * least 5 of 7 rounds. A replay of someone who quit makes a terrible opponent.
  */
 async function maybeCreateReplays(summary, rounds) {
-  if (summary.mode === MATCH_MODE.PRACTICE || summary.isVoid) return;
+  /**
+   * Neither of the unrecorded modes is harvested.
+   *
+   * Practice has one player, so there is no performance to offer anybody. A
+   * self-race has two, and its paper is one the live player has already seen —
+   * storing that run would put an inflated script into the ghost pool and hand a
+   * stranger an opponent who had the questions in advance.
+   */
+  if (isUnrecordedMode(summary.mode) || summary.isVoid) return;
 
   for (const player of summary.players) {
     if (player.isGhost || player.forfeited) continue;
@@ -673,8 +766,14 @@ export async function listMatchesForUser(userId, { limit = 20, before, topicId }
 /**
  * The verdict word for one player. `winnerId` wins over raw scores because it
  * already accounts for forfeits — see the same rule in game/matchEngine.js.
+ *
+ * A stored drill is recognised by having one player, not by a flag. The players
+ * array is on the document either way, so deriving it here means the fetched
+ * history can never disagree with the live `match:end` payload about a match
+ * neither of them can change.
  */
 export function verdictOfMatch(match, viewerId) {
+  if ((match.players ?? []).length < 2) return 'solo';
   if (match.isVoid) return 'void';
   if (match.winnerId) return String(match.winnerId) === String(viewerId) ? 'won' : 'lost';
   if (match.isDraw) return 'draw';
@@ -838,4 +937,52 @@ export async function headToHead(userA, userB) {
     else if (String(m.winnerId) === String(userB)) losses += 1;
   }
   return { played: matches.length, wins, losses, draws };
+}
+
+/**
+ * The same record against many people at once — one query for a whole roster.
+ *
+ * `headToHead` is the right shape for the versus screen and for one profile, and
+ * the wrong shape for a list: calling it per row is a query per friend. This runs
+ * the same filter once and splits the results by opponent in memory, which is why
+ * the friends list can afford to show the record at all.
+ *
+ * @returns {Promise<Map<string, {played,wins,losses,draws}>>} keyed by opponent id.
+ * Opponents never played are absent rather than zeroed — "no record" and "0–0" are
+ * different things, and only the caller knows which to draw.
+ */
+export async function headToHeadMany(viewerId, opponentIds) {
+  const ids = [...new Set((opponentIds ?? []).map(String))];
+  if (!ids.length) return new Map();
+
+  const me = oid(viewerId);
+  const others = new Set(ids);
+  const matches = await Match.find(
+    {
+      status: { $in: ['complete', 'abandoned'] },
+      isVoid: { $ne: true },
+      // Two separate terms rather than one key twice: this has to mean "the
+      // viewer AND one of these people", which a single `players.userId` cannot
+      // express.
+      $and: [{ 'players.userId': me }, { 'players.userId': { $in: ids.map(oid) } }],
+    },
+    { players: 1, winnerId: 1, isDraw: 1 },
+  )
+    .sort({ createdAt: -1 })
+    .limit(1000)
+    .lean();
+
+  const records = new Map();
+  for (const m of matches) {
+    const other = m.players.find((p) => others.has(String(p.userId)));
+    if (!other) continue;
+    const key = String(other.userId);
+    const rec = records.get(key) ?? { played: 0, wins: 0, losses: 0, draws: 0 };
+    rec.played += 1;
+    if (m.isDraw) rec.draws += 1;
+    else if (String(m.winnerId) === String(viewerId)) rec.wins += 1;
+    else if (String(m.winnerId) === key) rec.losses += 1;
+    records.set(key, rec);
+  }
+  return records;
 }

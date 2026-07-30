@@ -15,6 +15,7 @@ import { useReducedMotion } from '../../src/lib/motion.js';
 import { success } from '../../src/lib/haptics.js';
 import { sfx } from '../../src/lib/sound.js';
 import { setSeenLevel } from '../../src/lib/seen.js';
+import { MATCH_MODE } from '../../src/shared/constants.js';
 
 /**
  * design.md §8.8 + leagues-and-progression.md §7 — the match result, staged in
@@ -329,8 +330,46 @@ export default function MatchResult() {
   // §10 — the loss copy consoles rather than announces. Nobody needs YOU
   // LOSE in 44pt; a close loss is "so close", a big one is still "nice try".
   // A forfeit is stated plainly instead: the scoreboard behind it is not what
-  // decided the match, and celebrating a walkover reads as a bug.
-  const headline = theyQuit
+  /**
+   * A solo drill has no verdict, because there was nobody to beat.
+   *
+   * Whatever the server computes for `verdict` on a one-player match, declaring
+   * "YOU WIN!" over an empty opposite half is nonsense — and "NICE TRY" would be
+   * worse, since there is nothing to have lost to. So a drill reports what it
+   * actually has: how many you got right.
+   */
+  const solo = !result.opponent;
+  /**
+   * A self-race is the one match with an opponent who is not a person.
+   *
+   * It is NOT `solo` — there are two entries, so it ends in a real won/lost/draw
+   * and the server is right to compute one. But `solo` was this screen's only
+   * signal, so beating your own recorded run was announced as "YOU WIN! · Well
+   * played" — the app congratulating you for defeating yourself, and never once
+   * naming the score you actually went after. `matchService` documents the
+   * intended copy in as many words; the screen simply had no way to know.
+   *
+   * `result.mode` is what it now knows. The opponent's score is the target,
+   * because the opponent IS the target.
+   */
+  const isSelf = result.mode === MATCH_MODE.SELF;
+  const target = result.scores?.opponent ?? 0;
+  // `correctCount` is computed further down for the round dots; this needs the
+  // same number, so it is worked out here rather than duplicated.
+  const landed = (result.rounds ?? []).filter(
+    (r) => r.you?.optionIndex != null && r.you.optionIndex === r.correctIndex,
+  ).length;
+  const totalRounds = (result.rounds ?? []).length;
+
+  const headline = solo
+    ? `${landed} OF ${totalRounds}`
+    : isSelf
+    ? wonIt
+      ? 'NEW BEST!'
+      : lostIt
+        ? 'NOT THIS TIME'
+        : 'DEAD EVEN'
+    : theyQuit
     ? 'OPPONENT LEFT'
     : youQuit
       ? 'YOU LEFT'
@@ -343,7 +382,17 @@ export default function MatchResult() {
           : result.verdict === 'draw'
             ? 'DEAD EVEN'
             : 'VOID';
-  const subline = theyQuit
+  const subline = solo
+    ? landed === totalRounds
+      ? 'Every one. Nothing left to practise here.'
+      : 'Tap below to see the ones you missed.'
+    : isSelf
+    ? wonIt
+      ? `You beat your best of ${target}. This run is the one to beat now.`
+      : lostIt
+        ? `Your best of ${target} still stands. Same paper, whenever you want it.`
+        : `Exactly your best of ${target}. Not a point in it.`
+    : theyQuit
     ? `${game.opponent?.displayName ?? 'Your opponent'} left the match, so it goes to you.`
     : youQuit
       ? 'You forfeited the match.'
@@ -366,6 +415,12 @@ export default function MatchResult() {
   const metal = leagueMetal(standing.key, standing.color);
   const showLeague = ranked && !isVoid && !contest;
   const showQuietLine = !ranked && !isVoid && !contest;
+  const quietLine =
+    result.mode === MATCH_MODE.SELF
+      ? 'Against your own best — nothing at stake.'
+      : result.mode === MATCH_MODE.PRACTICE
+        ? 'On your own — nothing at stake.'
+        : 'Quick play — nothing at stake.';
   // Three tiles is the row; a contest or a void already spends the middle slot.
   const showAccountTile = accountLevel != null && !contest && !isVoid;
   const topicName = game.topic?.name ?? null;
@@ -464,23 +519,34 @@ export default function MatchResult() {
               <View style={{ height: 56 }} />
             )}
 
+            {/* A faceoff needs two faces. A drill shows one score, centred,
+                with no dash and no empty seat opposite it. */}
             <View style={styles.faceoff}>
               <Side
                 name={you?.displayName ?? 'You'}
                 avatarUrl={you?.avatarUrl}
                 score={displayed.you}
-                ring={ringFor(wonIt)}
-                won={wonIt && !isVoid}
-                tone={result.verdict === 'draw' || isVoid ? colors.ink : wonIt ? colors.correct : colors.inkMuted}
+                ring={solo ? undefined : ringFor(wonIt)}
+                won={!solo && wonIt && !isVoid}
+                tone={
+                  solo || result.verdict === 'draw' || isVoid
+                    ? colors.ink
+                    : wonIt
+                      ? colors.correct
+                      : colors.inkMuted
+                }
               />
 
               {/* An em dash, not a bolt. The thing between two scores is the
                   relationship between them, and a lightning glyph was saying
                   something about speed that this line is not about. */}
-              <Text allowFontScaling={false} style={styles.dash}>
-                —
-              </Text>
+              {solo ? null : (
+                <Text allowFontScaling={false} style={styles.dash}>
+                  —
+                </Text>
+              )}
 
+              {solo ? null : (
               <Side
                 name={result.opponent?.displayName ?? 'Rival'}
                 avatarUrl={result.opponent?.avatarUrl}
@@ -489,6 +555,7 @@ export default function MatchResult() {
                 won={lostIt && !isVoid}
                 tone={result.verdict === 'draw' || isVoid ? colors.ink : lostIt ? colors.correct : colors.inkMuted}
               />
+              )}
             </View>
 
             {/* ── The seven rounds, at a glance, and how many landed. */}
@@ -611,9 +678,19 @@ export default function MatchResult() {
             </View>
           ) : null}
 
+          {/**
+           * What was played, and what it cost.
+           *
+           * This said "Quick play — nothing at stake" for every unranked result,
+           * which is three quarters wrong: it appeared under a practice drill,
+           * under a revision drill and under a self-race, none of which is quick
+           * play. The clause it exists for — *nothing at stake* — is true of all
+           * four, and it is the only part that has to survive; the mode in front
+           * of it should be the mode that was actually played.
+           */}
           {showQuietLine ? (
             <Text variant="meta" color={colors.inkFaint} style={styles.quiet}>
-              Quick play — nothing at stake.
+              {quietLine}
             </Text>
           ) : null}
 

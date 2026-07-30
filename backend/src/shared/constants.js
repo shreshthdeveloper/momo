@@ -13,6 +13,23 @@ export const OPTIONS_PER_QUESTION = 4;
 export const ROUND_DURATION_MS = 10_000;
 export const ROUND_RESULT_MS = 2_500;
 export const VERSUS_COUNTDOWN_MS = 5_500;
+/**
+ * The same beat, for a match with nobody on the other side.
+ *
+ * `VERSUS_COUNTDOWN_MS` is not a loading delay — it is the versus ceremony: two
+ * faces, two flags, two league badges and a coin, and five and a half seconds is
+ * about right for it. A practice drill and a revision drill never see that
+ * screen: `searching.jsx` sends a one-player match straight to the board. So for
+ * those two modes the countdown was the app doing nothing at all, which is
+ * exactly what "practice and revise are slow to load" turns out to mean — the
+ * questions were dealt before the player let go of the button.
+ *
+ * Not zero. The board still has to mount and the first question still has to
+ * stamp in, and a question that arrives in the same frame as the screen it is on
+ * cannot be read before its clock starts.
+ */
+export const SOLO_COUNTDOWN_MS = 1_500;
+
 
 // ── Scoring (prd.md F6.4.14–F6.4.16) ───────────────────────────────────────
 export const BASE_POINTS = 20;
@@ -72,6 +89,30 @@ export const LEVEL_BAND_STEP_MS = 1_200;
  * ±5 cap at 6s and holds there for the last 2s before the ghost takes over.
  */
 export const GHOST_AFTER_MS = 8_000;
+
+/**
+ * How much EARLIER than the deadline a ghost may arrive (F6.7.5).
+ *
+ * A ghost that always landed at exactly 8.0s was a tell in itself: live pairing
+ * lands whenever the other person queued, so a class of opponents arriving on
+ * the same tick every time is visibly a different class of opponent. Each
+ * waiting player draws their own deadline somewhere in this window instead.
+ *
+ * Subtracted, never added — `GHOST_AFTER_MS` is a promise about the longest
+ * anyone waits, so the jitter may only shorten it.
+ */
+export const GHOST_JITTER_MS = 3_000;
+
+/**
+ * The jitter window as a share of the deadline, so a shortened deadline is
+ * jittered proportionally rather than obliterated.
+ *
+ * The queue runs at 50–600ms under test and under the `GHOST_AFTER_MS` env
+ * override; a flat 3s subtraction there would fire every ghost instantly and an
+ * absolute floor would hang the suite. At the shipped 8s the cap above binds
+ * first, so real play still gets the full three-second spread.
+ */
+export const GHOST_JITTER_SHARE = 0.375;
 export const QUEUE_SWEEP_AFTER_MS = 30_000;
 /**
  * The sweep window for a player who has refused ghosts — either because their
@@ -157,6 +198,18 @@ export const LEAGUE_METALS = ['#E0A46A', '#C8CFDE', '#F5B62E', '#7FE0E4', '#F2F1
  */
 export const COSMETIC_TYPE = { AVATAR: 'avatar', BANNER: 'banner', TITLE: 'title' };
 export const COSMETIC_TYPES = Object.values(COSMETIC_TYPE);
+
+/**
+ * How many `mimo:tint/<n>` presets exist — the free avatar set every account
+ * owns from registration (design.md §12.1).
+ *
+ * The colours themselves live in the app's theme, which the server has no
+ * business reading. It only needs the COUNT, so a synthetic opponent can be
+ * given a preset that resolves on the client instead of always having none.
+ * Here rather than hardcoded in the ghost service so the two cannot drift: if
+ * the theme ever gains a thirteenth tint, this is the one line to change.
+ */
+export const AVATAR_TINT_COUNT = 12;
 
 export const UNLOCK_KIND = {
   /** Free from registration. The only kind the sign-up picker offers. */
@@ -263,6 +316,22 @@ export const COIN_AWARD = {
   DIVISION_PROMOTION: 150,
   LEAGUE_PROMOTION: 500,
 };
+
+// ── The streak freeze (the shop's one consumable) ───────────────────────────
+
+/**
+ * What a freeze costs, and how many you may hold.
+ *
+ * Priced at four ranked wins: enough that it is a decision, cheap enough that a
+ * player who cares about their streak can always afford one. The cap is the part
+ * that matters — without it a player buys thirty and the streak stops measuring
+ * anything at all, which is the whole reason the number is worth protecting.
+ *
+ * Two is deliberate. It covers the honest cases (a day of illness, a day with no
+ * signal) and refuses to cover a fortnight off.
+ */
+export const STREAK_FREEZE_PRICE = 200;
+export const STREAK_FREEZE_MAX = 2;
 
 /**
  * A title every fifth level, twenty in all.
@@ -382,6 +451,63 @@ export const MIN_PUBLISHED_QUESTIONS_TO_LIVE = 21;
  */
 export const CONTEST_MIN_QUESTIONS = 7;
 export const CONTEST_MAX_QUESTIONS = 21;
+
+// ── The daily challenge ────────────────────────────────────────────────────
+
+/**
+ * One paper a day, the length of an ordinary match.
+ *
+ * Seven, not twenty-one. The daily's job is to be a thing everybody in the school
+ * has done by lunchtime and can argue about — that requires it to be short enough
+ * to do between classes. A twenty-one question paper is an event; this is a habit.
+ */
+export const DAILY_QUESTION_COUNT = 7;
+
+/**
+ * How many published questions a topic needs before the daily will draw from it.
+ *
+ * Three times the paper length, so a topic cannot dominate one day's questions and
+ * cannot serve the same seven every morning. A topic below this is simply not
+ * offered to the generator — which is quieter, and more correct, than opening a
+ * daily that fails to deal.
+ */
+export const DAILY_MIN_PER_TOPIC = 21;
+
+// ── Knockout tournaments ───────────────────────────────────────────────────
+
+/** Field sizes an admin may pick. The bracket shrinks to fit who actually enters. */
+export const TOURNAMENT_SIZES = [4, 8, 16];
+
+/**
+ * How long a tie stays playable before it lapses.
+ *
+ * Three days, against a friend challenge's 24 hours. A bracket has to survive a
+ * weekend and a student who is off sick, and unlike a friend challenge there is no
+ * "ask again" — a lapsed tie stalls the whole round behind it.
+ */
+export const TOURNAMENT_TIE_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+
+// ── Live class sessions ────────────────────────────────────────────────────
+
+/**
+ * How long a session paper may be.
+ *
+ * The upper bound is a lesson, not an exam: twenty questions at twenty seconds
+ * plus the discussion in between is most of a period, and a host who wants more
+ * should run a second session rather than lose the class in one.
+ */
+export const SESSION_MIN_QUESTIONS = 3;
+export const SESSION_MAX_QUESTIONS = 20;
+
+/**
+ * Longer than a 1v1 round, deliberately.
+ *
+ * A match round is a race between two people who both chose to be racing. A
+ * classroom contains the student who reads slowly and the student whose phone is
+ * three years old, and the pace has to be set by them rather than by the fastest
+ * thumb in the room. The host can still override it per session.
+ */
+export const SESSION_ROUND_DURATION_MS = 20_000;
 /** How long before a contest opens that entrants are told about it. */
 export const CONTEST_STARTING_SOON_MS = 15 * 60 * 1000;
 
@@ -430,10 +556,52 @@ export const MATCH_MODE = {
   CHALLENGE: 'challenge',
   PRACTICE: 'practice',
   CONTEST: 'contest',
+  /**
+   * You against your own best run on this topic — a stored replay of yourself,
+   * fully disclosed as yourself.
+   *
+   * The one place a replay is played back with the real name and face on it,
+   * because the person it belongs to is the person watching. Every reason the
+   * ghost design has for hiding an identity is a reason to show this one.
+   */
+  SELF: 'self',
 };
 
 /** The only mode that moves a rating. Everything else is XP alone. */
 export const RATED_MODES = [MATCH_MODE.RANKED];
+
+/**
+ * Modes that are *play* rather than a *match*.
+ *
+ * They pay participation XP and move the topic mastery stats — that is what they
+ * are for — and they stay out of everything that is a public claim about how you
+ * do against other people: the win/loss record, the match-count achievements,
+ * coins, assignment credit, and the replay pool.
+ *
+ * Practice qualifies because there is no opponent. A self-race qualifies for a
+ * different reason: the opponent is a recording of you, on questions you have
+ * already seen, replayable until you win. Both would otherwise let a player
+ * manufacture a record against nobody.
+ *
+ * Kept as a list rather than as a check at each site because it has to be the same
+ * list in six places, and the last time this rule was implied rather than stated
+ * one of the six disagreed.
+ */
+export const UNRECORDED_MODES = [MATCH_MODE.PRACTICE, MATCH_MODE.SELF];
+export const isUnrecordedMode = (mode) => UNRECORDED_MODES.includes(mode);
+
+/**
+ * Which questions a match deals, when it is not "whatever comes next".
+ *
+ * A deck is orthogonal to the mode — it says what is on the paper, not what the
+ * result is worth — but only practice accepts one. A deck of questions the player
+ * is known to have missed is a deliberate repeat, and repeats in a mode that moves
+ * a rating are both an advantage and a corruption of what the rating measures.
+ */
+export const DECK = {
+  /** Questions this player got wrong and has not since got right. */
+  MISTAKES: 'mistakes',
+};
 
 export const MATCH_STATE = {
   QUEUED: 'QUEUED',

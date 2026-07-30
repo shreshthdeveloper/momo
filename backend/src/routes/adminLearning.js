@@ -20,9 +20,30 @@ import {
 } from '../services/assignmentService.js';
 import { draftQuestions, aiDraftingStatus, reviewQueue, reviewBatch } from '../services/aiDraftService.js';
 import { periodComparison } from '../services/analyticsService.js';
+import {
+  listTournaments,
+  createTournament,
+  startTournament,
+  cancelTournament,
+} from '../services/tournamentService.js';
+import {
+  createSession,
+  lockSessionQuestions,
+  listSessions,
+  getSessionReport,
+  sessions,
+  ClassSessionRunner,
+} from '../services/classSessionService.js';
+import { realtimeRoom } from '../lib/realtime.js';
 import { toCsv } from '../services/csvService.js';
 import { AuditLog, Contest } from '../models/index.js';
-import { CONTEST_STATUS, STANDINGS_VISIBILITY } from '../shared/constants.js';
+import {
+  CONTEST_STATUS,
+  STANDINGS_VISIBILITY,
+  TOURNAMENT_SIZES,
+  SESSION_MIN_QUESTIONS,
+  SESSION_MAX_QUESTIONS,
+} from '../shared/constants.js';
 
 const ok = (data) => ({ data });
 const oid = (v) => new mongoose.Types.ObjectId(String(v));
@@ -395,6 +416,128 @@ export default async function adminLearningRoutes(app) {
         summary: `${result.updated} questions`,
       });
       return ok(result);
+    },
+  );
+
+  // ── Knockout tournaments ─────────────────────────────────────────────────
+
+  app.get('/tournaments', { preHandler: spaceAdminGuard }, async (request) =>
+    ok({ items: await listTournaments(request.scope) }),
+  );
+
+  app.post(
+    '/tournaments',
+    {
+      preHandler: spaceAdminGuard,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['name', 'topicId'],
+          properties: {
+            spaceId: { type: 'string' },
+            name: { type: 'string', minLength: 2, maxLength: 80 },
+            topicId: { type: 'string' },
+            size: { type: 'integer', enum: TOURNAMENT_SIZES },
+            batchIds: { type: 'array', items: { type: 'string' }, maxItems: 40 },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const tournament = await createTournament(request.scope, request.user, request.body);
+      await audit(request, 'tournament.create', { summary: tournament.name });
+      return ok(tournament);
+    },
+  );
+
+  /** Draw the bracket. Irreversible — entries close and the seeding is fixed. */
+  app.post('/tournaments/:id/start', { preHandler: spaceAdminGuard }, async (request) => {
+    const tournament = await startTournament(request.scope, request.params.id);
+    await audit(request, 'tournament.start', { summary: tournament.name });
+    return ok(tournament);
+  });
+
+  app.delete('/tournaments/:id', { preHandler: spaceAdminGuard }, async (request) => {
+    const tournament = await cancelTournament(request.scope, request.params.id);
+    await audit(request, 'tournament.cancel', { summary: tournament.name });
+    return ok(tournament);
+  });
+
+  // ── Live class sessions ──────────────────────────────────────────────────
+
+  app.get('/sessions', { preHandler: spaceAdminGuard }, async (request) =>
+    ok({ items: await listSessions(request.scope) }),
+  );
+
+  app.get('/sessions/:id', { preHandler: spaceAdminGuard }, async (request) =>
+    ok(await getSessionReport(request.scope, request.params.id)),
+  );
+
+  /**
+   * Open a lesson.
+   *
+   * Creates the document AND the in-memory runner, in that order, because a code
+   * on a projector that no running session answers to is the worst failure this
+   * feature has — thirty students typing a code that does nothing, in a room, with
+   * a bell about to go.
+   */
+  app.post(
+    '/sessions',
+    {
+      preHandler: spaceAdminGuard,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['topicId'],
+          properties: {
+            spaceId: { type: 'string' },
+            topicId: { type: 'string' },
+            name: { type: 'string', maxLength: 80 },
+            questionCount: {
+              type: 'integer',
+              minimum: SESSION_MIN_QUESTIONS,
+              maximum: SESSION_MAX_QUESTIONS,
+            },
+            roundDurationMs: { type: 'integer', minimum: 5000, maximum: 120000 },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { session, questionCount } = await createSession(
+        request.scope,
+        request.user,
+        request.body,
+      );
+
+      /**
+       * The paper is frozen here, at creation, rather than when the host presses
+       * Start — a class is already in the room by then, and "this topic does not
+       * have enough questions" is a sentence to hear at your desk, not in front of
+       * thirty people.
+       */
+      const rounds = await lockSessionQuestions(
+        { _id: session.id, topicId: session.topic.id, roundDurationMs: session.roundDurationMs },
+        { count: questionCount },
+      );
+
+      const runner = new ClassSessionRunner({
+        id: session.id,
+        spaceId: request.scope.spaceId,
+        topicId: session.topic.id,
+        hostId: request.user._id,
+        code: session.code,
+        name: session.name,
+        rounds,
+        roundDurationMs: session.roundDurationMs,
+        transport: realtimeRoom(),
+      });
+      // The host is a participant of the room but never of the board — they are
+      // showing the questions, not answering them.
+      sessions.add(runner);
+
+      await audit(request, 'session.create', { summary: `${session.name} (${session.code})` });
+      return ok({ ...session, status: 'lobby', totalRounds: rounds.length });
     },
   );
 

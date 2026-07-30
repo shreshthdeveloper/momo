@@ -18,19 +18,24 @@ import {
   removePushToken,
 } from '../services/notificationService.js';
 import { topTopicsFor } from '../services/ratingService.js';
+import { mistakesByTopic } from '../services/mistakeService.js';
+import { bestReplaysFor } from '../game/ghostService.js';
+import { Topic } from '../models/index.js';
 import { revokeAllSessions } from '../services/authService.js';
 import { listInterestCandidates } from '../services/topicService.js';
 import { levelForXp, accountProgress } from '../shared/mastery.js';
 import { leagueFor } from '../shared/league.js';
 import { shelfFor, nextUnlock, ownedKeys } from '../shared/perks.js';
 import { achievementShelf } from '../shared/achievements.js';
-import { progression, buyCosmetic } from '../services/progressionService.js';
+import { progression, buyCosmetic, buyStreakFreeze } from '../services/progressionService.js';
 import { awardChests, chestsFor, claimChest, unopenedChestCount } from '../services/chestService.js';
 import {
   COSMETIC_TYPE,
   COSMETIC_TYPES,
   RANKED_START,
   RARITY_META,
+  STREAK_FREEZE_PRICE,
+  STREAK_FREEZE_MAX,
 } from '../shared/constants.js';
 
 const ok = (data) => ({ data });
@@ -152,7 +157,17 @@ export default async function meRoutes(app) {
       winRate: request.user.matchesPlayed
         ? Number((request.user.matchesWon / request.user.matchesPlayed).toFixed(3))
         : 0,
-      streak: request.user.streak,
+      /**
+       * The streak, plus what it costs to protect and how many you may hold. Sent
+       * with the streak rather than left for the client to hardcode: the price is a
+       * server constant, and a shop where the app and the server disagree about the
+       * price is the one bug in a shop nobody forgives.
+       */
+      streak: {
+        ...(request.user.streak?.toObject?.() ?? request.user.streak ?? {}),
+        freezePrice: STREAK_FREEZE_PRICE,
+        freezeMax: STREAK_FREEZE_MAX,
+      },
       /**
        * Every achievement, earned or not.
        *
@@ -281,6 +296,20 @@ export default async function meRoutes(app) {
       },
       /** Unopened first: the whole point of the screen is the one waiting. */
       chests: chests.sort((a, b) => Number(Boolean(a.claimedAt)) - Number(Boolean(b.claimedAt))),
+      /**
+       * The shop's one consumable, with the streak it protects.
+       *
+       * The current streak is here because it is what makes the price make sense:
+       * "200 coins" is a number, and "200 coins to protect 34 days" is a decision.
+       * A player with no streak is shown the item and can work out for themselves
+       * that it is not for them yet.
+       */
+      streakFreeze: {
+        held: request.user.streak?.freezes ?? 0,
+        max: STREAK_FREEZE_MAX,
+        price: STREAK_FREEZE_PRICE,
+        streak: request.user.streak?.current ?? 0,
+      },
       next: nextUnlock(catalogue, level),
       configVersion: version,
     });
@@ -341,6 +370,19 @@ export default async function meRoutes(app) {
     },
   );
 
+  /**
+   * Buy a streak freeze — the shop's one consumable.
+   *
+   * Its own route rather than a `type` on `/me/shop/buy`, because that body is
+   * validated against `COSMETIC_TYPES` and a freeze is not a cosmetic: nothing is
+   * equipped, nothing is owned, and buying the same thing twice is legitimate.
+   */
+  app.post(
+    '/me/streak-freeze',
+    { config: { rateLimit: { max: 20, timeWindow: '1 hour' } } },
+    async (request) => ok(await buyStreakFreeze(request.user)),
+  );
+
   // ── Notifications (prd.md §6.9) ──────────────────────────────────────────
 
   app.get('/me/notifications', async (request) =>
@@ -398,6 +440,54 @@ export default async function meRoutes(app) {
       return ok({ removed: true });
     },
   );
+
+  /**
+   * The revision deck: what this player got wrong and has not since got right,
+   * grouped by topic.
+   *
+   * Grouped rather than flat because a match belongs to one topic, so the topic is
+   * the unit that can actually be played — see mistakeService.js. The screen this
+   * feeds is a list of subjects with a count each, and every row is a button.
+   */
+  app.get('/me/mistakes', async (request) =>
+    ok({ items: await mistakesByTopic(request.user._id) }),
+  );
+
+  /**
+   * Your best recorded run on each topic — the target a self-race is run against.
+   *
+   * Sent as an index rather than fetched per topic so the play screen can decide,
+   * for every tile at once, whether "beat your best" is even offerable. A topic
+   * with no replay cannot be raced, and an option that fails on press is worse
+   * than no option.
+   */
+  app.get('/me/best-runs', async (request) => {
+    const best = await bestReplaysFor(request.user._id);
+    if (!best.size) return ok({ items: [] });
+
+    // tenant-ok: the ids come from this player's own replays, so the set is
+    // already bounded by topics they have personally played.
+    const topics = await Topic.find(
+      { _id: { $in: [...best.keys()] } },
+      { name: 1, coverUrl: 1, spaceId: 1 },
+    ).lean();
+
+    return ok({
+      items: topics.map((topic) => {
+        const row = best.get(String(topic._id));
+        return {
+          topic: {
+            id: String(topic._id),
+            name: topic.name,
+            coverUrl: topic.coverUrl ?? null,
+            spaceId: String(topic.spaceId),
+          },
+          score: row.finalScore,
+          recordedAt: row.createdAt,
+        };
+      }),
+    });
+  });
 
   // ── Blocking (prd.md F6.8.4) ─────────────────────────────────────────────
 

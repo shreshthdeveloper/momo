@@ -4,9 +4,12 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useGame } from '../../src/state/game.jsx';
+import { useAuth } from '../../src/state/auth.jsx';
 import { Text, Button, ErrorNotice, Avatar } from '../../src/components/ui.jsx';
 import Globe from '../../src/components/Globe.jsx';
+import { SoloDeck, ChallengeWait } from '../../src/components/MatchIntro.jsx';
 import { colors, layout, space, type } from '../../src/theme/index.js';
+import { DECK, MATCH_MODE } from '../../src/shared/constants.js';
 import { useReducedMotion } from '../../src/lib/motion.js';
 import { heavy } from '../../src/lib/haptics.js';
 import { sfx } from '../../src/lib/sound.js';
@@ -48,6 +51,21 @@ const GOLD = colors.gold;
 const FOUND_HOLD_MS = 1600;
 
 /**
+ * The same beat, for a match with nobody to introduce.
+ *
+ * `FOUND_HOLD_MS` is the length of the lock-on: the globe stops, the satellite
+ * flies round, the beam falls, the ping goes out. A drill has none of that — the
+ * deck squares up and a tick lands, which is over in a spring — so holding for
+ * the full 1.6s was 1.6s of a finished animation.
+ *
+ * Together with the server's `SOLO_COUNTDOWN_MS` this is the whole of "practice
+ * and revise are slow": between them the two delays put about seven seconds of
+ * nothing between the button and the first question, on the one mode whose
+ * questions are ready before the finger leaves the screen.
+ */
+const SOLO_HOLD_MS = 800;
+
+/**
  * What the matchmaker is actually doing, as a caption.
  *
  * Pairing starts at your exact topic level and opens by one level every
@@ -87,15 +105,37 @@ function useSearchBand(game) {
 
 export default function Searching() {
   const game = useGame();
+  const { user } = useAuth();
   const router = useRouter();
   const reduced = useReducedMotion();
   const insets = useSafeAreaInsets();
-  const { topicId, spaceId, name, mode, challengeId, opponent } = useLocalSearchParams();
+  const { topicId, spaceId, name, mode, challengeId, opponent, avatarUrl, deck } =
+    useLocalSearchParams();
+  /**
+   * A drill never searches, so it must not say it is searching.
+   *
+   * Practice resolves server-side the moment it is asked for, so this screen is on
+   * screen for a few hundred milliseconds — long enough to read. "SEARCHING FOR
+   * OPPONENT" over a mode that has no opponent is the one sentence the whole solo
+   * design exists to avoid, and it was flashing up on every drill.
+   */
+  const isDrill = String(mode ?? '') === MATCH_MODE.PRACTICE;
+  /** Beating your own best run. An opponent exists on the paper and not in the
+   *  world — it is a recording, and it was queueing under the open-queue staging
+   *  because only PRACTICE was ever checked here. */
+  const isSelf = String(mode ?? '') === MATCH_MODE.SELF;
+  const isRevision = String(deck ?? '') === DECK.MISTAKES;
+  /** Nobody is on the other side of this one. */
+  const soloRun = isDrill || isSelf;
+  /** Exactly one person can answer this, and the screen already knows who. */
+  const isChallenge = Boolean(challengeId);
   const { width: screenW } = useWindowDimensions();
 
   // The globe is the hero, but its frame carries the satellite's orbit as well,
   // so the sphere itself is a little over half the width rather than most of it.
-  const globeSize = Math.min(320, Math.round(screenW * 0.66));
+  // The two stages that replace it are sized to match, so the layout does not
+  // jump between modes.
+  const stageSize = Math.min(320, Math.round(screenW * 0.66));
 
   const glow = useRef(new Animated.Value(0)).current;
   const stamp = useRef(new Animated.Value(0)).current;
@@ -125,10 +165,11 @@ export default function Searching() {
     if (topicId) {
       // The stake travels with the route, so a cold start straight into this
       // screen queues for what the player actually chose rather than the
-      // session default.
+      // session default. So does the deck, for the same reason.
       game.joinQueue(String(topicId), {
         spaceId: spaceId ? String(spaceId) : undefined,
         mode: mode ? String(mode) : undefined,
+        deck: deck ? String(deck) : undefined,
       });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -158,9 +199,22 @@ export default function Searching() {
       Animated.spring(stamp, { toValue: 1, friction: 5, tension: 140, useNativeDriver: true }).start();
     }
 
-    const onward = setTimeout(() => router.replace('/match/versus'), reduced ? 400 : FOUND_HOLD_MS);
+    /**
+     * A solo drill has nobody to introduce, so it skips the ceremony.
+     *
+     * The versus screen is two faces, two flags and two league badges. With no
+     * opponent it would have to invent something to put on the right-hand side,
+     * and inventing an opponent for the one mode that has none is exactly the
+     * confusion practice exists to avoid. `game.opponent` is null straight from
+     * the server, so the branch reads the truth rather than the mode.
+     */
+    const solo = !game.opponent;
+    const onward = setTimeout(
+      () => router.replace(solo ? '/match/play' : '/match/versus'),
+      reduced ? 400 : solo ? SOLO_HOLD_MS : FOUND_HOLD_MS,
+    );
     return () => clearTimeout(onward);
-  }, [game.status, found, stamp, reduced, router]);
+  }, [game.status, game.opponent, found, stamp, reduced, router]);
 
   const topicName = name ?? game.topic?.topicName ?? game.topic?.name ?? '';
   const search = useSearchBand(game);
@@ -169,8 +223,38 @@ export default function Searching() {
     <View style={styles.screen}>
       <StatusBar style="light" />
 
+      {/**
+       * The stage, chosen by what is actually being waited for.
+       *
+       * A globe is the right object for the open queue and the wrong one
+       * everywhere else — see MatchIntro.jsx. Three cases, three pictures, and
+       * each of them matches the sentence already printed underneath it.
+       */}
       <View style={styles.stage} pointerEvents="none">
-        <Globe size={globeSize} found={found} opponent={game.opponent} reduced={reduced} />
+        {soloRun ? (
+          <SoloDeck
+            size={stageSize}
+            ready={found}
+            reduced={reduced}
+            tone={isRevision ? colors.optionC : colors.gold}
+          />
+        ) : isChallenge ? (
+          <ChallengeWait
+            size={stageSize}
+            me={{ displayName: user?.displayName, avatarUrl: user?.avatarUrl }}
+            // Their face comes off the route until the server names them, then
+            // off the server — so the picture is right from the first frame and
+            // still correct if the caller had no avatar to pass.
+            them={{
+              displayName: game.opponent?.displayName ?? (opponent ? String(opponent) : null),
+              avatarUrl: game.opponent?.avatarUrl ?? (avatarUrl ? String(avatarUrl) : null),
+            }}
+            ready={found}
+            reduced={reduced}
+          />
+        ) : (
+          <Globe size={stageSize} found={found} opponent={game.opponent} reduced={reduced} />
+        )}
       </View>
 
       <View style={[styles.bottom, { paddingBottom: insets.bottom + space.lg }]} pointerEvents="box-none">
@@ -183,24 +267,42 @@ export default function Searching() {
               { opacity: stamp, transform: [{ scale: stamp.interpolate({ inputRange: [0, 1], outputRange: [1.5, 1] }) }] },
             ]}
           >
+            {/**
+             * "FOUND ONE!" over a drill would be announcing an opponent that does
+             * not exist, and the row beneath it would draw an empty avatar with the
+             * word "A rival" under it. A drill has nothing to find — it has a paper
+             * that is ready — so it says that instead.
+             */}
             <Text allowFontScaling={false} style={styles.foundWord}>
-              FOUND ONE!
+              {soloRun ? 'READY' : 'FOUND ONE!'}
             </Text>
-            <View style={styles.rivalRow}>
-              <Avatar
-                url={game.opponent?.avatarUrl}
-                name={game.opponent?.displayName}
-                size={26}
-                style={styles.rivalFace}
-              />
-              {/* Their level, not their topic rating — the level is what the
-                  queue matched on, and it is what the versus screen is about
-                  to show. The rating stays off both. */}
-              <Text variant="label" color={colors.onColor} numberOfLines={1} style={{ maxWidth: 220 }}>
-                {game.opponent?.displayName ?? 'A rival'}
-                {Number.isFinite(game.opponent?.level) ? `  ·  Level ${game.opponent.level}` : ''}
-              </Text>
-            </View>
+            {soloRun ? (
+              <View style={styles.rivalRow}>
+                <Text variant="label" color={colors.onColor} numberOfLines={1} style={{ maxWidth: 240 }}>
+                  {isRevision
+                    ? 'Seven you got wrong'
+                    : isSelf
+                      ? 'Your best run, played back'
+                      : 'Seven questions, no opponent'}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.rivalRow}>
+                <Avatar
+                  url={game.opponent?.avatarUrl}
+                  name={game.opponent?.displayName}
+                  size={26}
+                  style={styles.rivalFace}
+                />
+                {/* Their level, not their topic rating — the level is what the
+                    queue matched on, and it is what the versus screen is about
+                    to show. The rating stays off both. */}
+                <Text variant="label" color={colors.onColor} numberOfLines={1} style={{ maxWidth: 220 }}>
+                  {game.opponent?.displayName ?? 'A rival'}
+                  {Number.isFinite(game.opponent?.level) ? `  ·  Level ${game.opponent.level}` : ''}
+                </Text>
+              </View>
+            )}
           </Animated.View>
         ) : (
           <>
@@ -215,20 +317,37 @@ export default function Searching() {
                   can pair with, the band never widens, and saying "SEARCHING"
                   over a two-person queue would be theatre with nothing behind
                   it — so it names who is being waited for instead. */}
-              {challengeId
-                ? `WAITING FOR ${String(opponent ?? 'YOUR FRIEND').toUpperCase()}`
-                : search?.widening
-                  ? 'WIDENING THE SEARCH'
-                  : 'SEARCHING FOR OPPONENT'}
+              {soloRun
+                ? isRevision
+                  ? 'BUILDING YOUR REVISION'
+                  : isSelf
+                    ? 'RACKING UP YOUR BEST'
+                    : 'DEALING YOUR QUESTIONS'
+                : isChallenge
+                  ? `WAITING FOR ${String(opponent ?? 'YOUR FRIEND').toUpperCase()}`
+                  : search?.widening
+                    ? 'WIDENING THE SEARCH'
+                    : 'SEARCHING FOR OPPONENT'}
             </Animated.Text>
             {/* Topic, then the level range being searched — the two things that
                 actually define the query. Without the band the line is just the
                 topic, as it was before levels drove pairing. */}
             {topicName || search ? (
               <Text variant="meta" color="rgba(255,255,255,0.45)" style={styles.topicLine} numberOfLines={1}>
-                {challengeId
-                  ? [topicName, 'they have to open the app too'].filter(Boolean).join('  ·  ')
-                  : [topicName, search?.label].filter(Boolean).join('  ·  ')}
+                {soloRun
+                  ? [
+                      topicName,
+                      isRevision
+                        ? 'the ones you got wrong'
+                        : isSelf
+                          ? 'against your own best'
+                          : 'on your own',
+                    ]
+                      .filter(Boolean)
+                      .join('  ·  ')
+                  : isChallenge
+                    ? [topicName, 'they have to open the app too'].filter(Boolean).join('  ·  ')
+                    : [topicName, search?.label].filter(Boolean).join('  ·  ')}
               </Text>
             ) : null}
             <Button

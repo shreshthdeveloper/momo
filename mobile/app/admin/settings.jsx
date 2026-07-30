@@ -102,6 +102,7 @@ function toForm(spaceData) {
     joinMode: spaceData.joinMode,
     roundDurationMs: spaceData.settings?.roundDurationMs ?? 15000,
     allowGhosts: spaceData.settings?.allowGhosts !== false,
+    dailyChallenge: spaceData.settings?.dailyChallenge === true,
   };
 }
 
@@ -161,7 +162,8 @@ export default function AdminSettings() {
         form.accentColor !== baseline.accentColor ||
         form.joinMode !== baseline.joinMode ||
         form.roundDurationMs !== baseline.roundDurationMs ||
-        form.allowGhosts !== baseline.allowGhosts),
+        form.allowGhosts !== baseline.allowGhosts ||
+        form.dailyChallenge !== baseline.dailyChallenge),
   );
   const canSave = isDirty && form.name.trim().length >= 2;
 
@@ -180,6 +182,7 @@ export default function AdminSettings() {
         settings: {
           roundDurationMs: form.roundDurationMs,
           allowGhosts: form.allowGhosts,
+          dailyChallenge: form.dailyChallenge,
         },
       });
       // The PATCH answers with a small brand object; the screen re-reads the truth.
@@ -438,6 +441,34 @@ export default function AdminSettings() {
                 <Switch
                   value={form.allowGhosts}
                   onValueChange={(v) => set('allowGhosts', v)}
+                  disabled={!canManageSettings}
+                  trackColor={{ true: colors.accent, false: colors.hairline }}
+                  thumbColor={colors.onColor}
+                  ios_backgroundColor={colors.hairline}
+                />
+              </View>
+
+              {/**
+                * The daily challenge.
+                *
+                * Off by default and stated plainly, because switching it on means
+                * a notification to every student every morning — the kind of thing
+                * an organization should turn on deliberately rather than discover
+                * happening. The copy says what it costs them as well as what it is.
+                */}
+              <View style={styles.switchRow}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text variant="bodyStrong" color={canManageSettings ? colors.ink : colors.inkFaint}>
+                    A daily challenge
+                  </Text>
+                  <Text variant="meta" color={colors.inkFaint}>
+                    Seven questions each morning, the same for everyone, one attempt. Students are
+                    notified when it opens.
+                  </Text>
+                </View>
+                <Switch
+                  value={form.dailyChallenge}
+                  onValueChange={(v) => set('dailyChallenge', v)}
                   disabled={!canManageSettings}
                   trackColor={{ true: colors.accent, false: colors.hairline }}
                   thumbColor={colors.onColor}

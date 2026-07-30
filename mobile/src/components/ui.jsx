@@ -476,11 +476,24 @@ export function Segmented({ options, value, onChange, style }) {
             onPress={() => onChange(option.value)}
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
+            accessibilityLabel={option.dot ? `${option.label}, something waiting` : option.label}
             style={({ pressed }) => [styles.segment, on ? styles.segmentOn : null, pressed && { opacity: 0.7 }]}
           >
             <Text variant="label" color={on ? colors.accent : colors.inkMuted} numberOfLines={1}>
               {option.label}
             </Text>
+            {/**
+             * `dot` marks a pane with something waiting in it.
+             *
+             * A tabbed screen hides three quarters of itself by definition, and
+             * the one thing that must not be hidden is a reward sitting unopened
+             * behind a word. Gold rather than the accent: this is the "there is
+             * treasure here" mark the chest cards already use, not a selection
+             * state — and it is drawn whether or not the tab is the current one,
+             * because it stops being true when the chest is opened, not when the
+             * tab is looked at.
+             */}
+            {option.dot ? <View style={styles.segmentDot} /> : null}
           </Pressable>
         );
       })}
@@ -839,14 +852,20 @@ function ActionSheet({ visible, title, actions, onClose }) {
  * What is on screen, out of what matched — and the one screen-level action
  * that is not the primary (Select, Export) on the right.
  */
-export function CountRow({ shown, total, noun, action, onAction }) {
+export function CountRow({ shown, total, noun, action, onAction, meta }) {
   const plural = total === 1 ? noun : `${noun}s`;
+  const count =
+    shown != null && total != null && shown < total
+      ? `${shown} of ${total} ${plural}`
+      : `${total ?? shown ?? 0} ${plural}`;
   return (
     <View style={styles.countRow}>
+      {/* `meta` carries the one extra fact some lists have — "out of 140", "due
+          Friday". It exists so a screen with something to add does not have to
+          hand-roll its own count line and lose the Export slot with it, which is
+          how the console ended up with the same verb in three places. */}
       <Text variant="meta" color={colors.inkFaint} style={{ flex: 1 }}>
-        {shown != null && total != null && shown < total
-          ? `${shown} of ${total} ${plural}`
-          : `${total ?? shown ?? 0} ${plural}`}
+        {meta ? `${count}  ·  ${meta}` : count}
       </Text>
       {action ? (
         <Pressable
@@ -1498,6 +1517,16 @@ const styles = StyleSheet.create({
     minHeight: 40,
     borderRadius: layout.radiusPill,
     paddingHorizontal: space.sm,
+  },
+  /** On the corner, so it costs the label no width at four tabs across. */
+  segmentDot: {
+    position: 'absolute',
+    top: 7,
+    right: 9,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.gold,
   },
   segmentOn: {
     backgroundColor: colors.accentSoft,

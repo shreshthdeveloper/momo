@@ -15,6 +15,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { api, BASE_URL, getAccessToken } from '../../src/lib/api.js';
 import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace, useAdminPermissions } from '../../src/lib/admin.js';
+import { useExport, csvName } from '../../src/lib/download.js';
 import {
   Text,
   Badge,
@@ -59,6 +60,7 @@ export default function AdminImport() {
   const goBack = useConsoleBack();
   const adminSpace = useAdminSpace();
   const { canPublish } = useAdminPermissions(adminSpace);
+  const { exporting, error: exportError, run: runExport } = useExport();
 
   // 'pick' → 'review' → 'done'
   const [stage, setStage] = useState('pick');
@@ -239,6 +241,7 @@ export default function AdminImport() {
       <Header title="Import questions" subtitle={adminSpace?.name} />
 
       <ErrorNotice error={error} />
+      <ErrorNotice error={exportError} />
 
       {stage === 'pick' ? (
         <>
@@ -426,6 +429,39 @@ export default function AdminImport() {
                 />
               ) : null}
             </View>
+
+            {/**
+             * The broken loop, closed.
+             *
+             * A 400-row import with 30 bad rows is the case this screen was worst
+             * at: the problems are all here, correctly, one card each — and fixing
+             * them means holding a phone next to a spreadsheet and scrolling
+             * between thirty cards to find which line numbers to edit. The server
+             * has built exactly the right artefact for that job since F8.2.5 (row,
+             * question, field, problem — one line per problem) and nothing could
+             * ask for it.
+             *
+             * Only shown when there is something to report, and it posts the
+             * validation report rather than fetching: the rows it describes are in
+             * the client's hand, never saved, so there is nothing for a GET to name.
+             */}
+            {report.invalidRows > 0 ? (
+              <Button
+                variant="soft"
+                size="sm"
+                fullWidth={false}
+                label={exporting ? 'Building the list…' : `Send me the ${report.invalidRows} problems`}
+                disabled={exporting}
+                style={styles.errorExport}
+                onPress={() =>
+                  runExport('/admin/questions/import/errors.csv', {
+                    query: { spaceId: adminSpace?.id },
+                    filename: csvName(adminSpace?.name, 'import-errors'),
+                    body: report,
+                  })
+                }
+              />
+            ) : null}
 
             {rows.map((row) => {
               const state = rowState[row.row] ?? {};
@@ -644,6 +680,7 @@ const styles = StyleSheet.create({
   },
   metaLine: { marginTop: space.sm },
   problemLine: { marginTop: space.xs },
+  errorExport: { marginBottom: space.md, alignSelf: 'flex-start' },
   publishRow: {
     flexDirection: 'row',
     alignItems: 'center',

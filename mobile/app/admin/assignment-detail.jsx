@@ -15,8 +15,10 @@ import {
   Header,
   ProgressBar,
   Segmented,
+  CountRow,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
+import { useExport, csvName } from '../../src/lib/download.js';
 import { colors, consoleLayout, space } from '../../src/theme/index.js';
 
 /**
@@ -46,6 +48,7 @@ export default function AssignmentDetail() {
   const [refreshing, setRefreshing] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const { exporting, error: exportError, run } = useExport();
 
   const load = useCallback(async () => {
     if (!adminSpace || !id) return;
@@ -89,6 +92,7 @@ export default function AssignmentDetail() {
       />
 
       <ErrorNotice error={error} onRetry={load} />
+      <ErrorNotice error={exportError} />
 
       {!data && !error ? (
         <ListSkeleton rows={7} />
@@ -125,6 +129,24 @@ export default function AssignmentDetail() {
           </View>
 
           <Segmented options={FILTERS} value={filter} onChange={setFilter} style={styles.tabs} />
+
+          {/* The count for the filter in force, plus Export in the slot it
+              occupies on every other list. The progress endpoint has been
+              exportable since F8.6.6 and nothing called it, so "who has not done
+              their homework" could be read on a phone and taken nowhere. */}
+          <CountRow
+            shown={students.length}
+            total={total}
+            noun="student"
+            meta={`${done} finished`}
+            action={exporting ? 'Exporting…' : 'Export'}
+            onAction={() =>
+              run(`/admin/assignments/${id}/progress.csv`, {
+                query: { spaceId: adminSpace?.id },
+                filename: csvName(data?.title ?? 'assignment', 'progress'),
+              })
+            }
+          />
 
           {students.map((student) => (
             <View key={student.userId} style={styles.row}>

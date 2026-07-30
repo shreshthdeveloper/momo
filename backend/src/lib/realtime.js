@@ -23,6 +23,31 @@ export function clearRealtime() {
   transport = null;
 }
 
+/**
+ * The room transport a live class session runs on.
+ *
+ * Returned as an object rather than as a function per event because the session
+ * runner is handed a `transport` and calls `toRoom` on it many times — and because
+ * it must keep working when nobody has registered one. An unregistered transport
+ * returns a no-op runner rather than null, so a session created in a test, or
+ * during a boot that has not reached the gateway, still runs its rounds and still
+ * writes its results. The lesson is not the broadcast.
+ */
+export function realtimeRoom() {
+  return {
+    toRoom(sessionId, event, payload) {
+      if (!transport?.toRoom) return false;
+      try {
+        transport.toRoom(String(sessionId), event, payload);
+        return true;
+      } catch (err) {
+        logger.warn({ err, event }, 'realtime room emit failed');
+        return false;
+      }
+    },
+  };
+}
+
 /** Deliver `payload` to every socket this user has open, if any. */
 export function emitToUser(userId, event, payload) {
   if (!transport) return false;

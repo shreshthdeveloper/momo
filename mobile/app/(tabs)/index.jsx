@@ -28,6 +28,7 @@ import {
 import { HomeFeedSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import CoinBalance from '../../src/components/CoinBalance.jsx';
+import { StreakFlame, StreakSheet } from '../../src/components/StreakFlame.jsx';
 import TopicCard from '../../src/components/TopicCard.jsx';
 import TopicPlaySheet from '../../src/components/TopicPlaySheet.jsx';
 import TopicMedallion, { withAlpha, resolveTopicFace } from '../../src/components/TopicMedallion.jsx';
@@ -35,7 +36,6 @@ import { resolveBanner } from '../../src/lib/banner.js';
 import { LeagueBadge } from '../../src/components/League.jsx';
 import SpaceHome from '../../src/components/SpaceHome.jsx';
 import { leagueFor } from '../../src/lib/league.js';
-import { streakState } from '../../src/lib/streak.js';
 import { colors, elevation, layout, space, type } from '../../src/theme/index.js';
 import { PUBLIC_SPACE_ID } from '../../src/shared/constants.js';
 import { ACHIEVEMENTS } from '../../src/shared/achievements.js';
@@ -59,7 +59,7 @@ const DUO_PLAY = require('../../assets/art/duo-play.webp');
  *
  *   1. Who you are and where you stand   — header and level card
  *   2. One button that starts a match    — the Arena card
- *   3. Whether today is still intact     — the streak card
+ *   3. Whether today is still intact     — the flame in the top bar
  *   4. Two things worth chasing          — rankings and achievements
  *   5. What you were in the middle of    — up to three you have actually played
  *
@@ -107,6 +107,34 @@ export default function Home() {
   const { unread } = useNotifications();
   /** The topic whose card is open — see `TopicPlaySheet`. */
   const [chosen, setChosen] = useState(null);
+
+  /**
+   * The streak sheet, behind the flame in the top bar.
+   *
+   * `refreshProfile` is the reload rather than `load`: the streak and the balance
+   * both live on the profile, and the feed knows nothing about either. A freeze
+   * bought here has to change the pip on the flame and the coins beside it in the
+   * same beat, or the purchase looks like it did not happen.
+   */
+  const [streakOpen, setStreakOpen] = useState(false);
+  const [freezing, setFreezing] = useState(false);
+  const [freezeError, setFreezeError] = useState(null);
+  const buyFreeze = useCallback(async () => {
+    if (freezing) return;
+    setFreezing(true);
+    setFreezeError(null);
+    try {
+      await api.post('/me/streak-freeze', {});
+      await refreshProfile?.();
+      setStreakOpen(false);
+    } catch (err) {
+      // The sheet stays open. A refused purchase needs the price and the button
+      // still in front of the player, not a screen they have to navigate back to.
+      setFreezeError(err);
+    } finally {
+      setFreezing(false);
+    }
+  }, [freezing, refreshProfile]);
 
   const inSpace = activeSpaceId && activeSpaceId !== PUBLIC_SPACE_ID;
 
@@ -282,7 +310,11 @@ export default function Home() {
         </Pressable>
 
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text variant="meta" color={colors.inkFaint}>
+          {/* Truncates rather than wraps. With a fourth control in the row the
+              greeting is the first thing to run out of width, and a two-line
+              "Hey, Shreshth" would push the header taller on exactly the phones
+              that can least afford it. */}
+          <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
             Hey, {firstName}
           </Text>
           {/* The switcher opens unconditionally. It used to require an existing
@@ -307,8 +339,20 @@ export default function Home() {
           </Pressable>
         </View>
 
-        <BellButton unread={unread} onPress={() => router.push('/notifications')} />
-        <CoinBalance />
+        {/**
+         * The three readouts, grouped and tighter than the row's own gap.
+         *
+         * A 12pt gap between five items leaves the greeting about seventy points
+         * on a 360dp phone, which truncates the organization name to nothing.
+         * These three belong together — they are what you HAVE — so they share a
+         * cluster at 8, and the row's 12 stays for the two real divisions:
+         * you, what you are looking at, and what you hold.
+         */}
+        <View style={styles.tools}>
+          <StreakFlame streak={user?.streak} onPress={() => setStreakOpen(true)} />
+          <BellButton unread={unread} onPress={() => router.push('/notifications')} />
+          <CoinBalance />
+        </View>
       </View>
 
       {/* Directly under the name, because it describes the player. */}
@@ -403,7 +447,20 @@ export default function Home() {
           onBrowse={() => router.push('/play')}
         />
 
-        <StreakCard streak={user?.streak} />
+        {/**
+         * The streak card used to sit here, and the flame in the top bar is
+         * where it went.
+         *
+         * Not a duplication that got resolved — a promotion. The card said three
+         * things (the run, whether today is safe, the best) and the sheet behind
+         * the flame says all three plus the two it never could: how many freezes
+         * you hold, and where to buy one. It also stopped costing seventy points
+         * of the first screenful to say "today is safe", which is the answer on
+         * most days and needs a tick rather than a card.
+         *
+         * The flame keeps the card's one genuinely good idea: at risk is the
+         * only state that asks for anything, so it is the only state that moves.
+         */}
 
         {/* Two ladders, side by side. Neither is ever empty: on a fresh
             account they read "Unranked" and "0 of 7", which is a starting line
@@ -465,6 +522,19 @@ export default function Home() {
         onPlay={playChosen}
         onDetails={openChosenDetails}
         onClose={() => setChosen(null)}
+      />
+
+      <StreakSheet
+        visible={streakOpen}
+        streak={user?.streak}
+        balance={user?.coins ?? 0}
+        busy={freezing}
+        error={freezeError}
+        onBuy={buyFreeze}
+        onClose={() => {
+          setFreezeError(null);
+          setStreakOpen(false);
+        }}
       />
     </SafeAreaView>
   );
@@ -723,59 +793,6 @@ function PlayCard({ topic, eyebrow = 'ARENA', width, onPlay, onBrowse }) {
 }
 
 /**
- * Today, in one card.
- *
- * A streak is the only number in the app that can go DOWN by doing nothing,
- * which is what earns it a place on a dashboard.
- *
- * It used to hide itself at zero, reasoning that "0 day streak" is a scold on a
- * new account. The instinct was right and the conclusion was wrong: the fix for
- * a scold is different words, not a missing card. At zero it now says *Start a
- * streak* and what one match today would begin — which is an invitation, and
- * happens to be the single most useful sentence on a brand-new Home.
- *
- * Three states, one shape. Gold and asking on the day the run has not been fed;
- * quiet with a tick once it has; quiet and inviting when there is no run.
- */
-function StreakCard({ streak }) {
-  const { current, longest, playedToday, atRisk, showsBest } = streakState(streak);
-  const none = current === 0;
-  const lit = atRisk || none;
-
-  const title = none ? 'Start a streak' : `${current} day${current === 1 ? '' : 's'} in a row`;
-  const body = none
-    ? 'One match today, and again tomorrow.'
-    : playedToday
-      ? showsBest
-        ? `Today is safe. Your best is ${longest}.`
-        : 'Today is safe.'
-      : 'Play one match today to keep it.';
-
-  return (
-    <View style={[styles.streak, atRisk && styles.streakAtRisk]}>
-      <View style={[styles.streakGlyph, lit && styles.streakGlyphLit]}>
-        <Icon name="bolt" size={18} color={lit ? colors.gold : colors.inkMuted} />
-      </View>
-
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text variant="label" color={atRisk ? colors.gold : colors.ink}>
-          {title}
-        </Text>
-        <Text variant="meta" color={colors.inkFaint}>
-          {body}
-        </Text>
-      </View>
-
-      {playedToday && !none ? (
-        <View style={styles.streakDone}>
-          <Icon name="check" size={13} color={colors.correct} />
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-/**
  * Where the player stands, as a card rather than a line.
  *
  * It was a hairline strip — badge, level, the word Rankings, a chevron — on the
@@ -934,6 +951,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: layout.gutter,
     paddingVertical: space.md,
   },
+  /** The three readouts, closer to each other than to anything else. */
+  tools: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   spaceButton: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 26 },
   spaceLogo: { width: 18, height: 18, borderRadius: 5, overflow: 'hidden' },
 
@@ -1031,40 +1050,6 @@ const styles = StyleSheet.create({
   /** The one stroke of accent at the head of the card — a rule, not a fill. */
   eyebrowRule: { width: 3, height: 12, borderRadius: 2, backgroundColor: colors.accent },
   eyebrow: { letterSpacing: 1.4 },
-
-  streak: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
-    minHeight: 64,
-    paddingHorizontal: layout.cardPadding,
-    paddingVertical: space.md,
-    marginHorizontal: layout.gutter,
-    marginBottom: space.xl,
-    borderRadius: layout.radiusCard,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    backgroundColor: colors.sunken,
-  },
-  /** Gold only on the day it is asking for something. */
-  streakAtRisk: { borderColor: 'rgba(245, 182, 46, 0.4)', backgroundColor: colors.goldSoft },
-  streakGlyph: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.canvas,
-  },
-  streakGlyphLit: { backgroundColor: 'rgba(245, 182, 46, 0.16)' },
-  streakDone: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.correctSoft,
-  },
 
   /** Standing, as a card: level, the bar that moves every match, the badge. */
   level: {

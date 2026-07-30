@@ -13,8 +13,10 @@ import {
   ErrorNotice,
   Header,
   RankTile,
+  CountRow,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
+import { useExport, csvName } from '../../src/lib/download.js';
 import { colors, consoleLayout, space } from '../../src/theme/index.js';
 
 /**
@@ -34,6 +36,7 @@ export default function ContestStandings() {
   const [board, setBoard] = useState(null);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const { exporting, error: exportError, run } = useExport();
 
   const load = useCallback(async () => {
     if (!adminSpace || !id) return;
@@ -60,6 +63,7 @@ export default function ContestStandings() {
       />
 
       <ErrorNotice error={error} onRetry={load} />
+      <ErrorNotice error={exportError} />
 
       {!board && !error ? (
         <ListSkeleton rows={8} />
@@ -85,10 +89,21 @@ export default function ContestStandings() {
             />
           }
         >
-          <Text variant="meta" color={colors.inkFaint} style={styles.count}>
-            {board.total ?? rows.length} {(board.total ?? rows.length) === 1 ? 'entrant' : 'entrants'}
-            {board.maxScore ? `  ·  out of ${board.maxScore}` : ''}
-          </Text>
+          {/* The console's own count row rather than a hand-rolled line, which is
+              also what gives Export the same home it has on every other list. */}
+          <CountRow
+            shown={rows.length}
+            total={board.total ?? rows.length}
+            noun="entrant"
+            meta={board.maxScore ? `out of ${board.maxScore}` : null}
+            action={exporting ? 'Exporting…' : 'Export'}
+            onAction={() =>
+              run(`/admin/contests/${id}/standings.csv`, {
+                query: { spaceId: adminSpace?.id },
+                filename: csvName(name ? String(name) : 'contest', 'standings'),
+              })
+            }
+          />
 
           {rows.map((row) => (
             <View key={row.userId ?? row.rank} style={styles.row}>

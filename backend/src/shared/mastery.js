@@ -19,6 +19,7 @@ import {
   COIN_AWARD,
   MILESTONE_LEVEL_STEP,
   MATCH_MODE,
+  isUnrecordedMode,
 } from './constants.js';
 
 /**
@@ -62,7 +63,7 @@ export function masteryProgress(xp) {
  * XP earned from one match. Participation is the bulk of it — showing up
  * matters more than winning.
  * @param {object} input
- * @param {'won'|'lost'|'draw'} input.verdict
+ * @param {'won'|'lost'|'draw'|'solo'|'void'} input.verdict
  * @param {number} input.correctCount
  */
 export function xpForMatch({ verdict, correctCount = 0, mode }) {
@@ -71,6 +72,21 @@ export function xpForMatch({ verdict, correctCount = 0, mode }) {
   // is its own reward (leagues-and-progression.md §1). Playing still counts —
   // otherwise the mode with no risk also has no point.
   if (mode === MATCH_MODE.QUICK) return xp;
+  /**
+   * Nor does a mode you can replay until you win. A self-race is against a
+   * recording of you on questions you have already seen: the win is real as a
+   * personal best and worth nothing as a result, so it pays for the answers and
+   * not for the verdict.
+   */
+  if (isUnrecordedMode(mode)) return xp;
+  /**
+   * A drill has no opponent and therefore no verdict, so there is no bonus to
+   * pay. Said out loud rather than left to fall out of the two comparisons
+   * below, because that is exactly how it went wrong once: a solo run used to
+   * reach here as `'won'` — nobody had beaten it — and collect a win bonus that
+   * quick play, which at least has someone on the other side, does not get.
+   */
+  if (verdict === 'solo') return xp;
   if (verdict === 'won') xp += XP_WIN_BONUS;
   else if (verdict === 'draw') xp += XP_DRAW_BONUS;
   return xp;
@@ -170,6 +186,15 @@ export function effectiveAccountLevel(totalXp, floor, curve) {
  * challenge is a thing two friends can run all afternoon.
  */
 export function coinsForMatch({ verdict, mode }) {
+  /**
+   * Belt and braces on the drill. Practice already falls through to 0 via the
+   * mode, but a solo run in any mode has nothing to be paid for, and leaving
+   * that to the mode check alone means the next opponent-less mode inherits
+   * whatever its mode happens to pay.
+   */
+  if (verdict === 'solo') return 0;
+  // And nothing a player can grind against their own recording pays either.
+  if (isUnrecordedMode(mode)) return 0;
   if (mode === MATCH_MODE.RANKED) {
     if (verdict === 'won') return COIN_AWARD.RANKED_WIN;
     if (verdict === 'draw') return COIN_AWARD.RANKED_DRAW;

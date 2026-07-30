@@ -22,6 +22,7 @@ import {
 import { signAccessToken } from '../src/services/authService.js';
 import { loadProgression, resetProgressionCache } from '../src/services/progressionService.js';
 import { ensureMonthlyChests } from '../src/services/chestService.js';
+import { sessions } from '../src/game/classSession.js';
 import { contentHashOf, randomJoinCode } from '../src/lib/crypto.js';
 import { PROTOCOL_VERSION, GAME_NAMESPACE } from '../src/shared/protocol.js';
 import { QUESTION_STATUS, TOPIC_STATUS, SPACE_ROLE } from '../src/shared/constants.js';
@@ -102,6 +103,12 @@ export async function resetDb() {
   // Chests live in the database too, so truncating took them with the config.
   // Every test that touches a chest expects this month's pair to exist.
   await ensureMonthlyChests();
+  /**
+   * Live class sessions are held in memory, so truncating the database left
+   * runners pointing at documents that no longer exist — each with a round timer
+   * still ticking into the next test. `clear()` disposes them.
+   */
+  sessions.clear();
 }
 
 // ── Fixtures ───────────────────────────────────────────────────────────────

@@ -260,3 +260,122 @@ test('practice mode is ghost-only and changes no rating', async () => {
 
   a.close();
 });
+
+/**
+ * F6.7.5 — a ghost must be indistinguishable from a live opponent. These are
+ * the properties that made it distinguishable in practice, each of which was a
+ * pattern a player could learn rather than a missing field.
+ */
+test('a synthetic identity never contradicts itself or repeats a shape', async () => {
+  const { syntheticIdentity, NAMES_BY_COUNTRY } = await import('../src/game/ghostService.js');
+
+  const names = new Set();
+  const shapes = new Set();
+  let mismatched = 0;
+  let withAvatar = 0;
+
+  for (let i = 0; i < 300; i += 1) {
+    const g = syntheticIdentity({ country: 'IN' });
+
+    assert.ok(g.displayName && g.displayName.length > 0, 'a ghost always has a name');
+    assert.ok(g.country && /^[A-Z]{2}$/.test(g.country), 'and a two-letter country');
+    assert.ok(g.userId, 'and an id that belongs to no real account');
+
+    // The tell this replaces: a name drawn from one country against a flag
+    // drawn from another. Every country we can name somebody from is allowed;
+    // a country we cannot is never chosen.
+    if (!NAMES_BY_COUNTRY[g.country]) mismatched += 1;
+
+    names.add(g.displayName);
+    if (g.avatarUrl) {
+      withAvatar += 1;
+      assert.match(g.avatarUrl, /^mimo:tint\/\d+$/, 'any avatar is a free preset');
+    }
+
+    shapes.add(
+      /^[A-Z][a-z]+$/.test(g.displayName) ? 'plain'
+        : /^[A-Z][a-z]+\d+$/.test(g.displayName) ? 'name+digits'
+        : /\s[A-Z]\.$/.test(g.displayName) ? 'name+initial'
+        : /[._]/.test(g.displayName) ? 'separator'
+        : 'handle',
+    );
+  }
+
+  assert.equal(mismatched, 0, 'a ghost is never from a country we cannot name somebody from');
+  assert.ok(shapes.size >= 4, `names take several shapes, not one (saw ${[...shapes].join(', ')})`);
+  assert.ok(names.size > 100, 'and do not collapse onto a handful of values');
+  assert.ok(withAvatar > 0 && withAvatar < 300, 'some carry a preset avatar, not all or none');
+});
+
+test('the ghost deadline is jittered early, never late', async () => {
+  const { Matchmaker } = await import('../src/game/matchmaker.js');
+
+  const deadlines = new Set();
+  const mm = new Matchmaker({ ghostAfterMs: 8000, tickMs: 10_000 });
+  for (let i = 0; i < 200; i += 1) {
+    mm.join({ userId: `u${i}`, topicId: 't', spaceId: 's', level: 1, rating: 1200 });
+    const entry = (mm.pools.get('s:t') ?? []).find((w) => w.userId === `u${i}`);
+    deadlines.add(entry.ghostAfterMs);
+    mm.leave(`u${i}`);
+  }
+  mm.stop();
+
+  const values = [...deadlines];
+  assert.ok(values.length > 20, 'the deadline varies rather than being one constant');
+  assert.ok(Math.max(...values) <= 8000, 'never later than the promise in F6.4.3');
+  assert.ok(Math.min(...values) >= 5000, 'and never so early the queue cannot try');
+});
+
+test('practice is a solo drill with no opponent at all', async () => {
+  const { topic } = await makeTopic();
+  const alice = await makeUser({ displayName: 'Alice' });
+  const a = connectClient(alice.token, { port: harness.port });
+  await a.connected();
+
+  await a.emit(C2S.QUEUE_JOIN, {
+    topicId: String(topic._id),
+    mode: 'practice',
+  });
+
+  const found = await a.wait(S2C.MATCH_FOUND, { timeoutMs: 4000 });
+  assert.equal(
+    found.payload.opponent,
+    null,
+    'practice must never produce an opponent — a ghost here would prove ghosts exist',
+  );
+
+  // It is still a real, playable match.
+  const start = await a.wait(S2C.ROUND_START, { predicate: (p) => p.roundIndex === 0 });
+  assert.ok(start.payload.question?.id, 'and it deals real questions');
+
+  const stored = await Match.findOne({ 'players.userId': alice.user._id }).lean();
+  assert.equal(stored.players.length, 1, 'the stored match has one player');
+  assert.equal(stored.players.filter((p) => p.isGhost).length, 0, 'and no ghost among them');
+
+  a.close();
+});
+
+test('a practice run is never harvested as a replay for somebody else', async () => {
+  const { topic } = await makeTopic();
+  const alice = await makeUser();
+  const a = connectClient(alice.token, { port: harness.port });
+  await a.connected();
+  await a.emit(C2S.QUEUE_JOIN, { topicId: String(topic._id), mode: 'practice' });
+  await a.wait(S2C.MATCH_FOUND, { timeoutMs: 4000 });
+
+  // Answer every round so the match completes the way a real one would.
+  for (let i = 0; i < ROUNDS_PER_MATCH; i += 1) {
+    const round = await a.wait(S2C.ROUND_START, { predicate: (p) => p.roundIndex === i });
+    await a.emit(C2S.MATCH_ANSWER, {
+      matchId: round.payload.matchId,
+      roundIndex: i,
+      optionIndex: 0,
+    });
+  }
+  await a.wait(S2C.MATCH_END, { timeoutMs: 8000 });
+
+  const replays = await Replay.find({ userId: alice.user._id }).lean();
+  assert.equal(replays.length, 0, 'a drill against nobody is not an opponent for anybody');
+
+  a.close();
+});

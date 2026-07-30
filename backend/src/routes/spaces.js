@@ -15,6 +15,12 @@ import {
   assignmentSummaryFor,
 } from '../services/assignmentService.js';
 import { spacePerformanceFor } from '../services/analyticsService.js';
+import {
+  listTournaments,
+  getTournament,
+  joinTournament,
+  leaveTournament,
+} from '../services/tournamentService.js';
 import { Space, SpaceMember, Topic, Batch } from '../models/index.js';
 import { NotFoundError } from '../lib/errors.js';
 import { TOPIC_STATUS, MIN_PUBLISHED_QUESTIONS_TO_LIVE, SPACE_ROLE } from '../shared/constants.js';
@@ -190,5 +196,23 @@ export default async function spaceRoutes(app) {
   /** prd.md F7.6 — the student's own performance inside this space. */
   app.get('/spaces/:spaceId/performance', { preHandler: tenantGuard }, async (request) =>
     ok(await spacePerformanceFor(request.scope, request.user._id)),
+  );
+
+  // ── Knockout tournaments ─────────────────────────────────────────────────
+
+  app.get('/spaces/:spaceId/tournaments', { preHandler: tenantGuard }, async (request) =>
+    ok({ items: await listTournaments(request.scope) }),
+  );
+
+  app.get('/spaces/:spaceId/tournaments/:id', { preHandler: tenantGuard }, async (request) =>
+    ok(await getTournament(request.scope, request.params.id, request.user._id)),
+  );
+
+  app.post('/spaces/:spaceId/tournaments/:id/join', { preHandler: tenantGuard }, async (request) =>
+    ok(await joinTournament(request.scope, request.user, request.params.id)),
+  );
+
+  app.post('/spaces/:spaceId/tournaments/:id/leave', { preHandler: tenantGuard }, async (request) =>
+    ok(await leaveTournament(request.scope, request.user, request.params.id)),
   );
 }
