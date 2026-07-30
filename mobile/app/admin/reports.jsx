@@ -6,13 +6,15 @@ import { api } from '../../src/lib/api.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import {
   Text,
-  Chip,
+  Badge,
   EmptyState,
   ErrorNotice,
   Header,
   ProgressBar,
   SectionHeader,
-  Segmented,
+  FilterBar,
+  Select,
+  Tabs,
   Skeleton,
   Stat,
 } from '../../src/components/ui.jsx';
@@ -103,24 +105,14 @@ function OptionSpread({ distribution, correctIndex }) {
 }
 
 /**
- * The verdict pill. Badge has no amber tone, so this mirrors Badge's geometry
- * locally: red for a suspect key, amber for too easy, quiet for healthy — and
- * the word always carries the meaning, never the colour alone.
+ * The verdict pill — `Badge` now carries the tinted tones this used to mirror
+ * by hand with solid fills, so it is the same pill as every other status in
+ * both consoles. The word always carries the meaning, never the colour alone.
  */
 function FlagBadge({ flag }) {
-  const look =
-    flag === 'suspect_key'
-      ? { bg: colors.wrong, fg: colors.onColor, label: 'Check key' }
-      : flag === 'too_easy'
-        ? { bg: colors.optionC, fg: colors.onColor, label: 'Too easy' }
-        : { bg: colors.sunken, fg: colors.inkFaint, label: 'healthy' };
-  return (
-    <View style={[styles.flagPill, { backgroundColor: look.bg }]}>
-      <Text variant="tiny" color={look.fg}>
-        {look.label}
-      </Text>
-    </View>
-  );
+  if (flag === 'suspect_key') return <Badge label="Check key" tone="danger" />;
+  if (flag === 'too_easy') return <Badge label="Too easy" tone="amber" />;
+  return <Badge label="healthy" tone="quiet" />;
 }
 
 /** One quarter of the Trends card: the number now, and where it came from. */
@@ -323,45 +315,33 @@ export default function AdminReports() {
 
   // ── The topic chip row, shared by Topics and Trends ──────────────────────
 
+  /**
+   * The topic picker — a `Select`, like every other data-driven choice in the
+   * console. It was a horizontal chip row, so on a report about topics most of
+   * the topics were off the right edge of the screen.
+   */
   const renderChips = () => {
     if (topics == null) {
       if (topicsError) return null;
       return (
         <View style={styles.chipsSkeleton}>
-          {[96, 72, 116].map((w) => (
-            <Skeleton key={w} width={w} height={38} radius={19} />
-          ))}
+          <Skeleton width="100%" height={44} radius={layout.radiusInput} />
         </View>
       );
     }
     if (topics.length === 0) return null;
     return (
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.chipsScroll}
-        contentContainerStyle={styles.chips}
-      >
-        {tab === 'trends' ? (
-          <Chip
-            label="Every topic"
-            active={trendTopicId == null}
-            onPress={() => setTrendTopicId(null)}
-          />
-        ) : null}
-        {topics.map((t) => (
-          <Chip
-            key={t.id}
-            label={t.name}
-            active={tab === 'trends' ? trendTopicId === t.id : topicId === t.id}
-            onPress={() =>
-              tab === 'trends'
-                ? setTrendTopicId(trendTopicId === t.id ? null : t.id)
-                : setTopicId(topicId === t.id ? null : t.id)
-            }
-          />
-        ))}
-      </ScrollView>
+      <View style={styles.picker}>
+        <Select
+          value={tab === 'trends' ? trendTopicId : topicId}
+          options={[
+            { value: null, label: 'Every topic' },
+            ...topics.map((t) => ({ value: t.id, label: t.name })),
+          ]}
+          onChange={(value) => (tab === 'trends' ? setTrendTopicId(value) : setTopicId(value))}
+          placeholder="Every topic"
+        />
+      </View>
     );
   };
 
@@ -653,18 +633,16 @@ export default function AdminReports() {
     <SafeAreaView style={styles.screen} edges={['top']}>
       <Header title="Reports" subtitle={adminSpace?.name} />
 
-      <Segmented options={TABS} value={tab} onChange={setTab} style={styles.tabs} />
+      <Tabs options={TABS} value={tab} onChange={setTab} />
 
+      {/* The second level is chips, not a second tab bar. Two underlined rows
+          stacked read as one confused navigation; a chip row under tabs reads
+          as what it is — a narrowing of the tab you are already on. */}
       {tab === 'items' ? (
-        <Segmented
-          options={ITEM_MODES}
-          value={itemsMode}
-          onChange={setItemsMode}
-          style={styles.subTabs}
-        />
+        <FilterBar options={ITEM_MODES} value={itemsMode} onChange={setItemsMode} />
       ) : null}
       {tab === 'trends' ? (
-        <Segmented options={PERIODS} value={days} onChange={setDays} style={styles.subTabs} />
+        <FilterBar options={PERIODS} value={days} onChange={setDays} />
       ) : null}
       {tab === 'topics' || tab === 'trends' ? renderChips() : null}
 
@@ -683,17 +661,8 @@ export default function AdminReports() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  tabs: { marginHorizontal: consoleLayout.gutter, marginTop: space.xs },
-  subTabs: { marginHorizontal: consoleLayout.gutter, marginTop: space.md },
-  chipsScroll: { flexGrow: 0, marginTop: space.md },
-  chips: { paddingHorizontal: consoleLayout.gutter, gap: space.sm, paddingBottom: space.xs },
-  chipsSkeleton: {
-    flexDirection: 'row',
-    gap: space.sm,
-    paddingHorizontal: consoleLayout.gutter,
-    marginTop: space.md,
-    paddingBottom: space.xs,
-  },
+  picker: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.md },
+  chipsSkeleton: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.md },
   body: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
   count: { paddingBottom: space.sm },
   card: {
@@ -712,9 +681,8 @@ const styles = StyleSheet.create({
   spreadCol: { alignItems: 'center', gap: 3 },
   spreadTrack: { height: 28, width: 10, justifyContent: 'flex-end' },
   spreadBar: { width: 10, borderRadius: 3 },
-  flagPill: { paddingHorizontal: space.sm, paddingVertical: 3, borderRadius: 7 },
   footnote: {
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     borderWidth: 1,
     borderColor: colors.hairline,

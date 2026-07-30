@@ -14,6 +14,10 @@ import { useRouter, useSegments } from 'expo-router';
  * So: go back if there is anywhere to go, and otherwise return to the console's
  * own root, which is the honest destination for "out of here" on a screen that
  * was entered directly.
+ *
+ * This belongs to PUSHED screens only — editors, details, standings. A screen
+ * listed in the sidebar wears the menu instead of a back arrow, so it has no
+ * use for this; see the rule in `ConsoleShell`.
  */
 export function useConsoleBack() {
   const router = useRouter();

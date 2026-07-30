@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../src/lib/api.js';
-import { useConsoleBack } from '../../src/lib/consoleBack.js';
+import { useConsoleNav } from '../../src/components/consoleNav.js';
 import { useAdminSpace, useAdminPermissions } from '../../src/lib/admin.js';
 import { useAuth } from '../../src/state/auth.jsx';
 import Icon from '../../src/components/Icon.jsx';
@@ -23,6 +23,7 @@ import {
   Badge,
   Button,
   ConfirmSheet,
+  ConsoleFooter,
   ErrorNotice,
   Header,
   ProgressBar,
@@ -105,7 +106,12 @@ function toForm(spaceData) {
 }
 
 export default function AdminSettings() {
-  const goBack = useConsoleBack();
+  /**
+   * Settings is a sidebar row like every other, so it wears the menu rather
+   * than a back arrow. The unsaved-work guard moves with the button: the menu
+   * asks before the sidebar replaces the route out from under an edited form.
+   */
+  const nav = useConsoleNav();
   const adminSpace = useAdminSpace();
   const { refreshSpaces } = useAuth();
   const { canManageSettings, isFullAdmin } = useAdminPermissions(adminSpace);
@@ -187,9 +193,9 @@ export default function AdminSettings() {
     }
   };
 
-  const onBack = () => {
+  const leave = () => {
     if (isDirty) setSheet({ kind: 'discard' });
-    else goBack();
+    else nav?.open();
   };
 
   const pickLogo = async () => {
@@ -265,31 +271,11 @@ export default function AdminSettings() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header
-        title="Organization settings"
-        subtitle={adminSpace?.name}
-        onBack={onBack}
-        right={
-          !canManageSettings ? null : saving ? (
-            <View style={styles.saveSlot}>
-              <Spinner size={22} />
-            </View>
-          ) : (
-            <Pressable
-              onPress={save}
-              disabled={!canSave}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: !canSave }}
-              style={({ pressed }) => [styles.saveSlot, pressed && { opacity: 0.7 }]}
-            >
-              <Text variant="label" color={canSave ? colors.accent : colors.inkFaint}>
-                Save
-              </Text>
-            </Pressable>
-          )
-        }
-      />
+      {/* Save is a footer button, like every other form in both consoles. It
+          was a text link in the header — the only one in the product — which
+          made the most consequential control on the longest screen the
+          smallest and the least reachable thing on it. */}
+      <Header title="Organization settings" subtitle={adminSpace?.name} onMenu={leave} />
 
       <ErrorNotice error={error} onRetry={data ? undefined : load} />
 
@@ -542,7 +528,7 @@ export default function AdminSettings() {
                         {item.actor?.displayName ?? item.actor} · {timeAgo(item.at)}
                       </Text>
                       {item.impersonated ? (
-                        <Badge label="support" tone="ink" style={styles.amberBadge} />
+                        <Badge label="support" tone="quiet" style={styles.amberBadge} />
                       ) : null}
                     </View>
                   </View>
@@ -552,6 +538,14 @@ export default function AdminSettings() {
           ) : null}
         </ScrollView>
       )}
+
+      {/* The footer appears only when there is something to save, so it does
+          not take a strip of the screen from a form nobody has touched. */}
+      {data && canManageSettings && isDirty ? (
+        <ConsoleFooter>
+          <Button label="Save changes" loading={saving} disabled={!canSave} onPress={save} />
+        </ConsoleFooter>
+      ) : null}
 
       {/* ── Unsaved changes ──────────────────────────────────────────────── */}
       <ConfirmSheet
@@ -564,7 +558,11 @@ export default function AdminSettings() {
         cancelLabel="Keep editing"
         onConfirm={() => {
           setSheet(null);
-          goBack();
+          // Put the form back to what is saved, then hand over the sidebar —
+          // "discard" that left the edits sitting in state would come back the
+          // moment the row was tapped again.
+          if (baseline) setForm(baseline);
+          nav?.open();
         }}
         onCancel={() => setSheet(null)}
       />
@@ -686,7 +684,6 @@ function DurationChip({ seconds, active, disabled, onPress }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
   content: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
-  saveSlot: { minWidth: 44, minHeight: 40, alignItems: 'flex-end', justifyContent: 'center' },
   readOnlyNote: { marginBottom: space.lg, marginLeft: space.xs },
 
   section: { marginBottom: space.xl },
@@ -716,7 +713,7 @@ const styles = StyleSheet.create({
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     paddingHorizontal: space.lg,
     height: 54,
@@ -754,7 +751,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  chipOff: { backgroundColor: colors.sunken, borderColor: colors.hairline },
+  chipOff: { backgroundColor: colors.nightRaised, borderColor: colors.hairline },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.sm },
 
   // ── Plan ──────────────────────────────────────────────────────────────────
@@ -781,7 +778,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.nightRaised,
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
     padding: consoleLayout.gutter,

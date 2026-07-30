@@ -168,10 +168,21 @@ export default function Assignments() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.sunken },
-  content: { paddingHorizontal: layout.gutter, paddingTop: space.sm, paddingBottom: space.xxl },
+  /**
+   * `canvas`, like every other player screen. This one and Settings were the
+   * two exceptions — `sunken` is the CONSOLE's field, and a player pushed here
+   * from Home crossed onto a darker screen for no reason they could name.
+   *
+   * The card moves with it: it was `canvas` on `sunken`, which is a lift; on
+   * `canvas` it would have been the same colour as the screen behind it, so it
+   * takes the raised surface the theme keeps for exactly this.
+   */
+  screen: { flex: 1, backgroundColor: colors.canvas },
+  content: { paddingHorizontal: layout.gutter, paddingTop: space.sm, paddingBottom: layout.scrollBottom },
   summary: {
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.nightRaised,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     borderRadius: layout.radiusCard,
     padding: layout.cardPadding,
     marginBottom: space.xl,

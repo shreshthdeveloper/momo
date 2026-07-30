@@ -38,7 +38,7 @@ const SECTIONS = [
     title: 'People',
     base: 'admin',
     items: [
-      { route: 'students', label: 'Students', icon: 'friends' },
+      { route: 'students', label: 'Students', icon: 'friends', match: ['students', 'student-detail'] },
       { route: 'batches', label: 'Batches', icon: 'grid' },
       { route: 'invite', label: 'Invite code', icon: 'share' },
     ],

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
-import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import {
   Text,
@@ -28,7 +27,6 @@ import { OPTION_COLORS, colors, consoleLayout, layout, space, type } from '../..
 const LETTERS = ['A', 'B', 'C', 'D'];
 
 export default function AdminReview() {
-  const goBack = useConsoleBack();
   const adminSpace = useAdminSpace();
   const [queue, setQueue] = useState(null);
   const [error, setError] = useState(null);
@@ -77,7 +75,6 @@ export default function AdminReview() {
       <Header
         title="Review queue"
         subtitle={queue ? `${queue.total} waiting${queue.aiPending ? ` · ${queue.aiPending} from AI` : ''}` : adminSpace?.name}
-        onBack={goBack}
       />
 
       <ErrorNotice error={error} onRetry={load} />
@@ -214,7 +211,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   explanation: {
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     padding: space.md,
     marginTop: space.xs,

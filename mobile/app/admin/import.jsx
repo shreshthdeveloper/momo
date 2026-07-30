@@ -20,9 +20,10 @@ import {
   Badge,
   Button,
   Card,
-  Chip,
+  Select,
   ErrorNotice,
   Header,
+  ConsoleFooter,
 } from '../../src/components/ui.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import { colors, consoleLayout, layout, space, type } from '../../src/theme/index.js';
@@ -38,9 +39,21 @@ import { colors, consoleLayout, layout, space, type } from '../../src/theme/inde
 const LETTERS = ['A', 'B', 'C', 'D'];
 const MONO = Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' });
 
+/**
+ * A sample that is a real file, not a header line.
+ *
+ * The screen used to carry one example row, folded inside a collapsed "What
+ * the file needs" panel, reachable only by "Share a template" — so the fastest
+ * way to find out what this screen wanted was to guess, upload, and read the
+ * errors. Three rows, because three rows is what shows the things one row
+ * cannot: that `correct` takes a letter OR a number, that the optional columns
+ * can be left empty, and that `tags` splits on a semicolon.
+ */
 const TEMPLATE =
   'question,option_a,option_b,option_c,option_d,correct,difficulty,topic,tags,explanation\n' +
-  'What is the SI unit of force?,Newton,Joule,Watt,Pascal,a,easy,Physics,units;mechanics,Force is mass times acceleration.';
+  'What is the SI unit of force?,Newton,Joule,Watt,Pascal,a,easy,Physics,units;mechanics,Force is mass times acceleration.\n' +
+  'Which planet is closest to the Sun?,Venus,Mercury,Mars,Earth,2,easy,Astronomy,,\n' +
+  'Who wrote "Pride and Prejudice"?,Charlotte Brontë,Jane Austen,George Eliot,Emily Brontë,b,medium,Literature,novels;19th-century,Published in 1813.';
 
 export default function AdminImport() {
   const goBack = useConsoleBack();
@@ -223,7 +236,7 @@ export default function AdminImport() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Import questions" subtitle={adminSpace?.name} onBack={goBack} />
+      <Header title="Import questions" subtitle={adminSpace?.name} />
 
       <ErrorNotice error={error} />
 
@@ -286,24 +299,63 @@ export default function AdminImport() {
 
             {topics && topics.length > 0 ? (
               <>
-                <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
-                  Default topic
-                </Text>
-                <View style={styles.chips}>
-                  {topics.map((topic) => (
-                    <Chip
-                      key={topic.id}
-                      label={topic.name}
-                      active={topicId === topic.id}
-                      onPress={() => setTopicId((cur) => (cur === topic.id ? null : topic.id))}
-                    />
-                  ))}
-                </View>
+                {/* A Select, not a wrap of chips: an organization with thirty
+                    topics turned this field into a wall of pills taller than
+                    the form it belonged to. */}
+                <Select
+                  label="Default topic"
+                  value={topicId}
+                  options={[
+                    { value: null, label: 'None — every row must name its own' },
+                    ...topics.map((topic) => ({ value: topic.id, label: topic.name })),
+                  ]}
+                  onChange={setTopicId}
+                  placeholder="None"
+                  style={styles.field}
+                />
                 <Text variant="meta" color={colors.inkFaint} style={{ marginTop: space.sm }}>
                   Used for rows that leave the topic column blank.
                 </Text>
               </>
             ) : null}
+
+            {/**
+             * The sample, up front and usable.
+             *
+             * "Share a template" inside a collapsed panel meant the only way
+             * to learn what this screen wanted was to guess, upload, and read
+             * the errors. Loading the sample straight into the box turns that
+             * into: press, see three valid rows, press Check, watch it work —
+             * and then replace them with your own.
+             */}
+            <Card flat style={styles.sampleCard}>
+              <Text variant="label">Not sure of the format?</Text>
+              <Text variant="meta" color={colors.inkFaint} style={{ marginTop: space.xs }}>
+                Three example rows with every column filled in. Load them to see a valid file, or
+                send yourself the CSV and edit it in a spreadsheet.
+              </Text>
+              <View style={styles.sampleActions}>
+                <Button
+                  variant="soft"
+                  size="sm"
+                  label="Load the sample"
+                  fullWidth={false}
+                  onPress={() => {
+                    setFile(null);
+                    setPasteOpen(true);
+                    setPasted(TEMPLATE);
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="share"
+                  label="Send me the CSV"
+                  fullWidth={false}
+                  onPress={() => Share.share({ message: TEMPLATE }).catch(() => {})}
+                />
+              </View>
+            </Card>
 
             <Card flat style={styles.columnsCard}>
               <Pressable
@@ -313,7 +365,7 @@ export default function AdminImport() {
                 accessibilityState={{ expanded: columnsOpen }}
               >
                 <Text variant="label" style={{ flex: 1 }}>
-                  What the file needs
+                  Every column, in full
                 </Text>
                 <Icon
                   name={columnsOpen ? 'chevronDown' : 'chevronRight'}
@@ -336,27 +388,19 @@ export default function AdminImport() {
                     difficulty (easy | medium | hard){'\n'}topic (name){'\n'}tags (split on ; , |)
                     {'\n'}explanation
                   </Text>
-                  <Button
-                    variant="soft"
-                    size="md"
-                    icon="share"
-                    label="Share a template"
-                    onPress={() => Share.share({ message: TEMPLATE }).catch(() => {})}
-                    style={{ marginTop: space.lg }}
-                  />
                 </>
               ) : null}
             </Card>
           </ScrollView>
 
-          <View style={styles.footer}>
+          <ConsoleFooter>
             <Button
               label="Check the file"
               loading={checking}
               disabled={!hasSource}
               onPress={check}
             />
-          </View>
+          </ConsoleFooter>
         </>
       ) : stage === 'review' ? (
         <>
@@ -369,9 +413,9 @@ export default function AdminImport() {
               <Text variant="label" color={colors.inkMuted}>
                 {report.totalRows} {report.totalRows === 1 ? 'row' : 'rows'}
               </Text>
-              <Badge label={`${report.validRows} valid`} tone="correct" />
+              <Badge label={`${report.validRows} valid`} tone="live" />
               {report.invalidRows > 0 ? (
-                <Badge label={`${report.invalidRows} with errors`} tone="wrong" />
+                <Badge label={`${report.invalidRows} with errors`} tone="danger" />
               ) : null}
               {report.duplicateRows > 0 ? (
                 <Badge
@@ -451,7 +495,7 @@ export default function AdminImport() {
             />
           </ScrollView>
 
-          <View style={styles.footer}>
+          <ConsoleFooter>
             {canPublish ? (
               <View style={styles.publishRow}>
                 <Text variant="label" style={{ flex: 1 }}>
@@ -484,7 +528,7 @@ export default function AdminImport() {
                 onPress={commit}
               />
             )}
-          </View>
+          </ConsoleFooter>
         </>
       ) : (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -534,18 +578,24 @@ export default function AdminImport() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xl },
-  footer: { padding: consoleLayout.gutter, paddingTop: space.sm },
-  fieldLabel: { marginTop: space.xl, marginBottom: space.sm },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  screen: { flex: 1, backgroundColor: colors.sunken },
+  // The header now closes with a hairline, so content needs a gap under it —
+  // without one the first paragraph reads as part of the header bar.
+  content: {
+    paddingHorizontal: consoleLayout.gutter,
+    paddingTop: space.lg,
+    paddingBottom: space.xl,
+  },
+  field: { marginTop: space.xl },
+  sampleCard: { marginTop: space.xl, gap: 0 },
+  sampleActions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md },
 
   pickButton: { marginTop: space.xl },
   fileRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.sm,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     paddingHorizontal: space.lg,
     minHeight: 48,
@@ -557,7 +607,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: colors.ink,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,
@@ -566,7 +616,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     marginTop: space.xl,
   },
-  inputFocused: { borderColor: colors.accent, backgroundColor: colors.canvas },
+  inputFocused: { borderColor: colors.accent, backgroundColor: colors.nightRaised },
 
   columnsCard: { marginTop: space.xl },
   columnsHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 32 },
@@ -586,7 +636,7 @@ const styles = StyleSheet.create({
   questionInput: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     padding: space.md,
     marginTop: space.sm,

@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
-import { Text, Button, Chip, ErrorNotice, Header } from '../../src/components/ui.jsx';
+import { ConsoleFooter, Text, Button, Chip, ErrorNotice, Header } from '../../src/components/ui.jsx';
 import { colors, consoleLayout, layout, space, type } from '../../src/theme/index.js';
 
 /**
@@ -86,6 +86,15 @@ export default function AdminContestNew() {
       setBusy(false);
     }
   };
+
+  const blocker =
+    name.trim().length < 2
+      ? 'Give the contest a name first.'
+      : !topicId
+        ? topics && topics.length === 0
+          ? 'No topic is live yet — a contest needs one.'
+          : 'Pick the topic it draws from.'
+        : null;
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
@@ -172,35 +181,43 @@ export default function AdminContestNew() {
         </Text>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <ConsoleFooter>
         <ErrorNotice error={error} />
+        {/* A dimmed button that will not say why is the least helpful control
+            in a form. The two things it is waiting for are named, in the order
+            the form asks for them. */}
+        {blocker ? (
+          <Text variant="meta" color={colors.inkFaint} style={styles.blocker}>
+            {blocker}
+          </Text>
+        ) : null}
         <Button
           label="Schedule contest"
           loading={busy}
-          disabled={name.trim().length < 2 || !topicId}
+          disabled={Boolean(blocker)}
           onPress={create}
         />
-      </View>
+      </ConsoleFooter>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
+  screen: { flex: 1, backgroundColor: colors.sunken },
   content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xl },
   fieldLabel: { marginTop: space.xl, marginBottom: space.sm },
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,
     paddingHorizontal: space.lg,
     height: 54,
   },
-  inputFocused: { borderColor: colors.accent, backgroundColor: colors.canvas },
+  inputFocused: { borderColor: colors.accent, backgroundColor: colors.nightRaised },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   note: { marginTop: space.xl },
-  footer: { padding: consoleLayout.gutter, paddingTop: space.sm },
+  blocker: { textAlign: 'center', marginBottom: space.sm },
 });

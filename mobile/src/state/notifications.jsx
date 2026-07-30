@@ -38,8 +38,29 @@ const NotificationsContext = createContext(null);
 /** How many banners may stack before the rest simply wait their turn. */
 const QUEUE_MAX = 3;
 
+/**
+ * Notification types that change what the ACCOUNT can reach, not just what it
+ * has been told.
+ *
+ * `space_approved` is the one that mattered and the one that was missed. Joining
+ * an organization whose door policy is "approval" writes a PENDING membership,
+ * so `/spaces/mine` correctly returns nothing playable and the app is right to
+ * show nothing. When the admin approves, the server flips the row to `active`
+ * and sends this — and the client knew only how to draw its icon. Nothing
+ * refetched the membership list, so the organization stayed invisible until the
+ * next cold sign-in, which is why joining appeared to require a re-login.
+ *
+ * A notification that says "you are in" has to be the thing that makes it true
+ * on screen.
+ *
+ * Only `space_approved` is listed because it is the only one the server sends.
+ * Suspension and removal write no notification at all, so they cannot be caught
+ * here — the foreground refresh below is what covers those.
+ */
+const REFRESHES_MEMBERSHIPS = new Set(['space_approved']);
+
 export function NotificationsProvider({ children }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, refreshSpaces } = useAuth();
   const [unread, setUnread] = useState(0);
   /** Arrived and not yet shown. The banner shifts one off at a time. */
   const [queue, setQueue] = useState([]);
@@ -56,11 +77,21 @@ export function NotificationsProvider({ children }) {
       setUnread(data?.unread ?? (data?.items ?? []).length);
       // Rows fetched here are NOT announced: they may be days old, and a
       // fistful of banners on launch is not a notification, it is a wall.
-      for (const item of data?.items ?? []) seen.current.add(item.id);
+      const items = data?.items ?? [];
+      for (const item of items) seen.current.add(item.id);
+      /**
+       * ...but an unread approval still has to take effect. This is the path
+       * that catches an approval granted while the app was closed or offline:
+       * the row arrives in this fetch rather than over the socket, and without
+       * this the organization would stay invisible exactly as before.
+       */
+      if (items.some((item) => REFRESHES_MEMBERSHIPS.has(item.type))) {
+        refreshSpaces().catch(() => {});
+      }
     } catch {
       // The bell keeps whatever it last knew. A count is not worth an error.
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, refreshSpaces]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -72,13 +103,23 @@ export function NotificationsProvider({ children }) {
     refresh();
   }, [isAuthenticated, refresh]);
 
-  // Anything that landed while the app was away.
+  /**
+   * Anything that landed while the app was away — notifications AND memberships.
+   *
+   * The membership half covers what no notification can: an admin suspending or
+   * removing somebody writes no notification, so a player who has been removed
+   * would otherwise keep seeing the organization's topics until they signed out
+   * and in again. Coming back to the app is the natural moment to re-ask who you
+   * are a member of, and it is one request.
+   */
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'active') refresh();
+      if (next !== 'active') return;
+      refresh();
+      if (isAuthenticated) refreshSpaces().catch(() => {});
     });
     return () => sub.remove();
-  }, [refresh]);
+  }, [refresh, isAuthenticated, refreshSpaces]);
 
   useEffect(() => {
     if (!isAuthenticated) return undefined;
@@ -87,8 +128,11 @@ export function NotificationsProvider({ children }) {
       seen.current.add(item.id);
       setUnread((n) => n + 1);
       setQueue((q) => (q.length >= QUEUE_MAX ? q : [...q, item]));
+      // Live path: the banner and the membership land on the same frame, so
+      // tapping through from "You are in Greenfield High" finds it there.
+      if (REFRESHES_MEMBERSHIPS.has(item.type)) refreshSpaces().catch(() => {});
     });
-  }, [isAuthenticated]);
+  }, [isAuthenticated, refreshSpaces]);
 
   /** The banner has finished with the front of the queue. */
   const dismiss = useCallback(() => setQueue((q) => q.slice(1)), []);

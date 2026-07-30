@@ -27,6 +27,12 @@ const GLYPHS = {
   back: 'arrow-back',
   /** The console sidebar's handle. */
   menu: 'menu',
+  /** A row's own actions, where naming them all would drown the row. */
+  more: 'ellipsis-horizontal',
+  /** Delete. Never `close` — an ✕ on a card reads as "dismiss". */
+  trash: 'trash-outline',
+  /** The console's filter affordance — a search field's companion. */
+  filter: 'options-outline',
   chevronLeft: 'chevron-back',
   chevronRight: 'chevron-forward',
   chevronDown: 'chevron-down',

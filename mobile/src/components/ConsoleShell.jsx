@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useRouter, useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Text, ConfirmSheet } from './ui.jsx';
+import { Text, Avatar, ConfirmSheet } from './ui.jsx';
 import Icon from './Icon.jsx';
 import { useAuth } from '../state/auth.jsx';
 import { ConsoleNav } from './consoleNav.js';
@@ -46,6 +46,46 @@ import { colors, elevation, layout, space, type } from '../theme/index.js';
  *
  * Pinned open on a wide screen, and a drawer over the content on a phone —
  * one component either way, because two would drift.
+ *
+ * ── The one rule about the top-left corner ─────────────────────────────────
+ *
+ * A screen listed in this sidebar wears the MENU. A screen pushed on top of
+ * one — an editor, a detail, a standings table — wears the BACK ARROW. There
+ * is no third case, and a screen picks its side by one thing: whether it
+ * passes `onBack` to `Header`.
+ *
+ * Ten of the fourteen rows in the admin console used to pass one. The corner
+ * changed between Topics and Students for no reason a person could see, and
+ * the arrow on a sidebar row was a lie anyway: those routes are entered by
+ * REPLACE, so there was nothing behind them to go back to — `useConsoleBack`
+ * exists precisely because pressing it threw a navigator error. An arrow that
+ * has to be taught not to crash is an arrow that should not be there.
+ *
+ * The one screen that still needs a word before the sidebar takes the route
+ * away — settings, with an edited form — passes `onMenu` rather than growing
+ * an arrow back.
+ *
+ * ── And the rest of the page ───────────────────────────────────────────────
+ *
+ * Thirty screens deciding their own layout is how a console ends up looking
+ * like thirty products. The parts live in `ui.jsx` (`ListCard`, `ListRow`,
+ * `CountRow`, `ConsoleFooter`, `Select`, `RowMenu`, `Tabs`) and the rules are:
+ *
+ *   Field        `colors.sunken`, every screen. Inset things — inputs, search,
+ *                selects — lift to `canvas`; cards lift to `nightRaised`.
+ *   Primary      One, full-width, in a `ConsoleFooter`. Never a `+` in the
+ *                header, never trailing the last row, never a text link.
+ *   Lists        Records → `ListCard` of `ListRow`s. Things with a body (a
+ *                question's text, a topic's readiness bar) → a card each. The
+ *                data decides which, not the screen.
+ *   Counts       A `CountRow` above every list: what is shown, out of what
+ *                matched.
+ *   Row verbs    The safe expected one may be a `size="sm"` button; every
+ *                other, and always the destructive one, goes in a `RowMenu`.
+ *   Choices      Fixed and short → `Chip`s. Data-driven → `Select`. A
+ *                horizontal scroller of either is never the answer.
+ *   Status       Tinted `Badge` tones (`live`, `danger`, `amber`, `quiet`),
+ *                because a column of saturated pills outshouts its own list.
  */
 
 const WIDE = 900;
@@ -148,13 +188,27 @@ function Sidebar({ sections, title, onNavigate }) {
 
   return (
     <View style={[styles.sidebar, { paddingTop: insets.top + space.md }]}>
+      {/**
+       * The account lives HERE, and only here.
+       *
+       * It used to live in two places: this block, and a face in the corner of
+       * every screen that happened to use `ConsoleHeader` — which was six of
+       * the twenty-nine, so the console had a header with an avatar and a
+       * header without one depending on which row of this very sidebar you had
+       * pressed. One of them had to go, and a console with a sidebar puts the
+       * account in the sidebar; the face was answering a question the sidebar
+       * already answers, one tap away, with the sign-out beside it.
+       */}
       <View style={styles.brand}>
-        <Text variant="label" color={colors.inkMuted} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text variant="tiny" color={colors.inkFaint} numberOfLines={1}>
-          {user?.displayName ?? ''}
-        </Text>
+        <Avatar url={user?.avatarUrl} name={user?.displayName} size={34} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text variant="label" numberOfLines={1}>
+            {user?.displayName ?? 'Signed in'}
+          </Text>
+          <Text variant="tiny" color={colors.inkFaint} numberOfLines={1}>
+            {title}
+          </Text>
+        </View>
       </View>
 
       <ScrollView
@@ -254,11 +308,13 @@ const styles = StyleSheet.create({
   scrim: { backgroundColor: colors.scrim },
   sidebar: { flex: 1, backgroundColor: colors.canvas },
   brand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
     paddingHorizontal: space.lg,
     paddingBottom: space.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.hairline,
-    gap: 2,
   },
   section: { paddingTop: space.md },
   sectionTitle: { paddingHorizontal: space.lg, letterSpacing: 1.2, marginBottom: space.xs },

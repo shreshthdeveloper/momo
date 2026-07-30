@@ -11,6 +11,7 @@ import {
   Segmented,
   Sheet,
   Skeleton,
+  TabHeader,
 } from '../../src/components/ui.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import CoinBalance from '../../src/components/CoinBalance.jsx';
@@ -279,15 +280,11 @@ export default function Shop() {
     <SafeAreaView style={styles.screen} edges={['top']}>
       {/* The header is the balance. Nothing else belongs up here: this screen
           has exactly one piece of state a player needs at all times. */}
-      <View style={styles.header}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text variant="display">Shop</Text>
-          <Text variant="meta" color={colors.inkFaint}>
-            Win coins. Spend them here.
-          </Text>
-        </View>
-        <CoinBalance value={balance} onPress={null} />
-      </View>
+      <TabHeader
+        title="Shop"
+        caption="Win coins. Spend them here."
+        right={<CoinBalance value={balance} onPress={null} />}
+      />
 
       <ErrorNotice error={error} onRetry={load} />
       <ErrorNotice error={notice} />
@@ -757,14 +754,6 @@ function ShopSkeleton() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
-    paddingHorizontal: layout.gutter,
-    paddingTop: space.sm,
-    paddingBottom: space.md,
-  },
   /** The shelves bleed to the screen edge, so gutters live on their children. */
   content: { paddingTop: space.md, paddingBottom: layout.dockClearance },
 

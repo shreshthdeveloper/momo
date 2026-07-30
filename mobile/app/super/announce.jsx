@@ -8,7 +8,8 @@ import {
   ConfirmSheet,
   ErrorNotice,
   Header,
-  Segmented,
+  Select,
+  ConsoleFooter,
 } from '../../src/components/ui.jsx';
 import { colors, consoleLayout, layout, space } from '../../src/theme/index.js';
 
@@ -86,10 +87,22 @@ export default function SuperAnnounce() {
           </View>
         ) : null}
 
-        <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
-          Who
-        </Text>
-        <Segmented options={SEGMENTS} value={segment} onChange={setSegment} />
+        {/**
+         * A `Select`, like every other "choose one" in the console.
+         *
+         * This was a pill track while the same choice on Users was a tab bar,
+         * so two screens in the same console asked the same kind of question
+         * in two different shapes. Audience is also the one field here that
+         * cannot be taken back once Send is pressed, and a Select states the
+         * current answer in words rather than as a lit segment.
+         */}
+        <Select
+          label="Who"
+          value={segment}
+          options={SEGMENTS.map((s) => ({ ...s, meta: SEGMENT_COPY[s.value] }))}
+          onChange={setSegment}
+          style={styles.field}
+        />
         <Text variant="meta" color={colors.inkFaint} style={styles.hint}>
           {SEGMENT_COPY[segment]}
         </Text>
@@ -121,16 +134,21 @@ export default function SuperAnnounce() {
           accessibilityLabel="Announcement body"
         />
 
-        <Button
-          label="Send announcement"
-          disabled={!title.trim()}
-          style={{ marginTop: space.xl }}
-          onPress={() => setConfirm(true)}
-        />
         <Text variant="meta" color={colors.inkFaint} style={styles.hint}>
           Five announcements an hour. There is no way to unsend one.
         </Text>
       </ScrollView>
+
+      {/* In the footer, like every other primary in both consoles. It was the
+          last thing inside the scroll view, so on a filled-in form it sat below
+          the fold with the keyboard over it. */}
+      <ConsoleFooter>
+        <Button
+          label="Send announcement"
+          disabled={!title.trim()}
+          onPress={() => setConfirm(true)}
+        />
+      </ConsoleFooter>
 
       <ConfirmSheet
         visible={confirm}
@@ -147,9 +165,10 @@ export default function SuperAnnounce() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
+  screen: { flex: 1, backgroundColor: colors.sunken },
   content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl },
   fieldLabel: { marginTop: space.lg, marginBottom: space.xs },
+  field: { marginTop: space.lg },
   hint: { marginTop: space.xs },
   sentNote: {
     backgroundColor: colors.correctSoft,
@@ -159,7 +178,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   input: {
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     borderWidth: 1,
     borderColor: colors.hairline,

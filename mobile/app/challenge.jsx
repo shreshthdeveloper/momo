@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
   },
   controls: { paddingHorizontal: layout.gutter, gap: space.sm, paddingBottom: space.sm },
   chips: { gap: space.xs, paddingVertical: 2 },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: space.xxl },
+  list: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
   section: { marginBottom: space.md },
   sectionHead: {
     flexDirection: 'row',

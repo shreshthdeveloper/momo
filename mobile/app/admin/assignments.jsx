@@ -3,15 +3,16 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-n
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
-import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import {
+  ConsoleFooter,
   Text,
   Button,
   EmptyState,
   ErrorNotice,
   Header,
   ProgressBar,
+  CountRow,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import { colors, consoleLayout, elevation, layout, space } from '../../src/theme/index.js';
@@ -22,7 +23,6 @@ import { colors, consoleLayout, elevation, layout, space } from '../../src/theme
  * whether to chase the class or leave it alone.
  */
 export default function AdminAssignments() {
-  const goBack = useConsoleBack();
   const router = useRouter();
   const adminSpace = useAdminSpace();
   const [items, setItems] = useState(null);
@@ -46,7 +46,7 @@ export default function AdminAssignments() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Assignments" subtitle={adminSpace?.name} onBack={goBack} />
+      <Header title="Assignments" subtitle={adminSpace?.name} />
 
       <ErrorNotice error={error} onRetry={load} />
 
@@ -68,6 +68,8 @@ export default function AdminAssignments() {
             />
           }
         >
+          <CountRow total={items.length} noun="assignment" />
+
           {items.length === 0 ? (
             <EmptyState
               icon="flag"
@@ -130,9 +132,9 @@ export default function AdminAssignments() {
         </ScrollView>
       )}
 
-      <SafeAreaView edges={['bottom']} style={styles.footer}>
+      <ConsoleFooter>
         <Button label="Set an assignment" onPress={() => router.push('/admin/assignment-new')} />
-      </SafeAreaView>
+      </ConsoleFooter>
     </SafeAreaView>
   );
 }
@@ -162,10 +164,4 @@ const styles = StyleSheet.create({
   },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   meta: { marginTop: space.xs, marginBottom: space.md },
-  footer: {
-    paddingHorizontal: consoleLayout.gutter,
-    paddingTop: space.sm,
-    paddingBottom: space.sm,
-    backgroundColor: colors.sunken,
-  },
 });

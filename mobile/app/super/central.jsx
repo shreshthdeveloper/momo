@@ -5,18 +5,22 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useIsSuperadmin } from '../../src/lib/admin.js';
 import {
+  ConsoleFooter,
   Text,
   Badge,
   Button,
-  Card,
+  SectionHeader,
+  Select,
   EmptyState,
   ErrorNotice,
   Stat,
+  Header,
+  ListCard,
+  ListRow,
 } from '../../src/components/ui.jsx';
-import ConsoleHeader from '../../src/components/ConsoleHeader.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
-import { MIN_PUBLISHED_QUESTIONS_TO_LIVE, PUBLIC_SPACE_ID } from '../../src/shared/constants.js';
-import { colors, consoleLayout, elevation, layout, space } from '../../src/theme/index.js';
+import { PUBLIC_SPACE_ID } from '../../src/shared/constants.js';
+import { colors, consoleLayout, consoleType, elevation, layout, space } from '../../src/theme/index.js';
 
 /**
  * The Central bank — the Public Arena's content, seen as inventory. The
@@ -37,7 +41,8 @@ export default function SuperCentral() {
   const [topics, setTopics] = useState(null);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [busyId, setBusyId] = useState(null);
+  const [, setBusyId] = useState(null);
+  const [category, setCategory] = useState(null);
 
   useEffect(() => {
     if (!isSuper) router.replace('/');
@@ -88,9 +93,22 @@ export default function SuperCentral() {
 
   const loaded = Boolean(summary && topics);
 
+  const all = topics ?? [];
+  const categoryOptions = [
+    { value: null, label: 'Every category', meta: `${all.length} topics` },
+    ...[...new Set(all.map((t) => t.categoryName).filter(Boolean))].sort().map((name) => ({
+      value: name,
+      label: name,
+      meta: `${all.filter((t) => t.categoryName === name).length} topics`,
+    })),
+  ];
+  const inCategory = category ? all.filter((t) => t.categoryName === category) : all;
+  const featured = inCategory.filter((t) => t.featured);
+  const rest = inCategory.filter((t) => !t.featured);
+
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <ConsoleHeader title="Central bank" subtitle="Public Arena topics and featuring" />
+      <Header title="Central bank" subtitle="Public Arena topics and featuring" />
 
       <ErrorNotice error={error} onRetry={load} />
 
@@ -123,92 +141,153 @@ export default function SuperCentral() {
             <Stat value={summary.publishedQuestions ?? 0} label="Published" />
           </View>
 
-          <Text variant="meta" color={colors.inkFaint} style={styles.note}>
-            Featured topics lead the home feed for every player.
-          </Text>
-
-          {/* ── The topics, and the one lever. */}
+          {/**
+           * Thirty-six topics in one unbroken card was the problem with this
+           * screen. Every row carried the same four facts in the same grey at
+           * the same size — name, category, "50 / 21", matches — plus a green
+           * pill and the word "Feature", so nothing was findable and the one
+           * thing an operator comes here to do (see what is featured, change
+           * it) was indistinguishable from the thirty-five rows around it.
+           *
+           * Featured topics come FIRST, under a heading, because they are the
+           * editorial decision. Everything else follows, filtered by category,
+           * with the numbers in a column instead of buried in a sentence.
+           */}
           {topics.length === 0 ? (
             <EmptyState icon="book" title="No topics yet" body="Public Arena topics appear here once created." />
           ) : (
-            <Card style={styles.card}>
-              {topics.map((topic, i) => {
-                const isLive = Boolean(topic.readiness?.isLive);
-                const published = topic.readiness?.published ?? 0;
-                const required = topic.readiness?.required ?? MIN_PUBLISHED_QUESTIONS_TO_LIVE;
-                const matches = topic.stats?.matchesPlayed ?? 0;
-                return (
-                  <View key={topic.id} style={[styles.topicRow, i === topics.length - 1 && { borderBottomWidth: 0 }]}>
-                    <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                      <View style={styles.nameRow}>
-                        <Text variant="label" style={{ flexShrink: 1 }} numberOfLines={1}>
-                          {topic.name}
-                        </Text>
-                        <Badge label={isLive ? 'Live' : 'Not live'} tone={isLive ? 'correct' : 'ink'} />
-                      </View>
-                      <Text variant="meta" color={colors.inkFaint} numberOfLines={1} style={styles.tabular}>
-                        {[topic.categoryName, `${published} / ${required}`, `${matches} ${matches === 1 ? 'match' : 'matches'}`]
-                          .filter(Boolean)
-                          .join('  ·  ')}
-                      </Text>
-                    </View>
-                    <Button
-                      size="sm"
-                      variant={topic.featured ? 'soft' : 'ghost'}
-                      label={topic.featured ? 'Featured' : 'Feature'}
-                      fullWidth={false}
-                      loading={busyId === topic.id}
-                      disabled={busyId != null && busyId !== topic.id}
-                      onPress={() => toggleFeature(topic)}
+            <>
+              <View style={styles.filterRow}>
+                <Select
+                  value={category}
+                  options={categoryOptions}
+                  onChange={setCategory}
+                  placeholder="Every category"
+                />
+              </View>
+
+              {featured.length > 0 ? (
+                <>
+                  <SectionHeader title="Featured" style={styles.sectionHead} />
+                  <Text variant="meta" color={colors.inkFaint} style={styles.note}>
+                    These lead the home feed for every player.
+                  </Text>
+                  <ListCard>
+                    {featured.map((topic, i) => (
+                      <TopicRow
+                        key={topic.id}
+                        topic={topic}
+                        last={i === featured.length - 1}
+                        onToggle={toggleFeature}
+                      />
+                    ))}
+                  </ListCard>
+                </>
+              ) : null}
+
+              <SectionHeader
+                title={featured.length > 0 ? 'Everything else' : 'Topics'}
+                style={styles.sectionHead}
+              />
+              {rest.length === 0 ? (
+                <Text variant="meta" color={colors.inkFaint} style={styles.note}>
+                  No other topics in this category.
+                </Text>
+              ) : (
+                <ListCard>
+                  {rest.map((topic, i) => (
+                    <TopicRow
+                      key={topic.id}
+                      topic={topic}
+                      last={i === rest.length - 1}
+                      onToggle={toggleFeature}
                     />
-                  </View>
-                );
-              })}
-            </Card>
+                  ))}
+                </ListCard>
+              )}
+            </>
           )}
         </ScrollView>
       )}
 
       {loaded ? (
-        <SafeAreaView edges={['bottom']} style={styles.footer}>
+        <ConsoleFooter>
           <Button
             label="Open question bank"
             onPress={() => router.push({ pathname: '/admin/questions', params: { spaceId: PUBLIC_SPACE_ID } })}
           />
-        </SafeAreaView>
+        </ConsoleFooter>
       ) : null}
     </SafeAreaView>
+  );
+}
+
+/**
+ * One topic. Name and status on the first line, the numbers in a column on the
+ * second, and the featuring lever as a `⋯` like every other row in the console
+ * — not a ghost button whose label is the state it is already in ("Featured"
+ * on a featured row read as a badge, not as "press to unfeature").
+ */
+function TopicRow({ topic, last, onToggle }) {
+  const isLive = Boolean(topic.readiness?.isLive);
+  const published = topic.readiness?.published ?? 0;
+  const matches = topic.stats?.matchesPlayed ?? 0;
+
+  return (
+    <ListRow
+      last={last}
+      title={topic.name}
+      actions={[
+        {
+          key: 'feature',
+          label: topic.featured ? 'Stop featuring' : 'Feature on the home feed',
+          meta: topic.featured ? 'It leads the feed for every player' : undefined,
+          icon: topic.featured ? 'close' : 'sparkle',
+          onPress: () => onToggle(topic),
+        },
+      ]}
+    >
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        <View style={styles.nameRow}>
+          <Text variant="label" style={{ flexShrink: 1 }} numberOfLines={1}>
+            {topic.name}
+          </Text>
+          {topic.featured ? <Badge label="Featured" tone="soft" /> : null}
+          {!isLive ? <Badge label="Not live" tone="amber" /> : null}
+        </View>
+        <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
+          {topic.categoryName ?? 'No category'}
+        </Text>
+      </View>
+
+      <View style={styles.figures}>
+        <Text style={styles.figure} color={isLive ? colors.inkMuted : colors.optionC}>
+          {published}
+        </Text>
+        <Text variant="tiny" color={colors.inkFaint}>
+          {matches} played
+        </Text>
+      </View>
+
+    </ListRow>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
   content: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.lg },
+  filterRow: { marginTop: space.lg },
+  sectionHead: { marginTop: space.xl, marginBottom: space.xs },
+  figures: { alignItems: 'flex-end', minWidth: 62 },
+  figure: { ...consoleType.figure },
   stats: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,
     paddingVertical: space.lg,
   },
   statDivider: { width: 1, height: 30, backgroundColor: colors.hairline },
-  note: { marginTop: space.md, marginBottom: space.md, paddingHorizontal: space.xs },
-  card: { marginTop: space.xs },
-  topicRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
-    minHeight: 56,
-    paddingVertical: space.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.hairline,
-  },
+  note: { marginBottom: space.sm, paddingHorizontal: space.xs },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  tabular: { fontVariant: ['tabular-nums'] },
-  footer: {
-    paddingHorizontal: consoleLayout.gutter,
-    paddingTop: space.sm,
-    paddingBottom: space.sm,
-    backgroundColor: colors.sunken,
-  },
 });

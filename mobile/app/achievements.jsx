@@ -148,7 +148,7 @@ function Row({ row }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: layout.gutter, paddingBottom: space.xxxl },
+  content: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
   wait: { marginTop: space.md },
 
   summary: {

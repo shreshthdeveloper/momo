@@ -146,7 +146,7 @@ export default function History() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: space.xxxl },
+  list: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
   legend: { textAlign: 'right', paddingBottom: space.sm },
   footer: { paddingVertical: space.lg },
   end: { textAlign: 'center', paddingVertical: space.lg },

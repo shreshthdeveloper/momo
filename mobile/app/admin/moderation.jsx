@@ -3,7 +3,6 @@ import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
-import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace, useAdminPermissions } from '../../src/lib/admin.js';
 import {
   Text,
@@ -13,7 +12,7 @@ import {
   EmptyState,
   ErrorNotice,
   Header,
-  Segmented,
+  Tabs,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import QuestionArt from '../../src/components/QuestionArt.jsx';
@@ -48,7 +47,6 @@ const REASON = {
 };
 
 export default function AdminModeration() {
-  const goBack = useConsoleBack();
   const router = useRouter();
   const adminSpace = useAdminSpace();
   const { canWrite } = useAdminPermissions(adminSpace);
@@ -97,9 +95,9 @@ export default function AdminModeration() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Reports" subtitle={adminSpace?.name} onBack={goBack} />
+      <Header title="Reports" subtitle={adminSpace?.name} />
 
-      <Segmented options={TABS} value={status} onChange={setStatus} style={styles.tabs} />
+      <Tabs options={TABS} value={status} onChange={setStatus} />
 
       <ErrorNotice error={error} onRetry={load} />
 
@@ -243,8 +241,7 @@ export default function AdminModeration() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  tabs: { marginHorizontal: consoleLayout.gutter, marginTop: space.xs, marginBottom: space.sm },
+  screen: { flex: 1, backgroundColor: colors.sunken },
   list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl, gap: space.md },
   card: { padding: space.lg, gap: space.xs },
   art: { alignItems: 'center', paddingVertical: space.sm },

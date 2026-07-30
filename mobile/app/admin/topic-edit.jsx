@@ -8,6 +8,7 @@ import { api } from '../../src/lib/api.js';
 import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import {
+  ConsoleFooter,
   Text,
   Button,
   Chip,
@@ -389,7 +390,7 @@ export default function AdminTopicEdit() {
             )}
           </ScrollView>
 
-          <View style={styles.footer}>
+          <ConsoleFooter>
             <ErrorNotice error={error} />
             <Button
               label={editing ? 'Save changes' : 'Create topic'}
@@ -397,7 +398,7 @@ export default function AdminTopicEdit() {
               disabled={name.trim().length < 2 || !categoryId}
               onPress={save}
             />
-          </View>
+          </ConsoleFooter>
         </>
       )}
 
@@ -456,20 +457,20 @@ function FormSkeleton() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
+  screen: { flex: 1, backgroundColor: colors.sunken },
   content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xl },
   fieldLabel: { marginTop: space.xl, marginBottom: space.sm },
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,
     paddingHorizontal: space.lg,
     height: 54,
   },
-  inputFocused: { borderColor: colors.accent, backgroundColor: colors.canvas },
+  inputFocused: { borderColor: colors.accent, backgroundColor: colors.nightRaised },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   creator: {
     marginTop: space.md,
@@ -511,6 +512,5 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center',
   },
   note: { marginTop: space.xl },
-  footer: { padding: consoleLayout.gutter, paddingTop: space.sm },
   skeleton: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.lg, gap: space.sm },
 });

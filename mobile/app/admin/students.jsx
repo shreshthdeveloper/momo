@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
@@ -8,17 +8,21 @@ import {
   Text,
   Avatar,
   Button,
-  Chip,
   ConfirmSheet,
   EmptyState,
   ErrorNotice,
   Header,
+  ListCard,
+  ListRow,
   SearchField,
-  Segmented,
+  Select,
   Sheet,
+  Tabs,
+  CountRow,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, consoleLayout, space, type } from '../../src/theme/index.js';
+import Icon from '../../src/components/Icon.jsx';
+import { colors, consoleLayout, consoleType, layout, space } from '../../src/theme/index.js';
 
 /**
  * prd.md F8.4 — the roster. Approvals first when there are any, because a
@@ -56,7 +60,10 @@ export default function AdminStudents() {
   /** What the server was last asked for, so a stale reply cannot overwrite. */
   const requestRef = useRef(0);
   const [batches, setBatches] = useState([]);
-  const [batchFilter, setBatchFilter] = useState(null);
+  // Batches links here with one already chosen — "see who is in it".
+  const [batchFilter, setBatchFilter] = useState(
+    typeof params.batchId === 'string' && params.batchId ? params.batchId : null,
+  );
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [confirm, setConfirm] = useState(null); // { row, decision }
@@ -156,55 +163,112 @@ export default function AdminStudents() {
     },
   }[confirm?.decision];
 
-  const batchChips = useMemo(
-    () => [{ id: null, name: 'All batches' }, ...batches],
+  /**
+   * What this row can do, by the tab it is in. One list, so the sheet reads
+   * the same way for a pending student and a suspended one and the verbs
+   * cannot drift apart per branch the way three separate JSX blocks did.
+   */
+  const actionsFor = (row) => {
+    const open = {
+      key: 'open',
+      label: 'Open profile',
+      icon: 'user',
+      onPress: () =>
+        router.push({
+          pathname: '/admin/student-detail',
+          params: { membershipId: row.membershipId, userId: row.userId },
+        }),
+    };
+    if (status === 'pending') {
+      return [
+        open,
+        { key: 'approve', label: 'Approve', icon: 'check', onPress: () => decide(row, 'approve') },
+        {
+          key: 'reject',
+          label: 'Reject the request',
+          icon: 'close',
+          destructive: true,
+          onPress: () => decide(row, 'reject'),
+        },
+      ];
+    }
+    if (status === 'suspended') {
+      return [
+        open,
+        { key: 'restore', label: 'Restore', icon: 'check', onPress: () => decide(row, 'restore') },
+        {
+          key: 'remove',
+          label: 'Remove from organization',
+          icon: 'trash',
+          destructive: true,
+          onPress: () => setConfirm({ row, decision: 'remove' }),
+        },
+      ];
+    }
+    return [
+      open,
+      batches.length > 0
+        ? {
+            key: 'batch',
+            label: row.batch ? 'Move to another batch' : 'Put in a batch',
+            meta: row.batch?.name,
+            icon: 'grid',
+            onPress: () => setAssigning(row),
+          }
+        : null,
+      row.role === 'student'
+        ? {
+            key: 'suspend',
+            label: 'Suspend',
+            icon: 'lock',
+            destructive: true,
+            onPress: () => setConfirm({ row, decision: 'suspend' }),
+          }
+        : null,
+    ];
+  };
+
+  const batchOptions = useMemo(
+    () => [
+      { value: null, label: 'All batches' },
+      ...batches.map((b) => ({
+        value: b.id,
+        label: b.name,
+        meta: `${b.studentCount ?? 0} ${b.studentCount === 1 ? 'student' : 'students'}`,
+      })),
+    ],
     [batches],
   );
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header
-        title="Students"
-        subtitle={adminSpace?.name}
-        right={
-          canManageStudents ? (
-            <Button
-              size="sm"
-              variant="soft"
-              label="Batches"
-              fullWidth={false}
-              onPress={() => router.push('/admin/batches')}
-            />
-          ) : null
-        }
-      />
+      {/* No shortcut in the corner. Batches is a row in the sidebar two inches
+          away, and a soft pill in the header was the only one of its kind in
+          either console — it read as this screen's primary action, which it is
+          not. */}
+      <Header title="Students" subtitle={adminSpace?.name} />
 
-      <Segmented options={TABS} value={status} onChange={setStatus} style={styles.tabs} />
-      <SearchField
-        style={styles.search}
-        value={query}
-        onChangeText={setQuery}
-        onClear={() => setQuery('')}
-        placeholder="Find a student"
-        autoCapitalize="none"
-      />
+      <Tabs options={TABS} value={status} onChange={setStatus} />
 
-      {batches.length > 0 ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filters}
-        >
-          {batchChips.map((b) => (
-            <Chip
-              key={b.id ?? 'all'}
-              label={b.name}
-              active={batchFilter === b.id}
-              onPress={() => setBatchFilter(b.id)}
-            />
-          ))}
-        </ScrollView>
-      ) : null}
+      <View style={styles.controls}>
+        <SearchField
+          value={query}
+          onChangeText={setQuery}
+          onClear={() => setQuery('')}
+          placeholder="Find a student"
+          autoCapitalize="none"
+        />
+        {/* An organization can have thirty batches. A chip row would put
+            twenty-eight of them off the right edge of the screen. */}
+        {batches.length > 0 ? (
+          <Select
+            value={batchFilter}
+            options={batchOptions}
+            onChange={setBatchFilter}
+            placeholder="All batches"
+          />
+        ) : null}
+      </View>
 
       <ErrorNotice error={error} onRetry={load} />
 
@@ -242,14 +306,34 @@ export default function AdminStudents() {
             />
           }
         >
-          <Text variant="meta" color={colors.inkFaint} style={styles.count}>
-            {/* What is on screen, out of what matched — a bare total beside a
-                truncated list is the thing that made this look broken. */}
-            {shown.length} of {total} {total === 1 ? 'student' : 'students'}
-          </Text>
+          {/* What is on screen, out of what matched — the same component and
+              the same wording as every other list in both consoles. */}
+          <CountRow shown={shown.length} total={total} noun="student" />
 
-          {shown.map((row) => (
-            <View key={row.membershipId} style={styles.row}>
+          <ListCard>
+          {shown.map((row, i) => (
+            /**
+             * The row opens what it can do, and the first thing it can do is
+             * open the person — a roster where the only verb on a name was
+             * "suspend" answered no question an admin actually has. Same shape
+             * as every other list in the console: full-width target, chevron,
+             * sheet.
+             */
+            <ListRow
+              key={row.membershipId}
+              last={i === shown.length - 1}
+              title={row.displayName}
+              actions={canManageStudents ? actionsFor(row) : undefined}
+              onPress={
+                canManageStudents
+                  ? undefined
+                  : () =>
+                      router.push({
+                        pathname: '/admin/student-detail',
+                        params: { membershipId: row.membershipId, userId: row.userId },
+                      })
+              }
+            >
               <Avatar url={row.avatarUrl} name={row.displayName} size={44} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text variant="label" numberOfLines={1}>
@@ -261,69 +345,41 @@ export default function AdminStudents() {
                 </Text>
               </View>
 
-              {/* Every control below is hidden without the grant the server
-                  enforces, rather than shown and then refused with a 403. */}
-              {!canManageStudents ? null : status === 'pending' ? (
-                <View style={styles.actions}>
-                  <Button
-                    size="sm"
-                    label="Approve"
-                    fullWidth={false}
-                    loading={busyId === row.membershipId}
-                    onPress={() => decide(row, 'approve')}
-                  />
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    label="Reject"
-                    fullWidth={false}
-                    disabled={busyId === row.membershipId}
-                    onPress={() => decide(row, 'reject')}
-                  />
-                </View>
-              ) : status === 'suspended' ? (
-                <View style={styles.actions}>
-                  <Button
-                    size="sm"
-                    variant="soft"
-                    label="Restore"
-                    fullWidth={false}
-                    loading={busyId === row.membershipId}
-                    onPress={() => decide(row, 'restore')}
-                  />
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    label="Remove"
-                    fullWidth={false}
-                    disabled={busyId === row.membershipId}
-                    onPress={() => setConfirm({ row, decision: 'remove' })}
-                  />
-                </View>
-              ) : row.role === 'student' ? (
-                <View style={styles.actions}>
-                  <Text style={[type.label, { color: colors.inkMuted }]}>{row.overallRating ?? ''}</Text>
-                  {batches.length > 0 ? (
-                    <Button
-                      size="sm"
-                      variant="soft"
-                      label="Batch"
-                      fullWidth={false}
-                      disabled={busyId === row.membershipId}
-                      onPress={() => setAssigning(row)}
-                    />
-                  ) : null}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    label="Suspend"
-                    fullWidth={false}
-                    onPress={() => setConfirm({ row, decision: 'suspend' })}
-                  />
-                </View>
+              {/**
+                * The rating is a COLUMN, not something tacked to the end of the
+                * name: it belongs to every member, it is the one number on this
+                * screen, and a roster you cannot read straight down is a roster
+                * you have to read one row at a time. Tabular figures, a fixed
+                * width, and an em dash where there is no rating yet, so the
+                * column never collapses and re-flows the row beside it.
+                */}
+              {status === 'active' ? (
+                <Text style={styles.figure} color={colors.inkMuted} numberOfLines={1}>
+                  {row.overallRating ?? '—'}
+                </Text>
               ) : null}
-            </View>
+
+              {/**
+                * Approving somebody waiting at the door keeps a button of its
+                * own — it is what this tab exists to do, it is safe, and it is
+                * worth one tap rather than two. Everything else, including
+                * every irreversible thing, is in the row's own sheet.
+                *
+                * Hidden without the grant the server enforces, rather than
+                * shown and then refused with a 403.
+                */}
+              {canManageStudents && status === 'pending' ? (
+                <Button
+                  size="sm"
+                  label="Approve"
+                  fullWidth={false}
+                  loading={busyId === row.membershipId}
+                  onPress={() => decide(row, 'approve')}
+                />
+              ) : null}
+            </ListRow>
           ))}
+          </ListCard>
 
           {hasMore ? (
             <Button
@@ -354,7 +410,9 @@ export default function AdminStudents() {
       />
 
       {/* Filing one student into a batch. The list of batches is managed on
-          its own screen; this is only where somebody is put in one. */}
+          its own screen; this is only where somebody is put in one — and it is
+          a list, not a wrap of chips, because an organization's batches are as
+          many as it has classes. */}
       <Sheet
         visible={Boolean(assigning)}
         title={`Batch for ${assigning?.displayName ?? ''}`}
@@ -364,31 +422,54 @@ export default function AdminStudents() {
         <Text variant="meta" color={colors.inkMuted} style={styles.sheetNote}>
           Batches scope assignments, contests and leaderboards.
         </Text>
-        <View style={styles.batchPicker}>
-          {batches.map((b) => (
-            <Chip
-              key={b.id}
-              label={b.name}
-              active={assigning?.batch?.id === b.id}
+        <ScrollView style={styles.batchPicker} showsVerticalScrollIndicator={false}>
+          {[...batches, ...(assigning?.batch ? [{ id: null, name: 'No batch' }] : [])].map((b) => (
+            <Pressable
+              key={b.id ?? 'none'}
               onPress={() => fileInto(assigning, b.id)}
-            />
+              accessibilityRole="button"
+              accessibilityState={{ selected: assigning?.batch?.id === b.id }}
+              style={({ pressed }) => [styles.pickerRow, pressed && { opacity: 0.7 }]}
+            >
+              <Text
+                variant="body"
+                color={assigning?.batch?.id === b.id ? colors.accent : colors.ink}
+                style={{ flex: 1 }}
+                numberOfLines={1}
+              >
+                {b.name}
+              </Text>
+              {assigning?.batch?.id === b.id ? (
+                <Icon name="check" size={18} color={colors.accent} />
+              ) : null}
+            </Pressable>
           ))}
-          {assigning?.batch ? (
-            <Chip label="No batch" onPress={() => fileInto(assigning, null)} />
-          ) : null}
-        </View>
+        </ScrollView>
       </Sheet>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  tabs: { marginHorizontal: consoleLayout.gutter, marginTop: space.xs },
-  search: { marginHorizontal: consoleLayout.gutter, marginTop: space.md, marginBottom: space.sm },
-  filters: { paddingHorizontal: consoleLayout.gutter, gap: space.sm, paddingBottom: space.sm },
+  screen: { flex: 1, backgroundColor: colors.sunken },
+  controls: {
+    paddingHorizontal: consoleLayout.gutter,
+    paddingTop: space.md,
+    paddingBottom: space.sm,
+    gap: space.sm,
+  },
   list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl },
-  count: { paddingVertical: space.sm },
+  /** The rating column. Fixed width and right-aligned, so it reads downward. */
+  figure: { ...consoleType.figure, minWidth: 44, textAlign: 'right' },
+  rowPressed: { backgroundColor: colors.nightRaised },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    minHeight: layout.touchMin,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.hairline,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -397,6 +478,6 @@ const styles = StyleSheet.create({
     paddingVertical: space.sm,
   },
   actions: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  batchPicker: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.md },
+  batchPicker: { maxHeight: 320, flexGrow: 0, marginTop: space.md },
   sheetNote: { textAlign: 'center' },
 });

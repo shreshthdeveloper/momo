@@ -4,7 +4,13 @@ import { LiveMatch } from './matchEngine.js';
 import { Matchmaker } from './matchmaker.js';
 import { registry } from './registry.js';
 import { selectQuestions, buildRound } from './questionSelector.js';
-import { findReplay, markReplayUsed, buildSyntheticOpponent, bindSyntheticScript } from './ghostService.js';
+import {
+  findReplay,
+  markReplayUsed,
+  buildSyntheticOpponent,
+  bindSyntheticScript,
+  syntheticIdentity,
+} from './ghostService.js';
 import { createLiveMatchRecord, finalizeMatch, headToHead } from '../services/matchService.js';
 import { getRatingValue, getRatingEntry } from '../services/ratingService.js';
 import { resolvePlayableTopic, resolveScope } from '../services/spaceService.js';
@@ -26,6 +32,7 @@ import {
   LEVEL_BAND_MAX,
   LEVEL_BAND_STEP_MS,
   RANKED_START,
+  RANKED_FLOOR,
 } from '../shared/constants.js';
 import { logger, logMatchSummary } from '../lib/logger.js';
 import { AppError } from '../lib/errors.js';
@@ -41,19 +48,16 @@ const oid = (v) => new mongoose.Types.ObjectId(String(v));
 const MISSED_RESULT_TTL_MS = 120_000;
 
 /**
- * The ladder standing of a replayed player, for the versus badge only.
+ * Gone: the ladder standing of a replayed player.
  *
- * Falls back to the waiting player's own standing rather than to a constant: if
- * the account has since been deleted, a badge matching the live player is far
- * less conspicuous than a Bronze I badge on an opponent who plays like a
- * veteran (F6.7.5).
+ * It existed to draw a league badge on the ghost's half of the versus screen,
+ * read live from the account whose game was being replayed. That badge was the
+ * last piece of a real person's profile still on display once the name and
+ * avatar were masked, and a division is nearly as identifying as a name inside
+ * a thirty-person organization. Both replay sites now derive a plausible
+ * standing near the waiting player's own, which is where live pairing would
+ * have put a human anyway.
  */
-async function rankedRatingOf(userId, fallback) {
-  const row = await User.findById(oid(userId), { rankedRating: 1 })
-    .lean()
-    .catch(() => null);
-  return row?.rankedRating ?? fallback ?? RANKED_START;
-}
 
 /**
  * The modes a player may put themselves in a queue for
@@ -413,18 +417,15 @@ export class GameOrchestrator {
           buildRound(q, { language: waiting.language, durationMs: waiting.roundDurationMs }),
         );
         ghost = {
-          userId: String(replay.userId),
-          displayName: replay.displayName,
-          avatarUrl: replay.avatarUrl,
           /**
-           * Where that run was actually played from. Replays written before
-           * this was recorded have none, and a blank place on one half of
-           * the versus screen is precisely the tell F6.7.5 forbids — so the
-           * fallback is the waiting player's own country, which is where a
-           * live opponent most often is anyway.
+           * A synthetic face over a real performance — see `syntheticIdentity`.
+           * The replay's own name, avatar, id and city used to go out here, so
+           * in an organization of five people you played your classmate at
+           * midnight while they were asleep, and their result was disclosed to
+           * you. The script below is still theirs; nothing identifying is.
            */
-          country: replay.country ?? waiting.country ?? null,
-          city: replay.city ?? null,
+          ...syntheticIdentity({ country: replay.country ?? waiting.country }),
+          city: null,
           rating: replay.playerRating,
           /**
            * Replays written before levels were recorded have none. Showing
@@ -435,12 +436,20 @@ export class GameOrchestrator {
            */
           level: replay.playerLevel ?? waiting.level ?? 1,
           /**
-           * The replayed player's real standing today. Their ladder is not
-           * touched by this match (F6.7.6) — it is read only so the versus
-           * screen can draw a badge on both sides, since a missing one would
-           * mark the ghost out (F6.7.5).
+           * A plausible standing near the player's own, not the replayed
+           * account's live ladder.
+           *
+           * Reading their real `rankedRating` was the last thread back to the
+           * person: it is visible as a league badge on the versus screen, so a
+           * classmate's exact division was on display beside a name that is now
+           * synthetic — and in a small organization a badge is nearly as
+           * identifying as the name was. Their ladder was never touched by this
+           * match (F6.7.6); it is now not read either.
            */
-          rankedRating: await rankedRatingOf(replay.userId, waiting.rankedRating),
+          rankedRating: Math.max(
+            RANKED_FLOOR,
+            Math.round((waiting.rankedRating ?? RANKED_START) + (Math.random() * 100 - 50)),
+          ),
           isGhost: true,
           sourceMatchId: String(replay.matchId),
           script: replay.answers,
@@ -617,12 +626,11 @@ export class GameOrchestrator {
 
     if (replay && replay.questionIds.length === rounds.length) {
       markReplayUsed(replay._id);
+      // Same masking as ordinary play — and it matters more here, because a
+      // contest's entrants are by definition all in the same organization.
       return {
-        userId: String(replay.userId),
-        displayName: replay.displayName,
-        avatarUrl: replay.avatarUrl,
-        country: replay.country ?? waiting.country ?? null,
-        city: replay.city ?? null,
+        ...syntheticIdentity({ country: replay.country ?? waiting.country }),
+        city: null,
         rating: replay.playerRating,
         isGhost: true,
         sourceMatchId: String(replay.matchId),

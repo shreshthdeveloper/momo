@@ -13,9 +13,12 @@ import {
   EmptyState,
   ErrorNotice,
   Header,
-  IconButton,
+  ConsoleFooter,
   SearchField,
-  Segmented,
+  Select,
+  Sheet,
+  Tabs,
+  CountRow,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
@@ -49,11 +52,13 @@ const DIFFICULTY_FILTERS = [
   { value: 'medium', label: 'Medium' },
   { value: 'hard', label: 'Hard' },
 ];
+// Tinted, not solid — a column of fully-lit pills down a list shouts over the
+// questions they annotate. See `Badge`.
 const STATUS_BADGE = {
-  draft: { label: 'Draft', tone: 'soft' },
-  in_review: { label: 'In review', tone: 'accent' },
-  published: { label: 'Published', tone: 'correct' },
-  archived: { label: 'Archived', tone: 'ink' },
+  draft: { label: 'Draft', tone: 'quiet' },
+  in_review: { label: 'In review', tone: 'soft' },
+  published: { label: 'Published', tone: 'live' },
+  archived: { label: 'Archived', tone: 'quiet' },
 };
 
 function cap(value) {
@@ -85,23 +90,24 @@ function analysisMeta(row) {
   return row.servedEver ? 'Served' : 'Not served';
 }
 
-function FilterRow({ options, value, onChange }) {
+/** One labelled group of chips inside the filter sheet. */
+function FilterGroup({ label, options, value, onChange }) {
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.filterRow}
-      contentContainerStyle={styles.filterRowContent}
-    >
-      {options.map((option) => (
-        <Chip
-          key={String(option.value)}
-          label={option.label}
-          active={option.value === value}
-          onPress={() => onChange(option.value)}
-        />
-      ))}
-    </ScrollView>
+    <View style={styles.group}>
+      <Text variant="label" color={colors.inkMuted}>
+        {label}
+      </Text>
+      <View style={styles.groupChips}>
+        {options.map((option) => (
+          <Chip
+            key={String(option.value)}
+            label={option.label}
+            active={option.value === value}
+            onPress={() => onChange(option.value)}
+          />
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -130,6 +136,7 @@ export default function AdminQuestions() {
   const [topicFilter, setTopicFilter] = useState(() =>
     typeof params.topicId === 'string' && params.topicId.length > 0 ? params.topicId : null,
   );
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const [topics, setTopics] = useState(null);
   const [items, setItems] = useState(null);
@@ -299,44 +306,186 @@ export default function AdminQuestions() {
   const shown = items ?? [];
   const filtersActive = Boolean(q || (origin === 'own' && status !== 'all') || difficulty !== 'all' || topicFilter);
 
+  /**
+   * What is set, as the chips the header shows and the sheet's count. Built
+   * from the same state the request is built from, so the row cannot claim a
+   * filter the list is not applying.
+   */
+  const activeFilters = [];
+  if (origin === 'own' && status !== 'all') {
+    activeFilters.push({
+      key: 'status',
+      label: STATUS_FILTERS.find((f) => f.value === status)?.label ?? status,
+      clear: () => setStatus('all'),
+    });
+  }
+  if (difficulty !== 'all') {
+    activeFilters.push({
+      key: 'difficulty',
+      label: DIFFICULTY_FILTERS.find((f) => f.value === difficulty)?.label ?? difficulty,
+      clear: () => setDifficulty('all'),
+    });
+  }
+  if (topicFilter) {
+    activeFilters.push({
+      key: 'topic',
+      label: topics?.find((t) => t.id === topicFilter)?.name ?? 'Topic',
+      clear: () => setTopicFilter(null),
+    });
+  }
+  const clearFilters = () => {
+    setStatus('all');
+    setDifficulty('all');
+    setTopicFilter(null);
+  };
+
+  const topicOptions = [
+    { value: null, label: 'Every topic' },
+    ...(topics ?? []).map((t) => ({
+      value: t.id,
+      label: t.name,
+      meta: t.categoryName ?? undefined,
+    })),
+  ];
+
+  /**
+   * The loaded page, in topic order.
+   *
+   * A question can belong to more than one topic, so it files under its first
+   * — the alternative is showing it once per topic, which makes the counts lie
+   * about how big the bank is. Questions with no topic at all collect at the
+   * end under a heading that says so, because those are exactly the ones that
+   * never reach a player and were previously invisible.
+   */
+  const groups = (() => {
+    if (topicFilter) return [{ id: 'ALL', name: null, rows: shown }];
+    const order = [];
+    const byId = new Map();
+    for (const row of shown) {
+      const topic = row.topics?.[0];
+      const id = topic?.id ?? 'NONE';
+      if (!byId.has(id)) {
+        const group = { id, name: topic?.name ?? 'No topic', rows: [] };
+        byId.set(id, group);
+        order.push(group);
+      }
+      byId.get(id).rows.push(row);
+    }
+    // "No topic" last: it is a to-do list, not a topic.
+    return order.sort((a, b) => (a.id === 'NONE' ? 1 : b.id === 'NONE' ? -1 : 0));
+  })();
+
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
+      {/* No `+` in the corner. Creating a question is this screen's primary
+          action, and a primary action lives in the footer on every other page
+          in both consoles — a 20pt glyph in the top right was the odd one out
+          and the hardest thing here to find. */}
       <Header
         title="Question bank"
         subtitle={overrideSpaceId ? 'Central bank' : adminSpace?.name}
         onBack={overrideSpaceId ? () => router.back() : undefined}
-        right={
-          origin === 'own' && canWrite ? (
-            <IconButton name="plus" label="New question" onPress={goNew} />
-          ) : null
-        }
       />
 
       {!overrideSpaceId ? (
-        <Segmented options={ORIGINS} value={origin} onChange={setOriginChoice} style={styles.tabs} />
+        <Tabs options={ORIGINS} value={origin} onChange={setOriginChoice} />
       ) : null}
-      <SearchField
-        style={styles.search}
-        value={query}
-        onChangeText={setQuery}
-        onClear={() => setQuery('')}
-        placeholder="Search questions"
-        autoCapitalize="none"
-      />
 
-      {origin === 'own' ? (
-        <FilterRow options={STATUS_FILTERS} value={status} onChange={setStatus} />
-      ) : null}
-      <FilterRow options={DIFFICULTY_FILTERS} value={difficulty} onChange={setDifficulty} />
-      {topics && topics.length > 0 ? (
-        <FilterRow
-          options={[{ value: null, label: 'All topics' }, ...topics.map((t) => ({ value: t.id, label: t.name }))]}
-          value={topicFilter}
-          onChange={setTopicFilter}
+      {/**
+       * Search, and one door to everything else.
+       *
+       * This screen used to stack three horizontal chip scrollers under the
+       * search field — status, difficulty, topic — which cost about a third of
+       * the screen before the first question appeared, cut the last chip of
+       * every row off mid-word with nothing to say it scrolled, and (because a
+       * horizontal scroller stretches its children) sliced the pills in half.
+       * Three rows of chrome to say "all, all, all", which is what they say
+       * almost always.
+       *
+       * So the filters live in a sheet behind one button that counts how many
+       * are set, and what IS set comes back as a row of chips you can take off
+       * — the row appears only when there is something in it.
+       */}
+      <View style={styles.searchRow}>
+        <SearchField
+          style={{ flex: 1 }}
+          value={query}
+          onChangeText={setQuery}
+          onClear={() => setQuery('')}
+          placeholder="Search questions"
+          autoCapitalize="none"
         />
+        <Pressable
+          onPress={() => setFiltersOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={
+            activeFilters.length ? `Filters — ${activeFilters.length} set` : 'Filters'
+          }
+          style={({ pressed }) => [
+            styles.filterButton,
+            activeFilters.length ? styles.filterButtonOn : null,
+            pressed && { opacity: 0.7 },
+          ]}
+        >
+          <Icon
+            name="filter"
+            size={18}
+            color={activeFilters.length ? colors.accent : colors.inkMuted}
+          />
+          {activeFilters.length ? (
+            <Text variant="meta" color={colors.accent}>
+              {activeFilters.length}
+            </Text>
+          ) : null}
+        </Pressable>
+      </View>
+
+      {/**
+       * The topic is the spine of a question bank, so it is a control on the
+       * screen rather than something buried in the filter sheet: an admin's
+       * question is almost always "what does THIS topic have", and with no
+       * topic chosen the list still says which topic each question belongs to,
+       * grouped, so the bank never reads as one undifferentiated pile.
+       */}
+      {topics && topics.length > 0 ? (
+        <View style={styles.controls}>
+          <Select
+            value={topicFilter}
+            options={topicOptions}
+            onChange={setTopicFilter}
+            placeholder="Every topic"
+          />
+        </View>
       ) : null}
 
-      <View style={{ height: space.md }} />
+      {activeFilters.length ? (
+        <View style={styles.activeBar}>
+          {activeFilters.map((filter) => (
+            <Pressable
+              key={filter.key}
+              onPress={filter.clear}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove the ${filter.label} filter`}
+              style={({ pressed }) => [styles.activeChip, pressed && { opacity: 0.7 }]}
+            >
+              <Text variant="meta" color={colors.accent} numberOfLines={1}>
+                {filter.label}
+              </Text>
+              <Icon name="close" size={13} color={colors.accent} />
+            </Pressable>
+          ))}
+          <Pressable
+            onPress={clearFilters}
+            hitSlop={8}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.clearAll, pressed && { opacity: 0.7 }]}
+          >
+            <Text variant="meta" color={colors.inkMuted}>
+              Clear
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
       <ErrorNotice error={error} onRetry={() => load(0)} />
       {notice ? (
         <View style={styles.notice}>
@@ -387,29 +536,47 @@ export default function AdminQuestions() {
             />
           }
         >
-          <View style={styles.countRow}>
-            <Text variant="meta" color={colors.inkFaint} style={{ flex: 1 }}>
-              {total} {total === 1 ? 'question' : 'questions'}
-            </Text>
-            {origin === 'own' && canWrite && !selected ? (
-              <Pressable onPress={() => setSelected([])} hitSlop={8} accessibilityRole="button" style={({ pressed }) => (pressed ? { opacity: 0.7 } : null)}>
-                <Text variant="label" color={colors.accent}>
-                  Select
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
+          <CountRow
+            shown={shown.length}
+            total={total}
+            noun="question"
+            action={origin === 'own' && canWrite && !selected ? 'Select' : undefined}
+            onAction={() => setSelected([])}
+          />
 
-          {shown.map((row) => {
-            const isSelected = Boolean(selected?.includes(row.id));
-            const statusBadge = STATUS_BADGE[row.status] ?? { label: cap(row.status), tone: 'ink' };
-            const flagBadge =
-              row.itemAnalysis?.flag === 'suspect_key'
-                ? { label: 'Check key', tone: 'wrong' }
-                : row.itemAnalysis?.flag === 'too_easy'
-                  ? { label: 'Too easy', tone: 'soft' }
-                  : null;
-            return (
+          {groups.map((group) => (
+            <View key={group.id}>
+              {/**
+               * A bank is organised by topic or it is a pile. With no topic
+               * chosen the list still reads topic by topic, with a heading and
+               * a count, rather than as one undifferentiated scroll where the
+               * only way to tell what a question belongs to was to open it.
+               *
+               * The heading is skipped when a topic IS chosen — the Select
+               * above already says which one, and repeating it every screenful
+               * would be noise.
+               */}
+              {group.id !== 'ALL' ? (
+                <View style={styles.groupHead}>
+                  <Text variant="label" color={colors.inkMuted} style={{ flex: 1 }} numberOfLines={1}>
+                    {group.name}
+                  </Text>
+                  <Text variant="meta" color={colors.inkFaint}>
+                    {group.rows.length}
+                  </Text>
+                </View>
+              ) : null}
+
+              {group.rows.map((row) => {
+                const isSelected = Boolean(selected?.includes(row.id));
+                const statusBadge = STATUS_BADGE[row.status] ?? { label: cap(row.status), tone: 'quiet' };
+                const flagBadge =
+                  row.itemAnalysis?.flag === 'suspect_key'
+                    ? { label: 'Check key', tone: 'danger' }
+                    : row.itemAnalysis?.flag === 'too_easy'
+                      ? { label: 'Too easy', tone: 'amber' }
+                      : null;
+                return (
               <Pressable
                 key={row.id}
                 accessibilityRole="button"
@@ -446,6 +613,10 @@ export default function AdminQuestions() {
                   <Text variant="tiny" color={colors.inkFaint}>
                     {ago(row.updatedAt)}
                   </Text>
+                  {/* A bin, not an ✕. In the corner of a card an ✕ means
+                      "dismiss this" everywhere else in software, and this one
+                      deletes the question — sitting a thumb's width from the
+                      timestamp on every card in a list you scroll fast. */}
                   {origin === 'own' && canWrite && !selected ? (
                     <Pressable
                       onPress={() => setConfirmDelete(row)}
@@ -453,7 +624,7 @@ export default function AdminQuestions() {
                       accessibilityRole="button"
                       accessibilityLabel="Delete question"
                      style={({ pressed }) => (pressed ? { opacity: 0.7 } : null)}>
-                      <Icon name="close" size={16} color={colors.inkFaint} />
+                      <Icon name="trash" size={16} color={colors.inkFaint} />
                     </Pressable>
                   ) : null}
                 </View>
@@ -482,7 +653,11 @@ export default function AdminQuestions() {
                 <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
                   {[
                     origin === 'own' ? cap(row.difficulty) : null,
-                    (row.topics ?? []).map((t) => t.name).join(', '),
+                    // The topic is the group heading now, unless a question is
+                    // in more than one — then the extras are worth naming.
+                    (row.topics ?? []).length > 1
+                      ? (row.topics ?? []).map((t) => t.name).join(', ')
+                      : null,
                     analysisMeta(row),
                     origin === 'central' ? row.createdBy : null,
                   ]
@@ -490,8 +665,10 @@ export default function AdminQuestions() {
                     .join('  ·  ')}
                 </Text>
               </Pressable>
-            );
-          })}
+                );
+              })}
+            </View>
+          ))}
 
           {shown.length < total ? (
             <Button
@@ -505,6 +682,14 @@ export default function AdminQuestions() {
           ) : null}
         </ScrollView>
       )}
+
+      {/* The one primary, in the footer — hidden while selecting, because the
+          bulk bar below owns the bottom of the screen then. */}
+      {origin === 'own' && canWrite && !selected ? (
+        <ConsoleFooter>
+          <Button label="Write a question" onPress={goNew} />
+        </ConsoleFooter>
+      ) : null}
 
       {selected ? (
         <SafeAreaView edges={['bottom']} style={styles.selectionBar}>
@@ -550,6 +735,42 @@ export default function AdminQuestions() {
           </View>
         </SafeAreaView>
       ) : null}
+
+      {/* Everything that narrows the list, in one place, so the list itself
+          gets the screen. */}
+      <Sheet
+        visible={filtersOpen}
+        title="Filters"
+        onClose={() => setFiltersOpen(false)}
+        accessibilityLabel="Filter the question bank"
+      >
+        {/* Two fixed, short sets — so these stay chips. Topic is not one of
+            them and lives in its own control on the screen; a wrap of chips
+            for a list the data decides the length of is the thing this whole
+            pass is removing. */}
+        {origin === 'own' ? (
+          <FilterGroup label="Status" options={STATUS_FILTERS} value={status} onChange={setStatus} />
+        ) : null}
+        <FilterGroup
+          label="Difficulty"
+          options={DIFFICULTY_FILTERS}
+          value={difficulty}
+          onChange={setDifficulty}
+        />
+        <Button
+          label={`Show ${total} ${total === 1 ? 'question' : 'questions'}`}
+          style={{ marginTop: space.xl }}
+          onPress={() => setFiltersOpen(false)}
+        />
+        {activeFilters.length ? (
+          <Button
+            variant="ghost"
+            label="Clear all filters"
+            style={{ marginTop: space.sm }}
+            onPress={clearFilters}
+          />
+        ) : null}
+      </Sheet>
 
       <ConfirmSheet
         visible={Boolean(confirmDelete)}
@@ -597,24 +818,24 @@ export default function AdminQuestions() {
               })}
             </ScrollView>
 
-            <Text variant="label" color={colors.inkMuted} style={styles.sheetLabel}>
-              Fork into a topic
-            </Text>
             {liveTopics.length === 0 ? (
-              <Text variant="meta" color={colors.inkFaint} style={{ marginBottom: space.lg }}>
-                No topic is live yet — a topic needs 21 published questions first.
-              </Text>
+              <>
+                <Text variant="label" color={colors.inkMuted} style={styles.sheetLabel}>
+                  Fork into a topic
+                </Text>
+                <Text variant="meta" color={colors.inkFaint} style={{ marginBottom: space.lg }}>
+                  No topic is live yet — a topic needs 21 published questions first.
+                </Text>
+              </>
             ) : (
-              <View style={styles.sheetChips}>
-                {liveTopics.map((topic) => (
-                  <Chip
-                    key={topic.id}
-                    label={topic.name}
-                    active={forkTopicId === topic.id}
-                    onPress={() => setForkTopicId(topic.id)}
-                  />
-                ))}
-              </View>
+              <Select
+                label="Fork into a topic"
+                value={forkTopicId}
+                options={liveTopics.map((topic) => ({ value: topic.id, label: topic.name }))}
+                onChange={setForkTopicId}
+                placeholder="Choose a topic"
+                style={styles.sheetLabel}
+              />
             )}
             {forkError ? (
               <Text variant="label" color={colors.wrong} style={{ marginBottom: space.md }}>
@@ -642,13 +863,64 @@ export default function AdminQuestions() {
 }
 
 const styles = StyleSheet.create({
+  // `sunken` — the deeper field the card lists use, so the raised cards have
+  // something to lift off. It is also the search field's own colour, which is
+  // why the field now carries an edge; see `SearchField`.
   screen: { flex: 1, backgroundColor: colors.sunken },
-  tabs: { marginHorizontal: consoleLayout.gutter, marginTop: space.xs },
-  search: { marginHorizontal: consoleLayout.gutter, marginTop: space.md, marginBottom: space.xs },
-  filterRow: { flexGrow: 0, marginTop: space.sm },
-  filterRowContent: { gap: space.sm, paddingHorizontal: consoleLayout.gutter },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingHorizontal: consoleLayout.gutter,
+    marginTop: space.md,
+  },
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+    height: 48,
+    paddingHorizontal: space.md,
+    minWidth: 48,
+    justifyContent: 'center',
+    borderRadius: layout.radiusInput,
+    backgroundColor: colors.nightRaised,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
+  filterButtonOn: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+  controls: { paddingHorizontal: consoleLayout.gutter, marginTop: space.sm },
+  // Wraps rather than scrolls: there are at most two of these, and a scroller
+  // for two chips is a scroller that hides one of them.
+  activeBar: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingHorizontal: consoleLayout.gutter,
+    marginTop: space.sm,
+  },
+  activeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+    height: 28,
+    paddingHorizontal: space.md,
+    borderRadius: layout.radiusPill,
+    backgroundColor: colors.accentSoft,
+    maxWidth: 200,
+  },
+  clearAll: { height: 28, justifyContent: 'center', paddingHorizontal: space.xs },
+  group: { gap: space.sm, marginTop: space.lg },
+  groupChips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  /** The topic heading over each run of cards in the bank. */
+  groupHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingTop: space.md,
+    paddingBottom: space.sm,
+  },
   list: { padding: consoleLayout.gutter, paddingTop: 0, paddingBottom: space.xxxl },
-  countRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.sm },
   card: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,
@@ -684,7 +956,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: consoleLayout.gutter,
     paddingTop: space.md,
     paddingBottom: space.sm,
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.nightRaised,
     borderTopWidth: 1,
     borderTopColor: colors.hairline,
     gap: space.md,
@@ -693,7 +965,7 @@ const styles = StyleSheet.create({
   selectionActions: { flexDirection: 'row', gap: space.sm },
   sheetScrim: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.nightRaised,
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
     padding: consoleLayout.gutter,
@@ -716,5 +988,4 @@ const styles = StyleSheet.create({
     paddingVertical: space.xs,
   },
   sheetLabel: { marginTop: space.lg, marginBottom: space.sm },
-  sheetChips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginBottom: space.lg },
 });

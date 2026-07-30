@@ -201,8 +201,13 @@ export default function AdminDrafts() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl },
+  screen: { flex: 1, backgroundColor: colors.sunken },
+  content: {
+    paddingHorizontal: consoleLayout.gutter,
+    // The console header closes with a hairline; content needs air under it.
+    paddingTop: space.lg,
+    paddingBottom: space.xxxl,
+  },
   fieldLabel: { marginTop: space.lg, marginBottom: space.xs },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   hint: { marginTop: space.xs },
@@ -214,7 +219,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   input: {
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     borderWidth: 1,
     borderColor: colors.hairline,

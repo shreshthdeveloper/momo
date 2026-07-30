@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../src/lib/api.js';
 import { useAdminPermissions, useAdminSpace } from '../../src/lib/admin.js';
 import {
+  ConsoleFooter,
   Text,
   Badge,
   Button,
@@ -601,7 +602,7 @@ export default function AdminQuestionEdit() {
             ) : null}
           </ScrollView>
 
-          <View style={styles.footer}>
+          <ConsoleFooter>
             <ErrorNotice error={error} />
             <View style={styles.footerButtons}>
               <Button
@@ -620,7 +621,7 @@ export default function AdminQuestionEdit() {
                 onPress={() => save(canPublish ? 'published' : 'in_review')}
               />
             </View>
-          </View>
+          </ConsoleFooter>
         </>
       )}
 
@@ -782,14 +783,19 @@ function FormSkeleton() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xl },
+  screen: { flex: 1, backgroundColor: colors.sunken },
+  content: {
+    paddingHorizontal: consoleLayout.gutter,
+    // The console header closes with a hairline; content needs air under it.
+    paddingTop: space.lg,
+    paddingBottom: space.xl,
+  },
   labelRow: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm, marginBottom: space.sm },
   fieldLabel: { marginTop: space.xl, marginBottom: space.sm },
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,
@@ -802,7 +808,7 @@ const styles = StyleSheet.create({
     paddingVertical: space.md,
     textAlignVertical: 'top',
   },
-  inputFocused: { borderColor: colors.accent, backgroundColor: colors.canvas },
+  inputFocused: { borderColor: colors.accent, backgroundColor: colors.nightRaised },
   hint: { marginTop: space.sm },
   optionRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginBottom: space.sm },
   optionError: { marginTop: 0, marginBottom: space.sm, marginLeft: 38 + space.md },
@@ -812,7 +818,7 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     borderWidth: 1.5,
     borderColor: colors.hairline,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -847,15 +853,14 @@ const styles = StyleSheet.create({
   imagePreview: {
     aspectRatio: 16 / 9,
     borderRadius: layout.radiusInput,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
   },
   imageActions: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
-  footer: { padding: consoleLayout.gutter, paddingTop: space.sm },
   footerButtons: { flexDirection: 'row', gap: space.md },
   skeleton: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.lg, gap: space.sm },
   sheetScrim: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.nightRaised,
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
     padding: consoleLayout.gutter,

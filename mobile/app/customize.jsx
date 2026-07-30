@@ -330,7 +330,7 @@ export default function Customize() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { padding: layout.gutter, paddingBottom: space.xxl },
+  content: { padding: layout.gutter, paddingBottom: layout.scrollBottom },
 
   preview: { borderRadius: layout.radiusCard, overflow: 'hidden', marginBottom: space.lg },
   previewShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(18, 14, 30, 0.38)' },

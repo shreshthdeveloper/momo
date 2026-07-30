@@ -217,7 +217,7 @@ function ago(at) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: space.xxl, gap: space.sm },
+  list: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom, gap: space.sm },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

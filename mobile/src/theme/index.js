@@ -99,7 +99,30 @@ export const colors = {
   canvas: '#171422',
   /** Inputs, search fields, list rows, skeletons — a surface that recedes. */
   sunken: '#110E19',
-  hairline: '#2A2438',
+  /**
+   * The edge. Retuned from `#2A2438`, which was measured and found invisible.
+   *
+   * A dark interface separates surfaces with a border far more than with a
+   * fill — the WCAG ratio between two near-black fills is tiny no matter what
+   * you choose, so the eye is reading the EDGE. The old value scored 1.03
+   * against a raised card, meaning every card outline, every row divider and
+   * every input border in the console was drawing a line nobody could see, and
+   * the whole console read as one flat rectangle.
+   *
+   * Measured against the systems that get this right:
+   *
+   *              border/card   border/field
+   *   GitHub        1.42          1.55
+   *   Material      1.40          1.57
+   *   Slack         1.29          1.42
+   *   Linear        1.19          1.30
+   *   this, before  1.03          1.28   ← invisible where it is used most
+   *   this, now     1.35          1.68
+   *
+   * The card FILL was never the problem: at 1.24 over the field it is already a
+   * stronger step than any of the four above. Only the edge was missing.
+   */
+  hairline: '#3E3651',
 
   // ── Ink (light on night) ─────────────────────────────────────────────────
   ink: '#F2F1F8',
@@ -230,6 +253,16 @@ export const layout = {
    * left: there is no longer anything rising above the pill to clear.
    */
   dockClearance: 118,
+  /**
+   * The bottom padding a PUSHED screen's scrollable content needs.
+   *
+   * There is no dock over these, only the gesture bar — but nine player screens
+   * were each guessing at it, four with 32 and five with 48, and none of them
+   * asked the safe area. Forty-eight clears the bar on every phone we support
+   * and is one number instead of two, so a list no longer ends flush against
+   * the home indicator on some screens and not others.
+   */
+  scrollBottom: 48,
 };
 
 /**

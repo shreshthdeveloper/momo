@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
-import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import {
+  ConsoleFooter,
   Text,
   Badge,
   Button,
@@ -13,9 +13,10 @@ import {
   EmptyState,
   ErrorNotice,
   Header,
+  RowMenu,
+  CountRow,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
-import Icon from '../../src/components/Icon.jsx';
 import { colors, consoleLayout, elevation, layout, space } from '../../src/theme/index.js';
 
 /**
@@ -24,7 +25,6 @@ import { colors, consoleLayout, elevation, layout, space } from '../../src/theme
  * standings, and finalise a contest whose window has closed.
  */
 export default function AdminContests() {
-  const goBack = useConsoleBack();
   const router = useRouter();
   const adminSpace = useAdminSpace();
   const [items, setItems] = useState(null);
@@ -77,7 +77,7 @@ export default function AdminContests() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Contests" subtitle={adminSpace?.name} onBack={goBack} />
+      <Header title="Contests" subtitle={adminSpace?.name} />
 
       <ErrorNotice error={error} onRetry={load} />
 
@@ -99,6 +99,8 @@ export default function AdminContests() {
             />
           }
         >
+          <CountRow total={items.length} noun="contest" />
+
           {items.length === 0 ? (
             <EmptyState
               icon="clock"
@@ -128,6 +130,14 @@ export default function AdminContests() {
                     {contest.topics?.length ? `  ·  ${contest.topics.map((t) => t.name).filter(Boolean).join(', ')}` : ''}
                   </Text>
 
+                  {/**
+                   * Standings is the button because it is what an admin opens
+                   * a contest for; finalising an ended one is the exception
+                   * that earns a second. Delete goes in the menu with every
+                   * other destructive verb in the console — it used to be a
+                   * bare red icon on some cards and nothing at all on others,
+                   * so the same card taught you two different layouts.
+                   */}
                   <View style={styles.actions}>
                     <Button
                       size="sm"
@@ -158,17 +168,32 @@ export default function AdminContests() {
                         onPress={() => finalise(contest)}
                       />
                     ) : null}
-                    {phase.key === 'upcoming' ? (
-                      <Pressable
-                        onPress={() => setConfirmDelete(contest)}
-                        hitSlop={8}
-                        accessibilityRole="button"
-                        accessibilityLabel="Delete contest"
-                        style={({ pressed }) => [styles.delete, pressed && { opacity: 0.7 }]}
-                      >
-                        <Icon name="close" size={15} color={colors.wrong} />
-                      </Pressable>
-                    ) : null}
+                    <View style={{ flex: 1 }} />
+                    <RowMenu
+                      title={contest.name}
+                      label={`Actions for ${contest.name}`}
+                      actions={[
+                        {
+                          key: 'standings',
+                          label: 'Standings',
+                          icon: 'trophy',
+                          onPress: () =>
+                            router.push({
+                              pathname: '/admin/contest-standings',
+                              params: { id: contest.id, name: contest.name },
+                            }),
+                        },
+                        phase.key === 'upcoming'
+                          ? {
+                              key: 'delete',
+                              label: 'Delete the contest',
+                              icon: 'trash',
+                              destructive: true,
+                              onPress: () => setConfirmDelete(contest),
+                            }
+                          : null,
+                      ]}
+                    />
                   </View>
                 </View>
               );
@@ -178,9 +203,9 @@ export default function AdminContests() {
       )}
 
       {/* One primary per screen: scheduling is the reason this page exists. */}
-      <SafeAreaView edges={['bottom']} style={styles.footer}>
+      <ConsoleFooter>
         <Button label="Schedule a contest" onPress={() => router.push('/admin/contest-new')} />
-      </SafeAreaView>
+      </ConsoleFooter>
 
       <ConfirmSheet
         visible={Boolean(confirmDelete)}
@@ -199,7 +224,7 @@ export default function AdminContests() {
 
 function phaseOf(contest) {
   const now = Date.now();
-  if (contest.status === 'cancelled') return { key: 'cancelled', label: 'Cancelled', tone: 'ink' };
+  if (contest.status === 'cancelled') return { key: 'cancelled', label: 'Cancelled', tone: 'quiet' };
   /**
    * `finished` is what the backend calls a contest that is over
    * (CONTEST_STATUS.FINISHED). Testing for 'finalised' — a value nothing ever
@@ -209,8 +234,8 @@ function phaseOf(contest) {
    */
   if (contest.status === 'finished') return { key: 'done', label: 'Finalised', tone: 'soft' };
   if (now < new Date(contest.startsAt).getTime()) return { key: 'upcoming', label: 'Upcoming', tone: 'soft' };
-  if (now < new Date(contest.endsAt).getTime()) return { key: 'live', label: 'Live', tone: 'correct' };
-  return { key: 'ended', label: 'Needs finalising', tone: 'wrong' };
+  if (now < new Date(contest.endsAt).getTime()) return { key: 'live', label: 'Live', tone: 'live' };
+  return { key: 'ended', label: 'Needs finalising', tone: 'danger' };
 }
 
 function windowText(contest) {
@@ -233,19 +258,4 @@ const styles = StyleSheet.create({
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   meta: { marginTop: space.xs, marginBottom: space.md },
   actions: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  delete: {
-    marginLeft: 'auto',
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.wrongSoft,
-  },
-  footer: {
-    paddingHorizontal: consoleLayout.gutter,
-    paddingTop: space.sm,
-    paddingBottom: space.sm,
-    backgroundColor: colors.sunken,
-  },
 });

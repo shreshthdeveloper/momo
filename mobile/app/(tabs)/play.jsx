@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { FlatList, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useAuth } from '../../src/state/auth.jsx';
 import { useGame } from '../../src/state/game.jsx';
-import { Text, ErrorNotice, EmptyState, SearchField, Chip } from '../../src/components/ui.jsx';
+import {
+  Text,
+  ErrorNotice,
+  EmptyState,
+  SearchField,
+  Chip,
+  TabHeader,
+} from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import TopicCard from '../../src/components/TopicCard.jsx';
 import TopicPlaySheet from '../../src/components/TopicPlaySheet.jsx';
@@ -188,12 +195,7 @@ export default function PlayLibrary() {
       {/* The title has the row to itself now that the stake is asked on the
           card, so the caption is free to be the longer, clearer sentence that
           used to end in an ellipsis on every phone. */}
-      <View style={styles.head}>
-        <Text variant="display">Play</Text>
-        <Text variant="meta" color={colors.inkFaint}>
-          Pick a topic, then choose what the match is worth.
-        </Text>
-      </View>
+      <TabHeader title="Play" caption="Pick a topic, then choose what the match is worth." />
 
       {/* Pinned, both of them: a filter you have to scroll back up to reach is
           a filter people stop using. */}
@@ -297,7 +299,6 @@ export default function PlayLibrary() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  head: { gap: 2, paddingHorizontal: layout.gutter, paddingTop: space.md },
 
   search: { marginHorizontal: layout.gutter, marginTop: space.md, marginBottom: space.sm },
   filterRow: { flexGrow: 0 },

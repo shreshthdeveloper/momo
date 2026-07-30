@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
-import { Text, Button, Chip, ErrorNotice, Header } from '../../src/components/ui.jsx';
+import { ConsoleFooter, Text, Button, Chip, ErrorNotice, Header } from '../../src/components/ui.jsx';
 import { colors, consoleLayout, layout, space, type } from '../../src/theme/index.js';
 
 /**
@@ -151,7 +151,7 @@ export default function AdminAssignmentNew() {
         </Text>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <ConsoleFooter>
         <ErrorNotice error={error} />
         <Button
           label="Set assignment"
@@ -159,27 +159,26 @@ export default function AdminAssignmentNew() {
           disabled={title.trim().length < 2 || !topicId}
           onPress={create}
         />
-      </View>
+      </ConsoleFooter>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
+  screen: { flex: 1, backgroundColor: colors.sunken },
   content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xl },
   fieldLabel: { marginTop: space.xl, marginBottom: space.sm },
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,
     paddingHorizontal: space.lg,
     height: 54,
   },
-  inputFocused: { borderColor: colors.accent, backgroundColor: colors.canvas },
+  inputFocused: { borderColor: colors.accent, backgroundColor: colors.nightRaised },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   note: { marginTop: space.xl },
-  footer: { padding: consoleLayout.gutter, paddingTop: space.sm },
 });

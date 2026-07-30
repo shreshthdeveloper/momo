@@ -5,7 +5,7 @@ import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useIsSuperadmin } from '../../src/lib/admin.js';
-import { Text, Button, Chip, ErrorNotice, Header } from '../../src/components/ui.jsx';
+import { ConsoleFooter, Text, Button, Chip, ErrorNotice, Header } from '../../src/components/ui.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import { SPACE_ACCENTS } from '../../src/shared/constants.js';
 import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
@@ -232,29 +232,29 @@ export default function SuperTenantNew() {
         </Text>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <ConsoleFooter>
         <ErrorNotice error={error} />
         <Button label="Create organization" loading={busy} disabled={!valid} onPress={create} />
-      </View>
+      </ConsoleFooter>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
+  screen: { flex: 1, backgroundColor: colors.sunken },
   content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xl },
   fieldLabel: { marginTop: space.xl, marginBottom: space.sm },
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,
     paddingHorizontal: space.lg,
     height: 54,
   },
-  inputFocused: { borderColor: colors.accent, backgroundColor: colors.canvas },
+  inputFocused: { borderColor: colors.accent, backgroundColor: colors.nightRaised },
   phoneRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -280,7 +280,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   swatchOn: { borderWidth: 2.5, borderColor: colors.ink },
-  footer: { padding: consoleLayout.gutter, paddingTop: space.sm },
   result: { padding: consoleLayout.gutter, paddingTop: space.xl },
   codeCard: {
     alignItems: 'center',

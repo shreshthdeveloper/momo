@@ -7,13 +7,16 @@ import {
   Avatar,
   Badge,
   Button,
-  Chip,
+  Select,
   ConfirmSheet,
   EmptyState,
   ErrorNotice,
   Header,
   SearchField,
-  Segmented,
+  Tabs,
+  CountRow,
+  ListCard,
+  ListRow,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import { colors, consoleLayout, consoleType, space } from '../../src/theme/index.js';
@@ -118,6 +121,10 @@ export default function SuperUsers() {
         subtitle={orgName ? `${total} in ${orgName}` : `${total} on the platform`}
       />
 
+      {/* Status is where you ARE in this table, so it is tabs at the top — the
+          same shape the roster and the question bank wear. */}
+      <Tabs options={STATUSES} value={status} onChange={setStatus} />
+
       <View style={styles.controls}>
         <SearchField
           value={query}
@@ -126,25 +133,23 @@ export default function SuperUsers() {
           placeholder="Name or phone"
           autoCapitalize="none"
         />
-        <Segmented options={STATUSES} value={status} onChange={setStatus} />
 
-        {/* Organization is a filter, not a screen: the same table answers
-            "everyone" and "everyone in Greenfield High". */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.orgRow}
-        >
-          <Chip label="All organizations" active={!spaceId} onPress={() => setSpaceId(null)} />
-          {orgs.map((org) => (
-            <Chip
-              key={org.id}
-              label={org.name}
-              active={spaceId === org.id}
-              onPress={() => setSpaceId(org.id)}
-            />
-          ))}
-        </ScrollView>
+        {/**
+         * Organization is a filter, not a screen: the same table answers
+         * "everyone" and "everyone in Greenfield High". It was a horizontal
+         * chip row, which on a platform with more than four tenants meant the
+         * one you wanted was almost always off-screen — and a superadmin's
+         * whole job is that there are many of them.
+         */}
+        <Select
+          value={spaceId}
+          options={[
+            { value: null, label: 'All organizations' },
+            ...orgs.map((org) => ({ value: org.id, label: org.name })),
+          ]}
+          onChange={setSpaceId}
+          placeholder="All organizations"
+        />
       </View>
 
       <ErrorNotice error={error} onRetry={load} />
@@ -179,10 +184,26 @@ export default function SuperUsers() {
             />
           }
         >
-          {shown.map((user) => {
-            const suspended = user.status === 'suspended';
-            return (
-              <View key={user.id} style={styles.row}>
+          <CountRow shown={shown.length} total={total} noun="account" />
+
+          <ListCard>
+            {shown.map((user, i) => {
+              const suspended = user.status === 'suspended';
+              return (
+                <ListRow
+                  key={user.id}
+                  last={i === shown.length - 1}
+                  title={user.displayName ?? 'This account'}
+                  actions={[
+                    {
+                      key: 'status',
+                      label: suspended ? 'Restore the account' : 'Suspend the account',
+                      icon: suspended ? 'check' : 'lock',
+                      destructive: !suspended,
+                      onPress: () => setConfirm({ user, next: suspended ? 'active' : 'suspended' }),
+                    },
+                  ]}
+                >
                 <Avatar url={user.avatarUrl} name={user.displayName} size={36} />
 
                 <View style={styles.identity}>
@@ -190,8 +211,8 @@ export default function SuperUsers() {
                     <Text variant="bodyStrong" numberOfLines={1} style={{ flexShrink: 1 }}>
                       {user.displayName ?? 'No name'}
                     </Text>
-                    {user.role === 'superadmin' ? <Badge label="Super" tone="accent" /> : null}
-                    {suspended ? <Badge label="Suspended" tone="wrong" /> : null}
+                    {user.role === 'superadmin' ? <Badge label="Super" tone="soft" /> : null}
+                    {suspended ? <Badge label="Suspended" tone="danger" /> : null}
                     {user.cheatFlags > 0 ? (
                       <Badge label={`${user.cheatFlags} flags`} tone="soft" />
                     ) : null}
@@ -214,19 +235,10 @@ export default function SuperUsers() {
                   {user.rankedRating ?? user.overallRating ?? '—'}
                 </Text>
 
-                <Button
-                  size="sm"
-                  variant={suspended ? 'soft' : 'ghost'}
-                  label={suspended ? 'Restore' : 'Suspend'}
-                  fullWidth={false}
-                  loading={busyId === user.id}
-                  onPress={() =>
-                    setConfirm({ user, next: suspended ? 'active' : 'suspended' })
-                  }
-                />
-              </View>
-            );
-          })}
+                </ListRow>
+              );
+            })}
+          </ListCard>
 
           {hasMore ? (
             <Button
@@ -273,19 +285,9 @@ function shortDate(at) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
+  screen: { flex: 1, backgroundColor: colors.sunken },
   controls: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.sm, gap: space.sm },
-  orgRow: { gap: space.sm, paddingBottom: space.xs },
   list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
-    minHeight: consoleLayout.rowHeight,
-    paddingVertical: space.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.hairline,
-  },
   identity: { flex: 1, minWidth: 0, gap: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   rating: { color: colors.inkMuted, minWidth: 42, textAlign: 'right' },

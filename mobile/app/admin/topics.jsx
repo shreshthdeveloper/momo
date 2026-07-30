@@ -4,17 +4,19 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { api } from '../../src/lib/api.js';
-import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace, useAdminPermissions } from '../../src/lib/admin.js';
 import {
+  ConsoleFooter,
   Text,
   Badge,
   Button,
-  Chip,
+  RowMenu,
+  Select,
   EmptyState,
   ErrorNotice,
   Header,
   ProgressBar,
+  CountRow,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import { TopicGlyph } from '../../src/components/Illustration.jsx';
@@ -31,7 +33,6 @@ import { colors, consoleLayout, elevation, layout, space } from '../../src/theme
  * comes straight back here — the list has to already show what was saved.
  */
 export default function AdminTopics() {
-  const goBack = useConsoleBack();
   const router = useRouter();
   const adminSpace = useAdminSpace();
   const { canManageTopics, canWrite } = useAdminPermissions(adminSpace);
@@ -69,7 +70,7 @@ export default function AdminTopics() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Topics" subtitle={adminSpace?.name} onBack={goBack} />
+      <Header title="Topics" subtitle={adminSpace?.name} />
 
       <ErrorNotice error={error} onRetry={load} />
 
@@ -93,22 +94,23 @@ export default function AdminTopics() {
         />
       ) : (
         <>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.filterBar}
-            contentContainerStyle={styles.filterContent}
-          >
-            <Chip label="All" active={filter === 'all'} onPress={() => setFilter('all')} />
-            {categories.map((cat) => (
-              <Chip
-                key={cat.id}
-                label={cat.name}
-                active={filter === cat.id}
-                onPress={() => setFilter(cat.id)}
-              />
-            ))}
-          </ScrollView>
+          {/* Categories are as many as the organization makes. A chip row put
+              all but the first three off the right edge of the screen. */}
+          <View style={styles.controls}>
+            <Select
+              value={filter}
+              options={[
+                { value: 'all', label: 'All categories', meta: `${items.length} topics` },
+                ...categories.map((cat) => ({
+                  value: cat.id,
+                  label: cat.name,
+                  meta: `${items.filter((t) => t.categoryId === cat.id).length} topics`,
+                })),
+              ]}
+              onChange={setFilter}
+              placeholder="All categories"
+            />
+          </View>
 
           <ScrollView
             contentContainerStyle={styles.list}
@@ -125,6 +127,8 @@ export default function AdminTopics() {
               />
             }
           >
+            <CountRow total={shown.length} noun="topic" />
+
             {shown.length === 0 ? (
               <EmptyState icon="book" title="Nothing here" body="No topics in this category yet." />
             ) : (
@@ -144,9 +148,9 @@ export default function AdminTopics() {
       )}
 
       {loaded && categories.length > 0 && canManageTopics ? (
-        <SafeAreaView edges={['bottom']} style={styles.footer}>
+        <ConsoleFooter>
           <Button label="New topic" onPress={() => router.push('/admin/topic-edit')} />
-        </SafeAreaView>
+        </ConsoleFooter>
       ) : null}
     </SafeAreaView>
   );
@@ -205,29 +209,49 @@ function TopicRow({ topic, category, canManageTopics, canWrite, router }) {
         </View>
       </View>
 
-      <View style={styles.readiness}>
-        <ProgressBar
-          value={published}
-          max={required}
-          color={isLive ? colors.correct : colors.optionC}
-          height={8}
-        />
-        <View style={styles.readinessRow}>
-          <Text variant="meta" color={colors.inkFaint}>
-            {published} of {required} questions
-          </Text>
-          {!archived && remaining > 0 ? (
-            <Text variant="meta" color={colors.optionC}>
-              {remaining} more to go live
+      {/**
+       * The bar is a countdown to LIVE, so it stops existing once the topic is
+       * live. It used to keep running afterwards against the same target, which
+       * is how a healthy topic ended up announcing "41 of 21 questions" over a
+       * bar that had been full for the last twenty of them — a ratio that reads
+       * as a bug even though nothing was wrong.
+       *
+       * Short of the target it counts up. At the target and beyond, it is a
+       * plain count of what the bank holds.
+       */}
+      {isLive || archived ? (
+        <Text variant="meta" color={colors.inkFaint} style={styles.readiness}>
+          {published} published {published === 1 ? 'question' : 'questions'}
+        </Text>
+      ) : (
+        <View style={styles.readiness}>
+          <ProgressBar value={published} max={required} color={colors.optionC} height={8} />
+          <View style={styles.readinessRow}>
+            <Text variant="meta" color={colors.inkFaint}>
+              {published} of {required} questions
             </Text>
-          ) : null}
+            {remaining > 0 ? (
+              <Text variant="meta" color={colors.optionC}>
+                {remaining} more to go live
+              </Text>
+            ) : null}
+          </View>
         </View>
-      </View>
+      )}
 
       <Text variant="meta" color={colors.inkFaint} numberOfLines={1} style={styles.sources}>
         {sourcesLine}
       </Text>
 
+      {/**
+       * One button and one menu, like every other row in the console.
+       *
+       * This card carried three controls in a row — a soft "Questions" pill
+       * then the words "Add" and "Edit" — which is a button beside two things
+       * that look like captions. Seeing this topic's questions is what a topic
+       * card is for, so that stays a button; the two edits go where every
+       * other row's verbs go.
+       */}
       <View style={styles.actions}>
         <Button
           size="sm"
@@ -236,26 +260,32 @@ function TopicRow({ topic, category, canManageTopics, canWrite, router }) {
           fullWidth={false}
           onPress={() => router.push({ pathname: '/admin/questions', params: { topicId: topic.id } })}
         />
-        {canWrite ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            label="Add"
-            fullWidth={false}
-            onPress={() =>
-              router.push({ pathname: '/admin/question-edit', params: { topicId: topic.id } })
-            }
-          />
-        ) : null}
-        {canManageTopics ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            label="Edit"
-            fullWidth={false}
-            onPress={() => router.push({ pathname: '/admin/topic-edit', params: { topicId: topic.id } })}
-          />
-        ) : null}
+        <View style={{ flex: 1 }} />
+        <RowMenu
+          title={topic.name}
+          label={`Actions for ${topic.name}`}
+          actions={[
+            canWrite
+              ? {
+                  key: 'add',
+                  label: 'Write a question here',
+                  icon: 'plus',
+                  onPress: () =>
+                    router.push({ pathname: '/admin/question-edit', params: { topicId: topic.id } }),
+                }
+              : null,
+            canManageTopics
+              ? {
+                  key: 'edit',
+                  label: 'Edit the topic',
+                  meta: 'Name, cover, category, status',
+                  icon: 'edit',
+                  onPress: () =>
+                    router.push({ pathname: '/admin/topic-edit', params: { topicId: topic.id } }),
+                }
+              : null,
+          ]}
+        />
       </View>
     </View>
   );
@@ -268,24 +298,18 @@ function TopicRow({ topic, category, canManageTopics, canWrite, router }) {
  * "Published".
  */
 function StatusBadge({ topic, isLive }) {
-  if (isLive) return <Badge label="Live" tone="correct" />;
+  // Tinted, not solid — a column of fully-lit green pills shouts over the
+  // topic names it is meant to annotate. See `Badge`.
+  if (isLive) return <Badge label="Live" tone="live" />;
   if (topic.status === TOPIC_STATUS.PUBLISHED) {
-    return (
-      <View style={styles.amberBadge}>
-        <Text variant="tiny" color={colors.optionC}>
-          Published, not live
-        </Text>
-      </View>
-    );
+    return <Badge label="Published, not live" tone="amber" />;
   }
-  if (topic.status === TOPIC_STATUS.ARCHIVED) return <Badge label="Archived" tone="ink" />;
+  if (topic.status === TOPIC_STATUS.ARCHIVED) return <Badge label="Archived" tone="quiet" />;
   return <Badge label="Draft" tone="soft" />;
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  filterBar: { flexGrow: 0, marginTop: space.xs },
-  filterContent: { paddingHorizontal: consoleLayout.gutter, gap: space.sm, paddingBottom: space.sm },
   list: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.lg },
   card: {
     backgroundColor: colors.nightRaised,
@@ -301,15 +325,10 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: layout.radiusInput,
     overflow: 'hidden',
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
   },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  amberBadge: {
-    paddingHorizontal: space.sm,
-    paddingVertical: 3,
-    borderRadius: 7,
-    backgroundColor: colors.amberSoft,
-  },
+  controls: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.md },
   readiness: { marginTop: space.md },
   readinessRow: {
     flexDirection: 'row',
@@ -319,10 +338,4 @@ const styles = StyleSheet.create({
   },
   sources: { marginTop: space.sm },
   actions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md },
-  footer: {
-    paddingHorizontal: consoleLayout.gutter,
-    paddingTop: space.sm,
-    paddingBottom: space.sm,
-    backgroundColor: colors.sunken,
-  },
 });

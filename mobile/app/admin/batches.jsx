@@ -8,21 +8,25 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
-import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace, useAdminPermissions } from '../../src/lib/admin.js';
 import {
   Text,
   Button,
   ConfirmSheet,
+  ConsoleFooter,
+  CountRow,
   EmptyState,
   ErrorNotice,
   Header,
+  ListCard,
+  ListRow,
   Sheet,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, consoleLayout, layout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, consoleType, elevation, layout, space } from '../../src/theme/index.js';
 
 /**
  * prd.md F8.4.5 — batches, which scope assignments, contests and leaderboards.
@@ -36,7 +40,7 @@ import { colors, consoleLayout, layout, space } from '../../src/theme/index.js';
  * Deleting a batch never deletes people: the server unassigns them.
  */
 export default function AdminBatches() {
-  const goBack = useConsoleBack();
+  const router = useRouter();
   const adminSpace = useAdminSpace();
   const { canManageStudents } = useAdminPermissions(adminSpace);
 
@@ -102,7 +106,7 @@ export default function AdminBatches() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Batches" subtitle={adminSpace?.name} onBack={goBack} />
+      <Header title="Batches" subtitle={adminSpace?.name} />
 
       <ErrorNotice error={error} onRetry={load} />
 
@@ -136,62 +140,89 @@ export default function AdminBatches() {
             />
           }
         >
-          {(rows ?? []).map((batch) => (
-            <View key={batch.id} style={styles.row}>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text variant="label" numberOfLines={1}>
-                  {batch.name}
-                </Text>
-                <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
-                  {[
-                    `${batch.studentCount ?? 0} ${batch.studentCount === 1 ? 'student' : 'students'}`,
-                    batch.year,
-                    batch.description,
-                  ]
-                    .filter(Boolean)
-                    .join('  ·  ')}
-                </Text>
-              </View>
+          {/**
+           * A card of rows, not four naked lines with a teal pill and the word
+           * "Delete" floating beside each. Every batch reads the same: the
+           * name, what is in it, and the one `⋯` every row in this console
+           * wears. The count is a figure column so the list can be read down.
+           */}
+          <CountRow total={rows?.length ?? 0} noun="batch" />
 
-              {canManageStudents ? (
-                <View style={styles.actions}>
-                  <Button
-                    size="sm"
-                    variant="soft"
-                    label="Rename"
-                    fullWidth={false}
-                    onPress={() =>
-                      setEditing({
-                        id: batch.id,
-                        name: batch.name,
-                        description: batch.description ?? '',
-                        year: batch.year ?? '',
-                      })
-                    }
-                  />
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    label="Delete"
-                    fullWidth={false}
-                    onPress={() => setConfirm(batch)}
-                  />
+          <ListCard style={elevation.raised}>
+            {(rows ?? []).map((batch, i) => (
+              <ListRow
+                key={batch.id}
+                last={i === rows.length - 1}
+                title={batch.name}
+                actions={
+                  canManageStudents
+                    ? [
+                        {
+                          key: 'students',
+                          label: 'See who is in it',
+                          meta: `${batch.studentCount ?? 0} ${batch.studentCount === 1 ? 'student' : 'students'}`,
+                          icon: 'friends',
+                          onPress: () =>
+                            router.push({
+                              pathname: '/admin/students',
+                              params: { batchId: batch.id },
+                            }),
+                        },
+                        {
+                          key: 'edit',
+                          label: 'Rename or edit',
+                          icon: 'edit',
+                          onPress: () =>
+                            setEditing({
+                              id: batch.id,
+                              name: batch.name,
+                              description: batch.description ?? '',
+                              year: batch.year ?? '',
+                            }),
+                        },
+                        {
+                          key: 'delete',
+                          label: 'Delete the batch',
+                          icon: 'trash',
+                          destructive: true,
+                          onPress: () => setConfirm(batch),
+                        },
+                      ]
+                    : undefined
+                }
+              >
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text variant="label" numberOfLines={1}>
+                    {batch.name}
+                  </Text>
+                  {batch.year || batch.description ? (
+                    <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
+                      {[batch.year, batch.description].filter(Boolean).join('  ·  ')}
+                    </Text>
+                  ) : null}
                 </View>
-              ) : null}
-            </View>
-          ))}
 
-          {canManageStudents ? (
-            <Button
-              variant="soft"
-              label="Create a batch"
-              icon="plus"
-              style={{ marginTop: space.lg }}
-              onPress={() => setEditing({ name: '', description: '', year: '' })}
-            />
-          ) : null}
+                <Text style={styles.figure} color={colors.inkMuted} numberOfLines={1}>
+                  {batch.studentCount ?? 0}
+                </Text>
+
+              </ListRow>
+            ))}
+          </ListCard>
         </ScrollView>
       )}
+
+      {/* One primary, in the footer, where every other console list keeps it.
+          It used to be a soft pill trailing the last row, so it scrolled out
+          of reach the moment there were more batches than a screenful. */}
+      {rows?.length > 0 && canManageStudents ? (
+        <ConsoleFooter>
+          <Button
+            label="Create a batch"
+            onPress={() => setEditing({ name: '', description: '', year: '' })}
+          />
+        </ConsoleFooter>
+      ) : null}
 
       <Sheet
         visible={Boolean(editing)}
@@ -265,19 +296,13 @@ export default function AdminBatches() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
-  list: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.md, paddingBottom: space.xxxl },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
-    minHeight: 68,
-    paddingVertical: space.sm,
-  },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  screen: { flex: 1, backgroundColor: colors.sunken },
+  list: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.md, paddingBottom: space.lg },
+  /** The headcount column — right-aligned tabular figures, read straight down. */
+  figure: { ...consoleType.figure, minWidth: 32, textAlign: 'right' },
   fieldLabel: { marginTop: space.md, marginBottom: space.xs },
   input: {
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     borderWidth: 1,
     borderColor: colors.hairline,

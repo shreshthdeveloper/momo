@@ -22,10 +22,10 @@ import {
   ConfirmSheet,
   EmptyState,
   ErrorNotice,
-  Segmented,
+  Tabs,
+  Header,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton, ListSkeleton } from '../../src/components/Skeletons.jsx';
-import ConsoleHeader from '../../src/components/ConsoleHeader.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import { QUESTION_TEXT_SOFT_MAX } from '../../src/shared/constants.js';
 import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
@@ -176,9 +176,9 @@ export default function SuperModeration() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <ConsoleHeader title="Moderation" subtitle="Reports and cheat flags" />
+      <Header title="Moderation" subtitle="Reports and cheat flags" />
 
-      <Segmented options={TABS} value={tab} onChange={setTab} style={styles.tabs} />
+      <Tabs options={TABS} value={tab} onChange={setTab} />
 
       <ErrorNotice error={error} onRetry={load} />
 
@@ -514,7 +514,6 @@ function ReasonSheet({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  tabs: { marginHorizontal: consoleLayout.gutter, marginTop: space.xs, marginBottom: space.sm },
   list: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.xs, paddingBottom: space.xxxl },
   card: {
     backgroundColor: colors.nightRaised,
@@ -566,7 +565,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.nightRaised,
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
     padding: consoleLayout.gutter,
@@ -583,7 +582,7 @@ const styles = StyleSheet.create({
   reasonInput: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,
@@ -595,5 +594,5 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     marginBottom: space.sm,
   },
-  reasonInputFocused: { borderColor: colors.accent, backgroundColor: colors.canvas },
+  reasonInputFocused: { borderColor: colors.accent, backgroundColor: colors.nightRaised },
 });

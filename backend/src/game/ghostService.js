@@ -123,6 +123,40 @@ function syntheticCountry(playerCountry) {
   return pickRandom(SYNTHETIC_COUNTRIES);
 }
 
+/**
+ * The face a ghost wears — and the reason a REPLAY needs one too.
+ *
+ * A replay is a real past game, and it used to be served under the real
+ * player's name, avatar, id and city. F6.7.5 says the player must not be able
+ * to tell a ghost from a live opponent, and snapshotting the identity looked
+ * like the way to honour that: a replayed opponent had a name and a face
+ * exactly as a live one does.
+ *
+ * It does the opposite in the place this product actually runs. A school has
+ * five, ten, thirty members and they know each other. Playing "Garv" at
+ * midnight when Garv is plainly not online does not read as a live opponent —
+ * it reads as the app lying, and it also quietly discloses that Garv played
+ * this topic and how well he did. The real account id was going out on the
+ * wire with it.
+ *
+ * So a replay keeps its BEHAVIOUR — the timings and the answers of a real human
+ * at this level, which is the entire reason replays beat synthetic scripts — and
+ * borrows a synthetic identity for the presentation. Nothing that leaves the
+ * server points at the person who played it; `Replay.userId` stays server-side
+ * for `excludeUserId` and bookkeeping.
+ */
+export function syntheticIdentity({ country } = {}) {
+  const suffix = 10 + Math.floor(Math.random() * 89);
+  return {
+    // Not a real account, and deliberately not the replay's. The client is sent
+    // this as the opponent id, so it has to resolve to nobody.
+    userId: new mongoose.Types.ObjectId(),
+    displayName: `${pickRandom(SYNTHETIC_NAMES)}${suffix}`,
+    avatarUrl: null,
+    country: syntheticCountry(country),
+  };
+}
+
 export async function buildSyntheticOpponent({
   topicId,
   rating,

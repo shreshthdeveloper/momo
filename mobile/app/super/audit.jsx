@@ -72,7 +72,7 @@ export default function SuperAudit() {
                   <Text variant="label" numberOfLines={1} style={{ flexShrink: 1 }}>
                     {row.action}
                   </Text>
-                  {row.impersonated ? <Badge label="Impersonated" tone="wrong" /> : null}
+                  {row.impersonated ? <Badge label="Impersonated" tone="danger" /> : null}
                 </View>
                 <Text variant="meta" color={colors.inkMuted} numberOfLines={2}>
                   {row.summary || '—'}
@@ -92,7 +92,7 @@ export default function SuperAudit() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
+  screen: { flex: 1, backgroundColor: colors.sunken },
   list: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.md, paddingBottom: space.xxxl },
   row: {
     paddingVertical: space.md,

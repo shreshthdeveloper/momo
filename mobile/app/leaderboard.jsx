@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
   head: { paddingHorizontal: layout.gutter, paddingTop: space.md, gap: 2 },
   segmented: { marginHorizontal: layout.gutter, marginTop: space.lg, marginBottom: space.lg },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: space.xxxl },
+  list: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
 
   podium: {
     backgroundColor: colors.nightRaised,

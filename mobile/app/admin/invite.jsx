@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { Share, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
-import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import { Text, Button, ConfirmSheet, ErrorNotice, Header, Loading } from '../../src/components/ui.jsx';
 import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
@@ -13,7 +12,6 @@ import { colors, consoleLayout, elevation, layout, space, type } from '../../src
  * Rotation kills the old code instantly, so it goes through a confirm.
  */
 export default function AdminInvite() {
-  const goBack = useConsoleBack();
   const adminSpace = useAdminSpace();
   const [invite, setInvite] = useState(null);
   const [error, setError] = useState(null);
@@ -50,7 +48,7 @@ export default function AdminInvite() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Invite code" subtitle={adminSpace?.name} onBack={goBack} />
+      <Header title="Invite code" subtitle={adminSpace?.name} />
 
       <ErrorNotice error={error} onRetry={load} />
 
@@ -111,7 +109,7 @@ export default function AdminInvite() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
+  screen: { flex: 1, backgroundColor: colors.sunken },
   body: { padding: consoleLayout.gutter },
   codeCard: {
     alignItems: 'center',

@@ -22,10 +22,13 @@ import {
   ConfirmSheet,
   EmptyState,
   ErrorNotice,
+  RowMenu,
   SearchField,
-  Segmented,
+  Tabs,
+  Header,
+  CountRow,
+  ConsoleFooter,
 } from '../../src/components/ui.jsx';
-import ConsoleHeader from '../../src/components/ConsoleHeader.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import { colors, consoleLayout, elevation, fonts, layout, space, type } from '../../src/theme/index.js';
 
@@ -161,9 +164,9 @@ export default function SuperTenants() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <ConsoleHeader title="Organizations" subtitle="Approvals, suspensions, support access" />
+      <Header title="Organizations" subtitle="Approvals, suspensions, support access" />
 
-      <Segmented options={TABS} value={status} onChange={setStatus} style={styles.tabs} />
+      <Tabs options={TABS} value={status} onChange={setStatus} />
       <SearchField
         style={styles.search}
         value={query}
@@ -195,9 +198,7 @@ export default function SuperTenants() {
             />
           }
         >
-          <Text variant="meta" color={colors.inkFaint} style={styles.count}>
-            {rows.length} {rows.length === 1 ? 'organization' : 'organizations'}
-          </Text>
+          <CountRow total={rows.length} noun="organization" />
 
           {rows.map((row) => (
             <TenantCard
@@ -224,9 +225,9 @@ export default function SuperTenants() {
       )}
 
       {rows ? (
-        <SafeAreaView edges={['bottom']} style={styles.footer}>
+        <ConsoleFooter>
           <Button label="New organization" onPress={() => router.push('/super/tenant-new')} />
-        </SafeAreaView>
+        </ConsoleFooter>
       ) : null}
 
       {/* ── Suspend: destructive, so it names the consequence. */}
@@ -329,21 +330,68 @@ function TenantCard({ row, busy, onApprove, onReject, onSupport, onSuspend, onRe
         {meta}
       </Text>
 
-      {row.status === 'pending' ? (
-        <View style={styles.actions}>
+      {/**
+       * The safe, expected verb is the button; everything else — including
+       * both irreversible ones — goes in the same `⋯` every row in both
+       * consoles wears. Approving an organization and rejecting it were a
+       * teal pill beside grey text, which is what a button beside a caption
+       * looks like, on the one screen where the grey one is unrecoverable.
+       */}
+      <View style={styles.actions}>
+        {row.status === 'pending' ? (
           <Button size="sm" label="Approve" fullWidth={false} loading={busy} onPress={onApprove} />
-          <Button size="sm" variant="ghost" label="Reject" fullWidth={false} disabled={busy} onPress={onReject} />
-        </View>
-      ) : row.status === 'active' ? (
-        <View style={styles.actions}>
-          <Button size="sm" variant="soft" label="Log support access" fullWidth={false} disabled={busy} onPress={onSupport} />
-          <Button size="sm" variant="ghost" label="Suspend" fullWidth={false} disabled={busy} onPress={onSuspend} />
-        </View>
-      ) : row.status === 'suspended' ? (
-        <View style={styles.actions}>
-          <Button size="sm" variant="soft" label="Reactivate" fullWidth={false} loading={busy} onPress={onReactivate} />
-        </View>
-      ) : null}
+        ) : row.status === 'suspended' ? (
+          <Button
+            size="sm"
+            variant="soft"
+            label="Reactivate"
+            fullWidth={false}
+            loading={busy}
+            onPress={onReactivate}
+          />
+        ) : null}
+        <View style={{ flex: 1 }} />
+        <RowMenu
+          title={row.name}
+          label={`Actions for ${row.name}`}
+          actions={[
+            row.status === 'pending'
+              ? { key: 'approve', label: 'Approve', icon: 'check', onPress: onApprove }
+              : null,
+            row.status === 'active'
+              ? {
+                  key: 'support',
+                  label: 'Log support access',
+                  meta: 'Recorded in the audit trail',
+                  icon: 'shield',
+                  onPress: onSupport,
+                }
+              : null,
+            row.status === 'suspended'
+              ? { key: 'reactivate', label: 'Reactivate', icon: 'check', onPress: onReactivate }
+              : null,
+            row.status === 'pending'
+              ? {
+                  key: 'reject',
+                  label: 'Reject the application',
+                  icon: 'close',
+                  destructive: true,
+                  onPress: onReject,
+                }
+              : null,
+            row.status === 'active'
+              ? {
+                  key: 'suspend',
+                  label: 'Suspend the organization',
+                  meta: 'Students and admins lose access',
+                  icon: 'lock',
+                  destructive: true,
+                  onPress: onSuspend,
+                }
+              : null,
+          ]}
+        />
+      </View>
     </View>
   );
 }
@@ -354,17 +402,11 @@ function TenantCard({ row, busy, onApprove, onReject, onSupport, onSuspend, onRe
  * colour is never the only signal.
  */
 function StatusBadge({ status }) {
-  if (status === 'active') return <Badge label="Active" tone="correct" />;
-  if (status === 'suspended') return <Badge label="Suspended" tone="wrong" />;
-  if (status === 'rejected') return <Badge label="Rejected" tone="wrong" />;
+  if (status === 'active') return <Badge label="Active" tone="live" />;
+  if (status === 'suspended') return <Badge label="Suspended" tone="danger" />;
+  if (status === 'rejected') return <Badge label="Rejected" tone="danger" />;
   if (status === 'pending') {
-    return (
-      <View style={styles.amberBadge}>
-        <Text variant="tiny" color={colors.optionC}>
-          Pending
-        </Text>
-      </View>
-    );
+    return <Badge label="Pending" tone="amber" />;
   }
   return null;
 }
@@ -442,10 +484,8 @@ function ReasonSheet({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  tabs: { marginHorizontal: consoleLayout.gutter, marginTop: space.xs },
   search: { marginHorizontal: consoleLayout.gutter, marginTop: space.md, marginBottom: space.sm },
   list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.lg },
-  count: { paddingVertical: space.sm },
   card: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,
@@ -472,27 +512,15 @@ const styles = StyleSheet.create({
     color: colors.onColor,
   },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  amberBadge: {
-    paddingHorizontal: space.sm,
-    paddingVertical: 3,
-    borderRadius: 7,
-    backgroundColor: colors.amberSoft,
-  },
   metaLine: { marginTop: space.md },
   actions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md },
-  footer: {
-    paddingHorizontal: consoleLayout.gutter,
-    paddingTop: space.sm,
-    paddingBottom: space.sm,
-    backgroundColor: colors.sunken,
-  },
   sheetScrim: {
     flex: 1,
     backgroundColor: colors.scrim,
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.nightRaised,
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
     padding: consoleLayout.gutter,
@@ -509,7 +537,7 @@ const styles = StyleSheet.create({
   reasonInput: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,
@@ -521,5 +549,5 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     marginBottom: space.sm,
   },
-  reasonInputFocused: { borderColor: colors.accent, backgroundColor: colors.canvas },
+  reasonInputFocused: { borderColor: colors.accent, backgroundColor: colors.nightRaised },
 });

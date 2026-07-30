@@ -101,6 +101,6 @@ export default function MyTopics() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: space.xxxl },
+  list: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
   count: { paddingBottom: space.md },
 });

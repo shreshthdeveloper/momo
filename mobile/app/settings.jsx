@@ -408,8 +408,10 @@ function Row({ icon, tint, label, value, onPress, destructive, last }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.sunken },
-  content: { padding: layout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
+  // `canvas`, like every other player screen — `sunken` is the console's field.
+  // The card is already `nightRaised`, so it still lifts off it.
+  screen: { flex: 1, backgroundColor: colors.canvas },
+  content: { padding: layout.gutter, paddingTop: space.sm, paddingBottom: layout.scrollBottom },
   card: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,

@@ -134,7 +134,27 @@ test('a stored replay is preferred over a synthetic opponent, and its usage is s
   await a.emit(C2S.QUEUE_JOIN, { topicId: String(topic._id) });
 
   const found = await a.wait(S2C.MATCH_FOUND, { timeoutMs: 4000 });
-  assert.equal(found.payload.opponent.displayName, 'PastPlayer', 'the replay was used');
+
+  /**
+   * The replay was used — proven by the question set below, not by the name.
+   *
+   * This used to assert the opponent WAS called `PastPlayer`, which is the thing
+   * that turned out to be the bug: in an organization of a few people, replaying
+   * a classmate's game under their own name reads as the app inventing a match
+   * they never played, and it discloses their result. So the assertion is
+   * inverted — the identity must NOT be theirs.
+   */
+  assert.notEqual(
+    found.payload.opponent.displayName,
+    'PastPlayer',
+    'a replayed opponent must not wear the original player’s name',
+  );
+  assert.notEqual(
+    String(found.payload.opponent.id),
+    String(ghostUser.user._id),
+    'a replayed opponent must not carry the original player’s account id',
+  );
+  assert.ok(found.payload.opponent.displayName, 'it still has a name to show');
 
   // The replay's question set is reused, so its answers stay meaningful.
   const start = await a.wait(S2C.ROUND_START, { predicate: (p) => p.roundIndex === 0 });

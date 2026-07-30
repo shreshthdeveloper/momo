@@ -11,6 +11,7 @@ import {
   Button,
   SearchField,
   SectionHeader,
+  TabHeader,
 } from '../../src/components/ui.jsx';
 import { LeagueBadge } from '../../src/components/League.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
@@ -220,20 +221,20 @@ export default function Friends() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <View style={styles.head}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text variant="display">Friends</Text>
-        </View>
-        {/* Always available, not just when the list is empty. */}
-        <Button
-          variant="soft"
-          size="sm"
-          label="Invite"
-          icon="share"
-          fullWidth={false}
-          onPress={invite}
-        />
-      </View>
+      <TabHeader
+        title="Friends"
+        right={
+          /* Always available, not just when the list is empty. */
+          <Button
+            variant="soft"
+            size="sm"
+            label="Invite"
+            icon="share"
+            fullWidth={false}
+            onPress={invite}
+          />
+        }
+      />
 
       <SearchField
         style={styles.search}
@@ -720,13 +721,6 @@ function playedLine(s) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  head: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
-    paddingHorizontal: layout.gutter,
-    paddingTop: space.md,
-  },
   search: { marginHorizontal: layout.gutter, marginTop: space.lg, marginBottom: space.md },
   list: { paddingHorizontal: layout.gutter, paddingBottom: layout.dockClearance },
 

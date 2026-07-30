@@ -225,10 +225,28 @@ test('contests', async (t) => {
 
     const ghost = second.players.find((p) => p.isGhost);
     assert.ok(ghost, 'the second entrant should get an opponent');
+
+    /**
+     * That it is the first entrant REPLAYED — rather than a synthetic
+     * stand-in — is proven by `sourceMatchId`, which only a replay ghost
+     * carries. It used to be asserted by the name being "Student A", and that
+     * was the bug: entrants in a contest are all in one organization, so the
+     * second entrant was shown a classmate's name and score on a match that
+     * classmate was not playing.
+     */
+    const firstRun = await Match.findOne({
+      contestId: contest._id,
+      'players.userId': studentA.user._id,
+    }).lean();
     assert.equal(
+      String(ghost.sourceMatchId),
+      String(firstRun._id),
+      'the opponent is the first entrant’s run, replayed',
+    );
+    assert.notEqual(
       ghost.displayName,
       'Student A',
-      'and it should be the first entrant, replayed — not a synthetic stand-in',
+      'but it must not be served under their name',
     );
   });
 

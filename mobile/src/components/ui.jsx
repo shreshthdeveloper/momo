@@ -5,6 +5,7 @@ import {
   Image,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text as RNText,
   TextInput,
@@ -22,6 +23,7 @@ import {
   type,
   motion,
 } from '../theme/index.js';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useConsoleNav } from './consoleNav.js';
 import { useReducedMotion } from '../lib/motion.js';
 import { resolveAvatar } from '../lib/avatar.js';
@@ -327,6 +329,13 @@ export function SectionHeader({ title, action, onAction, style }) {
 
 /** A filter pill. Filled with the accent when on, quiet when off (§6.7). */
 export function Chip({ label, active, onPress, style }) {
+  /**
+   * A console chip is smaller. Filters are chrome, not content: at the player's
+   * 38pt a row of six of them is a band as tall as two rows of the list it is
+   * filtering, and the question bank stacked three such rows before the first
+   * question appeared.
+   */
+  const inConsole = Boolean(useConsoleNav());
   return (
     <Pressable
       onPress={onPress}
@@ -334,6 +343,7 @@ export function Chip({ label, active, onPress, style }) {
       accessibilityState={{ selected: Boolean(active) }}
       style={({ pressed }) => [
         styles.chip,
+        inConsole ? styles.chipConsole : null,
         active ? styles.chipOn : styles.chipOff,
         pressed ? { opacity: 0.8 } : null,
         style,
@@ -350,7 +360,19 @@ export function Chip({ label, active, onPress, style }) {
   );
 }
 
-/** A small count or status pill that sits on artwork — "16 Qs", "Live". */
+/**
+ * A small count or status pill that sits on artwork — "16 Qs", "Live".
+ *
+ * Two families, and which one to use is not a matter of taste:
+ *
+ * - **Solid** (`accent`, `correct`, `wrong`) for a pill sitting ON artwork or
+ *   a photo, where only a solid fill separates it from what is behind it.
+ * - **Tinted** (`live`, `danger`, `amber`, `soft`, `quiet`) for a pill sitting
+ *   in a LIST, which is every status badge in both consoles. §1 of the theme:
+ *   saturated fills are for verdicts, standings and actions. A row of fully-lit
+ *   green "Live" pills down a topic list is none of those — it is the loudest
+ *   thing on a screen whose actual subject is the topic names beside them.
+ */
 export function Badge({ label, tone = 'ink', style }) {
   const bg = {
     ink: 'rgba(27, 27, 47, 0.72)',
@@ -358,18 +380,24 @@ export function Badge({ label, tone = 'ink', style }) {
     correct: colors.correct,
     wrong: colors.wrong,
     soft: colors.accentSoft,
+    live: colors.correctSoft,
+    danger: colors.wrongSoft,
+    amber: colors.amberSoft,
+    quiet: colors.sunken,
   }[tone];
   /**
    * The accent fill takes near-black type, not white: the accent is bright
    * enough that white on it is 1.9:1. `correct` and `wrong` are dark enough to
    * keep white, so the fill decides rather than one rule for all of them.
    */
-  const fg =
-    tone === 'soft'
-      ? colors.accent
-      : tone === 'accent'
-        ? colors.onAccent
-        : colors.onColor;
+  const fg = {
+    soft: colors.accent,
+    accent: colors.onAccent,
+    live: colors.correct,
+    danger: colors.wrong,
+    amber: colors.optionC,
+    quiet: colors.inkMuted,
+  }[tone] ?? colors.onColor;
   return (
     <View style={[styles.badge, { backgroundColor: bg }, style]}>
       <Text variant="tiny" color={fg}>
@@ -424,7 +452,19 @@ export function RankTile({ rank, self, size = 30 }) {
   );
 }
 
-/** design.md §6.7 — the scope switcher. One row, the selected pane in white. */
+/**
+ * design.md §6.7 — the scope switcher: a choice INSIDE a form.
+ *
+ * "Easy / medium / hard", "open / invite only", "everyone / one organization" —
+ * a control that answers a field, sitting in a column of fields. It is not the
+ * thing at the top of a list screen; see `Tabs` for that.
+ *
+ * The selected pane used to be `canvas` on the `sunken` track, which is a step
+ * of about 1.1:1 — invisible — held up by a shadow struck for white paper that
+ * renders as nothing on a near-black field. The one cue that survived was the
+ * label turning teal. Now the pane carries the accent's own tint and its edge,
+ * so the choice is legible before you read the words.
+ */
 export function Segmented({ options, value, onChange, style }) {
   return (
     <View style={[styles.segmented, style]}>
@@ -445,6 +485,446 @@ export function Segmented({ options, value, onChange, style }) {
         );
       })}
     </View>
+  );
+}
+
+/**
+ * Page tabs — the top-level switch on a list screen.
+ *
+ * Every console list screen used `Segmented` for this: Active/Pending/Suspended,
+ * Our bank/Central bank, Open/Resolved/Dismissed. A pill track is the wrong
+ * shape for the job. It reads as a control you set rather than a place you are,
+ * it costs 56pt of the top of the screen before a single row of the list, and
+ * on night its selected pane was all but invisible — so the whole band was
+ * spending a lot of screen to say very little.
+ *
+ * Tabs say it the way a phone says it: words on the field, the current one lit
+ * and underlined in the accent, and the bar carrying the hairline that closes
+ * the header region. Forty points, and the selected state survives a photograph.
+ *
+ *   ┌────────────────────────────────────────┐
+ *   │  Active      Pending      Suspended    │
+ *   │  ───────                               │
+ *   └────────────────────────────────────────┘
+ *
+ * Up to four tabs share the width; beyond that they scroll, because four short
+ * words is where a shared row stops being readable.
+ */
+export function Tabs({ options, value, onChange, style }) {
+  const spread = options.length <= 4;
+
+  const tabs = options.map((option) => {
+    const on = option.value === value;
+    return (
+      <Pressable
+        key={String(option.value)}
+        onPress={() => onChange(option.value)}
+        accessibilityRole="tab"
+        accessibilityState={{ selected: on }}
+        accessibilityLabel={option.label}
+        style={({ pressed }) => [
+          styles.tab,
+          spread ? { flex: 1 } : null,
+          pressed && !on ? { opacity: 0.7 } : null,
+        ]}
+      >
+        <View style={[styles.tabInner, on ? styles.tabInnerOn : null]}>
+          <Text variant="label" color={on ? colors.accent : colors.inkMuted} numberOfLines={1}>
+            {option.label}
+          </Text>
+        </View>
+      </Pressable>
+    );
+  });
+
+  if (spread) {
+    return (
+      <View style={[styles.tabBar, style]} accessibilityRole="tablist">
+        {tabs}
+      </View>
+    );
+  }
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={[styles.tabBarScroll, style]}
+      contentContainerStyle={styles.tabBarScrollContent}
+      accessibilityRole="tablist"
+    >
+      {tabs}
+    </ScrollView>
+  );
+}
+
+/**
+ * One row of filter chips that cannot clip.
+ *
+ * For a FIXED, short, known-at-design-time set — easy/medium/hard, 7/14/21.
+ * Anything driven by data (topics, batches, organizations, categories) belongs
+ * in a `Select`: a chip row for those is a horizontal scroller, and a
+ * horizontal scroller is a control that hides most of itself off the right
+ * edge of the screen and gives you no way to know what is out there.
+ */
+export function FilterBar({ options, value, onChange, style }) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={[styles.filterBar, style]}
+      contentContainerStyle={styles.filterBarContent}
+    >
+      {options.map((option) => (
+        <Chip
+          key={String(option.value)}
+          label={option.label}
+          active={option.value === value}
+          onPress={() => onChange(option.value)}
+        />
+      ))}
+    </ScrollView>
+  );
+}
+
+/**
+ * A single choice out of a list the DATA decides the length of.
+ *
+ * The console had one answer for this everywhere and it was the wrong one: a
+ * horizontal row of chips. Which topic, which batch, which organization, which
+ * category — each was a scroller, and every one of them had the same three
+ * faults. Most of the options are off-screen with nothing to say so. The chip
+ * you want is a swipe away in a list with no order you can predict. And the
+ * row has to be re-scrolled every time the screen re-renders to see what is
+ * even selected.
+ *
+ * They were also, quietly, all different: some had "All" first, some didn't,
+ * some scrolled under the search field, some over it.
+ *
+ * This is the one control for the job — a field that states the current choice
+ * and opens a list. The list is vertical, so a long one scrolls the way every
+ * other long list in the app scrolls, and the selected row is marked rather
+ * than merely coloured.
+ *
+ *   ┌────────────────────────────────┐
+ *   │ Batch                          │
+ *   │ ┌────────────────────────────┐ │
+ *   │ │ Class 9A                 ⌄ │ │
+ *   │ └────────────────────────────┘ │
+ *   └────────────────────────────────┘
+ */
+export function Select({
+  label,
+  value,
+  options,
+  onChange,
+  placeholder = 'Choose',
+  disabled = false,
+  style,
+}) {
+  const [open, setOpen] = useState(false);
+  const current = options.find((option) => option.value === value);
+
+  return (
+    <View style={style}>
+      {label ? (
+        <Text variant="label" color={colors.inkMuted} style={styles.selectLabel}>
+          {label}
+        </Text>
+      ) : null}
+      <Pressable
+        onPress={disabled ? undefined : () => setOpen(true)}
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={`${label ?? 'Choose'} — ${current?.label ?? placeholder}`}
+        accessibilityState={{ disabled, expanded: open }}
+        style={({ pressed }) => [
+          styles.select,
+          disabled && { opacity: 0.5 },
+          pressed && { backgroundColor: colors.canvas },
+        ]}
+      >
+        <Text
+          variant="body"
+          color={current ? colors.ink : colors.inkFaint}
+          numberOfLines={1}
+          style={{ flex: 1 }}
+        >
+          {current?.label ?? placeholder}
+        </Text>
+        <Icon name="chevronDown" size={16} color={colors.inkFaint} />
+      </Pressable>
+
+      <Sheet
+        visible={open}
+        title={label ?? 'Choose'}
+        onClose={() => setOpen(false)}
+        accessibilityLabel={label ?? 'Choose'}
+      >
+        <ScrollView
+          style={styles.selectList}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {options.map((option) => {
+            const on = option.value === value;
+            return (
+              <Pressable
+                key={String(option.value)}
+                onPress={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                style={({ pressed }) => [styles.selectRow, pressed && { opacity: 0.7 }]}
+              >
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text variant="body" color={on ? colors.accent : colors.ink} numberOfLines={1}>
+                    {option.label}
+                  </Text>
+                  {option.meta ? (
+                    <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
+                      {option.meta}
+                    </Text>
+                  ) : null}
+                </View>
+                {on ? <Icon name="check" size={18} color={colors.accent} /> : null}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </Sheet>
+    </View>
+  );
+}
+
+/**
+ * ── The console page, as four parts ────────────────────────────────────────
+ *
+ * Thirty screens each decided these for themselves, and the result is what a
+ * console looks like when nobody wrote the rule down: fourteen screens on
+ * `canvas` and sixteen on `sunken`; the create button in a footer on six, a `+`
+ * in the header on two, trailing the last row on three, and only inside the
+ * empty state on four; three different skeletons; and every list picking
+ * between a card per record and bare rows on the field.
+ *
+ * So the parts are components now, and the rule is:
+ *
+ * 1. **The field is `sunken`.** Every console screen, no exceptions — it is the
+ *    colour `ConsoleShell` and the navigator already declare for the content
+ *    region, so a screen that used `canvas` was a lighter rectangle sitting on
+ *    the console's own backdrop.
+ * 2. **One primary, in the footer.** Always full-width, always the last thing
+ *    down the screen, never a `+` hiding in the header and never trailing the
+ *    last row where it scrolls out of reach.
+ * 3. **Records go in a `ListCard`; things with a body get a card each.** The
+ *    choice is the data's, not the screen's: a batch is a name and a number, so
+ *    it is a row; a question has three lines of question text and a topic has a
+ *    readiness bar, so those are cards. Both use the same fill, radius, border
+ *    and padding.
+ * 4. **A `CountRow` above every list.** What is on screen, out of what matched.
+ */
+
+/** The one card a list of records lives in. Rows divide themselves. */
+export function ListCard({ children, style }) {
+  return <View style={[styles.listCard, style]}>{children}</View>;
+}
+
+/**
+ * One record. `last` drops the divider, which is the whole reason this is a
+ * component — every screen was writing that conditional by hand and half of
+ * them left a hairline hanging under the final row.
+ */
+export function ListRow({
+  children,
+  onPress,
+  actions,
+  title,
+  last = false,
+  style,
+  accessibilityLabel,
+}) {
+  /**
+   * `actions` makes the WHOLE ROW the way in.
+   *
+   * The row used to carry an overflow button, so a list had two targets per
+   * line: the row, and a small glyph inside it that opened everything the row
+   * could actually do. Handing the row's own press to the sheet removes the
+   * competition — there is one target, it is the full width of the line, and
+   * the chevron at the end is the label for it rather than a separate control.
+   */
+  const [open, setOpen] = useState(false);
+  const shown = (actions ?? []).filter(Boolean);
+  const hasMenu = shown.length > 0;
+  const press = hasMenu ? () => setOpen(true) : onPress;
+
+  const body = !press ? (
+    <View style={[styles.listRow, last && styles.listRowLast, style]}>{children}</View>
+  ) : (
+    <Pressable
+      onPress={press}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? title}
+      style={({ pressed }) => [
+        styles.listRow,
+        last && styles.listRowLast,
+        pressed && styles.listRowPressed,
+        style,
+      ]}
+    >
+      {children}
+      {/* A row that leads somewhere says so, whether that somewhere is a sheet
+          of actions or another screen. */}
+      <Icon name="chevronRight" size={16} color={colors.inkFaint} />
+    </Pressable>
+  );
+
+  if (!hasMenu) return body;
+  return (
+    <>
+      {body}
+      <ActionSheet
+        visible={open}
+        title={title}
+        actions={shown}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+}
+
+/** The sheet of verbs a row or a header opens. One layout for both. */
+function ActionSheet({ visible, title, actions, onClose }) {
+  return (
+    <Sheet visible={visible} title={title} onClose={onClose} accessibilityLabel={title}>
+      <View style={styles.menuList}>
+        {actions.map((action) => (
+          <Pressable
+            key={action.key ?? action.label}
+            onPress={() => {
+              onClose();
+              action.onPress?.();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={action.label}
+            style={({ pressed }) => [
+              styles.menuRow,
+              action.destructive && styles.menuRowDanger,
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Icon
+              name={action.icon ?? 'chevronRight'}
+              size={18}
+              color={action.destructive ? colors.wrong : colors.accent}
+            />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text variant="label" color={action.destructive ? colors.wrong : colors.ink}>
+                {action.label}
+              </Text>
+              {action.meta ? (
+                <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
+                  {action.meta}
+                </Text>
+              ) : null}
+            </View>
+          </Pressable>
+        ))}
+      </View>
+    </Sheet>
+  );
+}
+
+/**
+ * What is on screen, out of what matched — and the one screen-level action
+ * that is not the primary (Select, Export) on the right.
+ */
+export function CountRow({ shown, total, noun, action, onAction }) {
+  const plural = total === 1 ? noun : `${noun}s`;
+  return (
+    <View style={styles.countRow}>
+      <Text variant="meta" color={colors.inkFaint} style={{ flex: 1 }}>
+        {shown != null && total != null && shown < total
+          ? `${shown} of ${total} ${plural}`
+          : `${total ?? shown ?? 0} ${plural}`}
+      </Text>
+      {action ? (
+        <Pressable
+          onPress={onAction}
+          hitSlop={8}
+          accessibilityRole="button"
+          style={({ pressed }) => (pressed ? { opacity: 0.7 } : null)}
+        >
+          <Text variant="label" color={colors.accent}>
+            {action}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * The footer that holds the one primary action.
+ *
+ * Its own safe-area inset and its own hairline, so the button sits above the
+ * gesture bar on every phone and the list visibly scrolls under it rather than
+ * ending in an ambiguous gap.
+ */
+export function ConsoleFooter({ children }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={[styles.consoleFooter, { paddingBottom: Math.max(insets.bottom, space.md) }]}>
+      {children}
+    </View>
+  );
+}
+
+/**
+ * An overflow `⋯`, for a CARD or a HEADER — never for a list row.
+ *
+ * The split, because the two cases genuinely differ:
+ *
+ *   **List rows** pass `actions` to `ListRow`. The whole line is the target and
+ *   a chevron says so. A `⋯` inside a row is a second, smaller target competing
+ *   with the row it sits in, which is what made the roster and the batch list
+ *   feel fiddly.
+ *
+ *   **Cards and headers** use this. A card already carries a real button (topic
+ *   "Questions", contest "Standings"), so its extra verbs need a control of
+ *   their own rather than the card's press — and a chevron in the top-right of a
+ *   header would promise navigation the header does not perform.
+ *
+ * Both open the same `ActionSheet`, so the verbs read identically wherever they
+ * were reached from.
+ *
+ * A console list row used to lay its verbs out end to end — a soft "Rename"
+ * pill beside a ghost "Delete", a soft "Batch" beside a ghost "Suspend" — and
+ * that had three problems at once. The pair reads as one button and one label,
+ * because a tinted pill next to grey text is exactly what a button next to a
+ * caption looks like. Rows came out different widths depending on which verbs
+ * applied, so the list had no column to read down. And the destructive one was
+ * always the plain-text one, sitting a thumb's width from the row you actually
+ * meant to tap.
+ *
+ * Every row in both consoles now ends the same way: one `⋯`, and a sheet that
+ * names what it can do. Destructive entries are red and last.
+ */
+export function RowMenu({ title, actions, label = 'Actions', size = 16 }) {
+  const [open, setOpen] = useState(false);
+  const shown = actions.filter(Boolean);
+  if (shown.length === 0) return null;
+
+  return (
+    <>
+      <IconButton name="more" size={size} label={label} onPress={() => setOpen(true)} />
+      <ActionSheet
+        visible={open}
+        title={title}
+        actions={shown}
+        onClose={() => setOpen(false)}
+      />
+    </>
   );
 }
 
@@ -501,7 +981,7 @@ export function IconButton({ name, onPress, label, tone = 'ink', size = 20, styl
  * sidebar exists — and it is why the console's twenty-odd operations can be
  * listed somewhere rather than buried behind a chain of pushes.
  */
-export function Header({ title, subtitle, onBack, right, tone = 'ink', style }) {
+export function Header({ title, subtitle, onBack, onMenu, right, tone = 'ink', style }) {
   const fg = tone === 'onColor' ? colors.onColor : colors.ink;
   const subFg = tone === 'onColor' ? 'rgba(255,255,255,0.72)' : colors.inkMuted;
   const console_ = useConsoleNav();
@@ -514,8 +994,17 @@ export function Header({ title, subtitle, onBack, right, tone = 'ink', style }) 
      */
     <View style={[styles.header, console_ && styles.headerConsole, style]}>
       {onBack ? <IconButton name="back" onPress={onBack} label="Back" tone={tone} /> : null}
+      {/* `onMenu` is how a screen with unsaved work gets a word in before the
+          sidebar takes it away — the settings form is the only one that needs
+          it, and without the hook its guard would have been the reason it kept
+          a back arrow nothing else in the console has. */}
       {menu ? (
-        <IconButton name="menu" onPress={console_.open} label="Open the menu" tone={tone} />
+        <IconButton
+          name="menu"
+          onPress={onMenu ?? console_.open}
+          label="Open the menu"
+          tone={tone}
+        />
       ) : null}
       <View style={{ flex: 1, minWidth: 0 }}>
         {title ? (
@@ -526,6 +1015,38 @@ export function Header({ title, subtitle, onBack, right, tone = 'ink', style }) 
         {subtitle ? (
           <Text variant="meta" color={subFg} numberOfLines={1}>
             {subtitle}
+          </Text>
+        ) : null}
+      </View>
+      {right}
+    </View>
+  );
+}
+
+/**
+ * The title block on a player TAB.
+ *
+ * A tab is not a pushed screen, so it has no back arrow and `Header` is the
+ * wrong shape for it — which is why Play, Friends and Shop each grew their own.
+ * They came out three different heights (12pt of padding above the title on
+ * two of them, 8 on the third; 0 below on two, 12 on the third) and two of them
+ * called the style `head` while the third called it `header`. Switching tabs
+ * moved the title, which is the kind of thing you feel before you see.
+ *
+ * Home and Profile keep their own tops on purpose: Home's is an identity bar
+ * (face, greeting, space switcher, balance) and Profile's is a hero on a
+ * gradient. Neither is a title with a caption, so neither is this.
+ */
+export function TabHeader({ title, caption, right }) {
+  return (
+    <View style={styles.tabHeader}>
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        <Text variant="display" numberOfLines={1}>
+          {title}
+        </Text>
+        {caption ? (
+          <Text variant="meta" color={colors.inkFaint}>
+            {caption}
           </Text>
         ) : null}
       </View>
@@ -956,8 +1477,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1.5,
   },
+  chipConsole: { minHeight: 32, paddingHorizontal: space.md, borderWidth: 1 },
   chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  chipOff: { backgroundColor: colors.sunken, borderColor: colors.hairline },
+  chipOff: { backgroundColor: colors.nightRaised, borderColor: colors.hairline },
   badge: {
     paddingHorizontal: space.sm,
     paddingVertical: 3,
@@ -965,7 +1487,7 @@ const styles = StyleSheet.create({
   },
   segmented: {
     flexDirection: 'row',
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusPill,
     padding: 4,
   },
@@ -978,21 +1500,137 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.sm,
   },
   segmentOn: {
-    backgroundColor: colors.canvas,
-    shadowColor: '#1B1B2F',
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+
+  // ── Page tabs ────────────────────────────────────────────────────────────
+  tabBar: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.hairline,
+    paddingHorizontal: space.sm,
+  },
+  tabBarScroll: {
+    flexGrow: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.hairline,
+  },
+  tabBarScrollContent: { paddingHorizontal: space.sm, alignItems: 'stretch', minHeight: 44 },
+  tab: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: space.sm,
+  },
+  tabInner: {
+    paddingBottom: space.sm,
+    // The underline is drawn even when off, in the field colour, so a tab does
+    // not shift by two points as it becomes the selected one.
+    borderBottomWidth: 2,
+    borderBottomColor: colors.transparent,
+  },
+  tabInnerOn: { borderBottomColor: colors.accent },
+
+  // ── Select ───────────────────────────────────────────────────────────────
+  selectLabel: { marginBottom: space.xs },
+  select: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    minHeight: consoleLayout.buttonHeight,
+    paddingHorizontal: space.md,
+    borderRadius: layout.radiusInput,
+    backgroundColor: colors.nightRaised,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
+  selectList: { maxHeight: 380, flexGrow: 0 },
+  selectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    minHeight: layout.touchMin,
+    paddingHorizontal: space.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.hairline,
+  },
+
+  // ── The console page ─────────────────────────────────────────────────────
+  listCard: {
+    backgroundColor: colors.nightRaised,
+    borderRadius: layout.radiusCard,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    paddingHorizontal: layout.cardPadding,
+    overflow: 'hidden',
+  },
+  listRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    minHeight: consoleLayout.rowHeight,
+    paddingVertical: space.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.hairline,
+  },
+  listRowLast: { borderBottomWidth: 0 },
+  listRowPressed: { backgroundColor: colors.canvas },
+  countRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    minHeight: 32,
+    paddingBottom: space.sm,
+  },
+  consoleFooter: {
+    paddingHorizontal: consoleLayout.gutter,
+    paddingTop: space.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.hairline,
+    backgroundColor: colors.sunken,
+  },
+
+  // ── RowMenu ──────────────────────────────────────────────────────────────
+  menuList: { gap: space.xs },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    minHeight: 52,
+    paddingHorizontal: space.md,
+    borderRadius: layout.radiusInput,
+    backgroundColor: colors.nightRaised,
+  },
+  menuRowDanger: { backgroundColor: colors.wrongSoft },
+
+  filterBar: { flexGrow: 0 },
+  filterBarContent: {
+    gap: space.sm,
+    alignItems: 'center',
+    paddingHorizontal: consoleLayout.gutter,
+    // The row owns its height so the scroller cannot squeeze the chips.
+    height: 48,
   },
   searchField: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusPill,
     paddingHorizontal: space.lg,
     minHeight: 48,
+    /**
+     * The edge, because the fill alone is not always one. A search field is
+     * `sunken`, and the console's own content region is `sunken` too — on the
+     * question bank the field was the same colour as the screen behind it, so
+     * all that was left of it was a magnifier and some grey placeholder text
+     * floating on the background.
+     */
+    borderWidth: 1,
+    borderColor: colors.hairline,
   },
   searchInput: {
     ...type.body,
@@ -1015,6 +1653,14 @@ const styles = StyleSheet.create({
     gap: space.md,
     paddingHorizontal: layout.gutter,
     paddingVertical: space.md,
+  },
+  tabHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingHorizontal: layout.gutter,
+    paddingTop: space.md,
+    paddingBottom: space.md,
   },
   headerConsole: {
     paddingHorizontal: consoleLayout.gutter,

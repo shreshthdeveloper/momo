@@ -125,7 +125,7 @@ export default function ContestStandings() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
+  screen: { flex: 1, backgroundColor: colors.sunken },
   list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl },
   count: { paddingVertical: space.sm },
   row: {

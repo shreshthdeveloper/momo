@@ -177,7 +177,7 @@ export default function AssignmentDetail() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.canvas },
+  screen: { flex: 1, backgroundColor: colors.sunken },
   list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl },
   summary: { paddingVertical: space.md, gap: space.xs },
   tabs: { marginBottom: space.sm },

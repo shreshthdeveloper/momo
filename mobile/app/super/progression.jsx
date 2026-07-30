@@ -23,10 +23,12 @@ import {
   Chip,
   ErrorNotice,
   Segmented,
+  Tabs,
   SectionHeader,
   Spinner,
+  Header,
+  IconButton,
 } from '../../src/components/ui.jsx';
-import ConsoleHeader from '../../src/components/ConsoleHeader.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import { faceSource } from '../../src/lib/avatar.js';
@@ -96,7 +98,7 @@ export default function SuperProgression() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <ConsoleHeader
+      <Header
         title="Ladder"
         subtitle={data ? `Config v${data.version}` : 'Progression'}
       />
@@ -107,9 +109,7 @@ export default function SuperProgression() {
         <CardsSkeleton count={4} />
       ) : !data ? null : (
         <>
-          <View style={styles.tabs}>
-            <Segmented options={TABS} value={tab} onChange={setTab} />
-          </View>
+          <Tabs options={TABS} value={tab} onChange={setTab} />
 
           <ScrollView
         automaticallyAdjustKeyboardInsets
@@ -206,7 +206,7 @@ function CosmeticsTab({ data, onSaved }) {
                 {row.key} · {requirementOf(row)}
               </Text>
             </View>
-            {row.enabled === false ? <Badge label="off" tone="wrong" /> : null}
+            {row.enabled === false ? <Badge label="off" tone="danger" /> : null}
             {row.imageUrl ? <Badge label="uploaded" tone="soft" /> : null}
             <Icon name="chevronRight" size={16} color={colors.inkFaint} />
           </Pressable>
@@ -768,7 +768,7 @@ function ChestsTab({ data, onSaved }) {
                 {chest.period ? ` · rolled ${chest.period}` : ''}
               </Text>
             </View>
-            {chest.enabled === false ? <Badge label="off" tone="wrong" /> : null}
+            {chest.enabled === false ? <Badge label="off" tone="danger" /> : null}
             <Icon name="chevronRight" size={16} color={colors.inkFaint} />
           </Pressable>
         ))}
@@ -935,15 +935,39 @@ function ChestEditor({ chest, data, onClose, onSaved }) {
             Nothing yet. A chest has to hold something.
           </Text>
         ) : null}
-        <View style={styles.chipRow}>
-          {rewards.map((r, i) => (
-            <Chip
-              key={`${r.type}/${r.key ?? r.amount}/${i}`}
-              label={`${r.type === 'coins' ? `${r.amount} coins` : r.key} ✕`}
-              active
-              onPress={() => setRewards((prev) => prev.filter((_, at) => at !== i))}
-            />
-          ))}
+        {/* The chosen slots, with the art rather than the identifier — the same
+            reason the picker shows it. `name` falls back to the key only when
+            the cosmetic has been deleted from the catalogue under this chest. */}
+        <View style={styles.slotList}>
+          {rewards.map((r, i) => {
+            const cosmetic =
+              r.type === 'coins' ? null : (data.cosmetics ?? []).find((c) => c.type === r.type && c.key === r.key);
+            return (
+              <View key={`${r.type}/${r.key ?? r.amount}/${i}`} style={styles.slotRow}>
+                {r.type === 'coins' ? (
+                  <View style={[styles.art, styles.artEmpty]}>
+                    <Icon name="gift" size={14} color={colors.gold} />
+                  </View>
+                ) : (
+                  <CosmeticArt row={cosmetic ?? r} />
+                )}
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text variant="label" numberOfLines={1}>
+                    {r.type === 'coins' ? `${r.amount} coins` : (cosmetic?.name ?? r.key)}
+                  </Text>
+                  <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
+                    {r.type === 'coins' ? 'coins' : r.type}
+                  </Text>
+                </View>
+                <IconButton
+                  name="close"
+                  size={16}
+                  label="Remove this slot"
+                  onPress={() => setRewards((prev) => prev.filter((_, at) => at !== i))}
+                />
+              </View>
+            );
+          })}
         </View>
         <View style={styles.chipRow}>
           {TYPES.map((t) => (
@@ -982,28 +1006,78 @@ function ChestEditor({ chest, data, onClose, onSaved }) {
       <Button label="Save" loading={busy} disabled={!rewards.length} onPress={save} />
       {!isNew ? <Button label="Delete" variant="ghost" onPress={remove} /> : null}
 
+      {/**
+       * Filling a chest is a multi-pick, and it used to be built as a
+       * single-pick that lied about it.
+       *
+       * Every tap closed the sheet, so loading six slots meant opening the
+       * picker six times — and each row was the cosmetic's `key` as bare text,
+       * so choosing between `avatar_ninja_red` and `avatar_ninja_blue` on a
+       * screen full of avatars meant reading identifiers rather than looking at
+       * the things being given away.
+       *
+       * So: the sheet stays open, rows carry the actual art, the ones already
+       * in the chest are checked, and tapping toggles. It closes when the
+       * operator says it is done — or on its own once the last slot is full,
+       * because at that point there is nothing left to pick.
+       */}
       {picking ? (
-        <Sheet title={`Pick a ${picking}`} onClose={() => setPicking(null)}>
-          <View style={styles.chipRow}>
+        <Sheet
+          title={`Add ${picking === 'title' ? 'titles' : `${picking}s`}`}
+          onClose={() => setPicking(null)}
+        >
+          <Text variant="meta" color={colors.inkFaint} style={{ marginBottom: space.sm }}>
+            {rewards.length} of {CHEST_SLOT_COUNT} slots filled. Tap to add or remove.
+          </Text>
+          <ScrollView style={styles.pickList} showsVerticalScrollIndicator={false}>
             {(data.cosmetics ?? [])
               .filter((c) => c.type === picking)
-              .map((c) => (
-                <Chip
-                  key={c.key}
-                  label={c.name}
-                  active={rewards.some((r) => r.type === c.type && r.key === c.key)}
-                  onPress={() => {
-                    setRewards((prev) =>
-                      prev.length >= CHEST_SLOT_COUNT ||
-                      prev.some((r) => r.type === c.type && r.key === c.key)
-                        ? prev
-                        : [...prev, { type: c.type, key: c.key }],
-                    );
-                    setPicking(null);
-                  }}
-                />
-              ))}
-          </View>
+              .map((c) => {
+                const on = rewards.some((r) => r.type === c.type && r.key === c.key);
+                const full = rewards.length >= CHEST_SLOT_COUNT;
+                return (
+                  <Pressable
+                    key={c.key}
+                    disabled={!on && full}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: on, disabled: !on && full }}
+                    accessibilityLabel={c.name}
+                    onPress={() =>
+                      setRewards((prev) =>
+                        on
+                          ? prev.filter((r) => !(r.type === c.type && r.key === c.key))
+                          : prev.length >= CHEST_SLOT_COUNT
+                            ? prev
+                            : [...prev, { type: c.type, key: c.key }],
+                      )
+                    }
+                    style={({ pressed }) => [
+                      styles.pickRow,
+                      !on && full && { opacity: 0.4 },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <CosmeticArt row={c} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text variant="label" numberOfLines={1}>
+                        {c.name}
+                      </Text>
+                      <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
+                        {[c.key, c.rarity].filter(Boolean).join('  ·  ')}
+                      </Text>
+                    </View>
+                    <View style={[styles.pickBox, on && styles.pickBoxOn]}>
+                      {on ? <Icon name="check" size={14} color={colors.onAccent} /> : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+          </ScrollView>
+          <Button
+            label={rewards.length >= CHEST_SLOT_COUNT ? 'Slots full — done' : 'Done'}
+            style={{ marginTop: space.md }}
+            onPress={() => setPicking(null)}
+          />
         </Sheet>
       ) : null}
     </Sheet>
@@ -1064,7 +1138,6 @@ function triggerOf(chest, leagues) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  tabs: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.sm },
   subTabs: { paddingBottom: space.md },
   content: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
   note: { marginBottom: space.md },
@@ -1078,7 +1151,7 @@ const styles = StyleSheet.create({
     marginBottom: space.md,
   },
   rows: {
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,
     paddingHorizontal: space.lg,
     marginBottom: layout.cardGap,
@@ -1086,14 +1159,45 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 62 },
   rowDivided: { borderTopWidth: 1, borderTopColor: colors.hairline },
   pressed: { opacity: 0.7 },
-  art: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.sunken },
+  art: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.nightRaised },
   artEmpty: { alignItems: 'center', justifyContent: 'center' },
+  // ── The chest's slots, and the picker that fills them ────────────────────
+  slotList: { gap: space.xs, marginBottom: space.md },
+  slotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    minHeight: 52,
+    paddingHorizontal: space.md,
+    borderRadius: layout.radiusInput,
+    backgroundColor: colors.nightRaised,
+  },
+  pickList: { maxHeight: 360, flexGrow: 0 },
+  pickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    minHeight: layout.touchMin,
+    paddingVertical: space.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.hairline,
+  },
+  pickBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    borderColor: colors.hairline,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickBoxOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   addRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: space.sm,
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,
     height: 52,
     marginBottom: layout.cardGap,
@@ -1104,7 +1208,7 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
   },
 
   // Curve
@@ -1114,7 +1218,7 @@ const styles = StyleSheet.create({
     ...type.option,
     flex: 1,
     color: colors.ink,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,
@@ -1136,7 +1240,7 @@ const styles = StyleSheet.create({
   // Sheet
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(10,10,20,0.55)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: colors.canvas,
+    backgroundColor: colors.nightRaised,
     borderTopLeftRadius: layout.radiusCard,
     borderTopRightRadius: layout.radiusCard,
     maxHeight: '88%',
@@ -1154,7 +1258,7 @@ const styles = StyleSheet.create({
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,
