@@ -336,6 +336,51 @@ export const type = {
 };
 
 /**
+ * How far each variant is allowed to grow when the phone asks for bigger text.
+ *
+ * The OS text-size slider goes past 2× on both platforms, and this app is full
+ * of rows, chips, tiles and docks that were drawn at a fixed height — roughly
+ * eighty of them. Unbounded, a player on "Largest" gets a Home screen of
+ * overlapping tiles and a tab bar whose labels have eaten their own icons.
+ * Ignoring the setting entirely (`allowFontScaling={false}` everywhere) is the
+ * other wrong answer: it is the one accessibility control most people actually
+ * use, and refusing it makes the product unusable for them rather than untidy.
+ *
+ * So: a cap, not a refusal. Text still grows — enough to matter — but by a known
+ * factor the layouts were checked against.
+ *
+ * The split is by headroom, not by importance. Small type has plenty: `meta` at
+ * 12pt has room to reach 15.6 inside a 32pt chip. Large type has almost none —
+ * a 48pt score is already the biggest thing on its screen, and the match stage
+ * between the header and the four options is the tightest space in the product,
+ * so those grow by less. A caller can still override per-instance; the numeric
+ * readouts that must not move at all (the round clock, the OTP digits) keep
+ * their own `allowFontScaling={false}`.
+ */
+const SCALE_LARGE = 1.2;
+const SCALE_SMALL = 1.3;
+
+export const fontScaleCap = {
+  scoreHero: SCALE_LARGE,
+  scoreLive: SCALE_LARGE,
+  timer: SCALE_LARGE,
+  display: SCALE_LARGE,
+  question: SCALE_LARGE,
+  questionLong: SCALE_LARGE,
+  title: SCALE_SMALL,
+  option: SCALE_SMALL,
+  body: SCALE_SMALL,
+  bodyStrong: SCALE_SMALL,
+  label: SCALE_SMALL,
+  meta: SCALE_SMALL,
+  tiny: SCALE_SMALL,
+  figure: SCALE_SMALL,
+};
+
+/** The fallback for a variant not named above. */
+export const DEFAULT_FONT_SCALE_CAP = SCALE_SMALL;
+
+/**
  * The console scale — the same system, tuned for work rather than for play.
  *
  * A player sees one thing at a time and is often holding the phone at arm's

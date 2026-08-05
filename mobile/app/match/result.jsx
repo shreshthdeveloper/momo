@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, ScrollView, Share, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 import { useGame } from '../../src/state/game.jsx';
 import { Text, Button, Avatar, useScrollBottom } from '../../src/components/ui.jsx';
 import { LeagueBadge, leagueMetal } from '../../src/components/League.jsx';
@@ -450,7 +449,6 @@ export default function MatchResult() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="light" />
 
       {/**
         * Above the result, not instead of it — the receipt is already behind

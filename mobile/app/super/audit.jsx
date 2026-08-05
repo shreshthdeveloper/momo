@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
-import { Text, Badge, EmptyState, ErrorNotice, Header } from '../../src/components/ui.jsx';
+import { Text, Badge, EmptyState, ErrorNotice, Header, useScrollBottom } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import { colors, consoleLayout, space } from '../../src/theme/index.js';
 
@@ -17,6 +17,7 @@ import { colors, consoleLayout, space } from '../../src/theme/index.js';
  * whole reason a superadmin audit exists.
  */
 export default function SuperAudit() {
+  const scrollBottom = useScrollBottom();
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -51,7 +52,7 @@ export default function SuperAudit() {
         />
       ) : (
         <ScrollView
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -93,7 +94,7 @@ export default function SuperAudit() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  list: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.md, paddingBottom: space.xxxl },
+  list: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.md },
   row: {
     paddingVertical: space.md,
     borderBottomWidth: 1,

@@ -4,7 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/lib/api.js';
 import { useAuth } from '../src/state/auth.jsx';
-import { Text, Avatar, Badge, EmptyState, ErrorNotice, Header } from '../src/components/ui.jsx';
+import { Text, Avatar, Badge, EmptyState, ErrorNotice, Header, useScrollBottom } from '../src/components/ui.jsx';
 import { ListSkeleton } from '../src/components/Skeletons.jsx';
 import Icon from '../src/components/Icon.jsx';
 import { colors, layout, space } from '../src/theme/index.js';
@@ -20,6 +20,7 @@ import { colors, layout, space } from '../src/theme/index.js';
 const RANK = { open: 0, running: 1, complete: 2 };
 
 export default function Tournaments() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const { activeSpaceId } = useAuth();
   const [rows, setRows] = useState(null);
@@ -62,7 +63,7 @@ export default function Tournaments() {
         />
       ) : (
         <ScrollView
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -123,7 +124,7 @@ export default function Tournaments() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
+  list: { paddingHorizontal: layout.gutter },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -12,6 +12,7 @@ import {
   Avatar,
   SearchField,
   Chip,
+  useScrollBottom,
 } from '../src/components/ui.jsx';
 import { ListSkeleton } from '../src/components/Skeletons.jsx';
 import TopicMedallion from '../src/components/TopicMedallion.jsx';
@@ -38,6 +39,7 @@ import { CHALLENGE_ACCEPT_WINDOW_LABEL } from '../src/shared/constants.js';
  * browse screen already trusts.
  */
 export default function ChallengeTopic() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const { userId, name, avatarUrl } = useLocalSearchParams();
   const { activeSpaceId } = useAuth();
@@ -210,7 +212,7 @@ export default function ChallengeTopic() {
           }
         />
       ) : (
-        <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]} showsVerticalScrollIndicator={false}>
           {grouped
             ? grouped.map((section) => (
                 <View key={section.name} style={styles.section}>
@@ -245,7 +247,7 @@ const styles = StyleSheet.create({
   },
   controls: { paddingHorizontal: layout.gutter, gap: space.sm, paddingBottom: space.sm },
   chips: { gap: space.xs, paddingVertical: 2 },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
+  list: { paddingHorizontal: layout.gutter },
   section: { marginBottom: space.md },
   sectionHead: {
     flexDirection: 'row',

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text, Button } from '../../src/components/ui.jsx';
@@ -174,7 +173,6 @@ export default function Welcome() {
 
   return (
     <View style={styles.field}>
-      <StatusBar style="light" />
 
       <Arena />
 

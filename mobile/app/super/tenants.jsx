@@ -1,13 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -22,8 +17,7 @@ import {
   ConfirmSheet,
   EmptyState,
   ErrorNotice,
-  FULL_BLEED_MODAL,
-  useBottomInset,
+  PromptSheet,
   RowMenu,
   SearchField,
   Tabs,
@@ -32,7 +26,7 @@ import {
   ConsoleFooter,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, consoleLayout, elevation, fonts, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, fonts, layout, space } from '../../src/theme/index.js';
 
 /**
  * Every tenant on the platform. A pending organization is a person waiting at the
@@ -246,7 +240,7 @@ export default function SuperTenants() {
       />
 
       {/* ── Reject: refused with a reason, kept with the decision. */}
-      <ReasonSheet
+      <PromptSheet
         visible={Boolean(rejectTarget)}
         destructive
         title={`Reject ${rejectTarget?.name ?? ''}?`}
@@ -260,7 +254,7 @@ export default function SuperTenants() {
       />
 
       {/* ── Support access: the reason is written where their admins read. */}
-      <ReasonSheet
+      <PromptSheet
         visible={Boolean(supportTarget)}
         title="Log support access"
         body="This is written to the organization's own audit log, where their admins will see it."
@@ -413,84 +407,6 @@ function StatusBadge({ status }) {
   return null;
 }
 
-/**
- * A ConfirmSheet that asks for a sentence: the app's own sheet with a reason
- * field between the body and the decision. Confirm stays disabled until the
- * reason reaches `minLength`, and an error keeps the sheet open with the text
- * intact rather than throwing the typing away.
- */
-function ReasonSheet({
-  visible,
-  title,
-  body,
-  placeholder,
-  confirmLabel,
-  destructive = false,
-  minLength = 1,
-  loading = false,
-  error,
-  onConfirm,
-  onCancel,
-}) {
-  const [text, setText] = useState('');
-  const [focused, setFocused] = useState(false);
-  const bottom = useBottomInset();
-
-  useEffect(() => {
-    if (visible) setText('');
-  }, [visible]);
-
-  const valid = text.trim().length >= minLength;
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onCancel}
-      {...FULL_BLEED_MODAL}
-    >
-      <Pressable style={({ pressed }) => [styles.sheetScrim, pressed && { opacity: 0.7 }]} onPress={loading ? undefined : onCancel}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} pointerEvents="box-none">
-          <Pressable style={[styles.sheet, { paddingBottom: bottom + space.lg }, elevation.sheet]} onPress={() => {}}>
-            <View style={styles.sheetGrabber} />
-            <Text variant="display" style={{ marginBottom: space.sm }}>
-              {title}
-            </Text>
-            {body ? (
-              <Text variant="body" color={colors.inkMuted} style={{ marginBottom: space.lg }}>
-                {body}
-              </Text>
-            ) : null}
-            <TextInput
-              style={[styles.reasonInput, focused && styles.reasonInputFocused]}
-              value={text}
-              onChangeText={setText}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
-              placeholder={placeholder}
-              placeholderTextColor={colors.inkFaint}
-              maxLength={300}
-              multiline
-              accessibilityLabel={placeholder ?? 'Reason'}
-            />
-            <ErrorNotice error={error} />
-            <Button
-              variant={destructive ? 'danger' : 'primary'}
-              label={confirmLabel}
-              loading={loading}
-              disabled={!valid}
-              style={{ marginTop: space.lg }}
-              onPress={() => onConfirm(text.trim())}
-            />
-            <Button variant="soft" label="Cancel" disabled={loading} style={{ marginTop: space.md }} onPress={onCancel} />
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Pressable>
-    </Modal>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
   search: { marginHorizontal: consoleLayout.gutter, marginTop: space.md, marginBottom: space.sm },
@@ -543,20 +459,4 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: space.lg,
   },
-  reasonInput: {
-    ...type.option,
-    color: colors.ink,
-    backgroundColor: colors.nightRaised,
-    borderRadius: layout.radiusInput,
-    borderWidth: 1.5,
-    borderColor: colors.transparent,
-    paddingHorizontal: space.lg,
-    paddingTop: space.md,
-    paddingBottom: space.md,
-    minHeight: 54,
-    maxHeight: 120,
-    textAlignVertical: 'top',
-    marginBottom: space.sm,
-  },
-  reasonInputFocused: { borderColor: colors.accent, backgroundColor: colors.nightRaised },
 });

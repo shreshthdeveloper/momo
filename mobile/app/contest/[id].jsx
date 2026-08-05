@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 import { api } from '../../src/lib/api.js';
 import { useAuth } from '../../src/state/auth.jsx';
 import { useGame } from '../../src/state/game.jsx';
@@ -15,6 +14,7 @@ import {
   SectionHeader,
   IconButton,
   Stat,
+  useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { BrandField } from '../../src/components/Brand.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
@@ -36,6 +36,7 @@ import { maxScoreForRounds } from '../../src/shared/scoring.js';
  * share a surface.
  */
 export default function ContestScreen() {
+  const scrollBottom = useScrollBottom();
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const game = useGame();
@@ -86,7 +87,6 @@ export default function ContestScreen() {
   if (!contest && !error) {
     return (
       <View style={styles.plain}>
-        <StatusBar style="light" />
         <BrandField style={styles.band}>
           <SafeAreaView edges={['top']}>
             <View style={styles.bandTop}>
@@ -108,9 +108,8 @@ export default function ContestScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="light" />
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -346,7 +345,7 @@ function ordinal(n) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
   plain: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingBottom: space.xxxl },
+  content: { },
   band: {
     flex: 0,
     borderBottomLeftRadius: 28,

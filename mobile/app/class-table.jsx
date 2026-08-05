@@ -12,6 +12,7 @@ import {
   ProgressBar,
   Segmented,
   RankTile,
+  useScrollBottom,
 } from '../src/components/ui.jsx';
 import { ListSkeleton } from '../src/components/Skeletons.jsx';
 import { colors, layout, space } from '../src/theme/index.js';
@@ -39,6 +40,7 @@ const PERIODS = [
 ];
 
 export default function ClassTable() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const { activeSpaceId } = useAuth();
   const [period, setPeriod] = useState('week');
@@ -87,7 +89,7 @@ export default function ClassTable() {
         />
       ) : (
         <ScrollView
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -182,7 +184,7 @@ function ClassRow({ row, top, mine }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
   tabs: { marginHorizontal: layout.gutter, marginBottom: space.md },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
+  list: { paddingHorizontal: layout.gutter },
   note: { paddingBottom: space.md },
   row: {
     flexDirection: 'row',

@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/lib/api.js';
-import { Text, ErrorNotice, Header, ProgressBar, Skeleton } from '../src/components/ui.jsx';
+import { Text, ErrorNotice, Header, ProgressBar, Skeleton, useScrollBottom } from '../src/components/ui.jsx';
 import Icon from '../src/components/Icon.jsx';
 import { ACHIEVEMENTS, achievementShelf } from '../src/shared/achievements.js';
 import { colors, fonts, layout, space } from '../src/theme/index.js';
@@ -31,6 +31,7 @@ import { colors, fonts, layout, space } from '../src/theme/index.js';
  * states is a tick, a colour and a date, never opacity.
  */
 export default function Achievements() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const [stats, setStats] = useState(null);
   const [error, setError] = useState(null);
@@ -76,7 +77,7 @@ export default function Achievements() {
           ))}
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]} showsVerticalScrollIndicator={false}>
           {/* The headline is a fraction, because a fraction is the only thing
               that answers both questions at once: how many have I got, and how
               many are there. */}
@@ -148,7 +149,7 @@ function Row({ row }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
+  content: { paddingHorizontal: layout.gutter },
   wait: { marginTop: space.md },
 
   summary: {

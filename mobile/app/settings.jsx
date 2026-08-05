@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
 import { api } from '../src/lib/api.js';
 import { useAuth } from '../src/state/auth.jsx';
-import { Text, Button, ConfirmSheet, ErrorNotice, Header } from '../src/components/ui.jsx';
+import { Text, Button, ConfirmSheet, ErrorNotice, Header, useScrollBottom } from '../src/components/ui.jsx';
 import Icon from '../src/components/Icon.jsx';
 import { colors, elevation, layout, space } from '../src/theme/index.js';
 import { getHapticsEnabled, setHapticsEnabled } from '../src/lib/haptics.js';
@@ -20,6 +20,7 @@ import { signOutCopy } from '../src/lib/account.js';
  * one" is answered by shape before it is answered by reading.
  */
 export default function Settings() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const { user, spaces, signOut, updateProfile, refreshSpaces } = useAuth();
   const [prefs, setPrefs] = useState(user?.notificationPrefs ?? {});
@@ -67,7 +68,7 @@ export default function Settings() {
     <SafeAreaView style={styles.screen} edges={['top']}>
       <Header title="Settings" onBack={() => router.back()} />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]} showsVerticalScrollIndicator={false}>
         <ErrorNotice error={error} />
 
         <Section title="Notifications">
@@ -411,7 +412,7 @@ const styles = StyleSheet.create({
   // `canvas`, like every other player screen — `sunken` is the console's field.
   // The card is already `nightRaised`, so it still lifts off it.
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { padding: layout.gutter, paddingTop: space.sm, paddingBottom: layout.scrollBottom },
+  content: { padding: layout.gutter, paddingTop: space.sm },
   card: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,

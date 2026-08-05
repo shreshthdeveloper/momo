@@ -17,6 +17,7 @@ import {
   Tabs,
   Skeleton,
   Stat,
+  useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
@@ -152,6 +153,7 @@ function DeltaTile({ label, value, change, previous, pts }) {
 }
 
 export default function AdminReports() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const adminSpace = useAdminSpace();
   const spaceId = adminSpace?.id;
@@ -367,7 +369,7 @@ export default function AdminReports() {
     const anyFlagged = list.some((q) => q.flag);
     return (
       <ScrollView
-        contentContainerStyle={styles.body}
+        contentContainerStyle={[styles.body, { paddingBottom: scrollBottom }]}
         showsVerticalScrollIndicator={false}
         refreshControl={refreshControl}
       >
@@ -458,7 +460,7 @@ export default function AdminReports() {
 
     return (
       <ScrollView
-        contentContainerStyle={styles.body}
+        contentContainerStyle={[styles.body, { paddingBottom: scrollBottom }]}
         showsVerticalScrollIndicator={false}
         refreshControl={refreshControl}
       >
@@ -531,7 +533,7 @@ export default function AdminReports() {
     const maxScore = Math.max(...batches.map((b) => b.avgScore ?? 0), 1);
     return (
       <ScrollView
-        contentContainerStyle={styles.body}
+        contentContainerStyle={[styles.body, { paddingBottom: scrollBottom }]}
         showsVerticalScrollIndicator={false}
         refreshControl={refreshControl}
       >
@@ -583,7 +585,7 @@ export default function AdminReports() {
 
     return (
       <ScrollView
-        contentContainerStyle={styles.body}
+        contentContainerStyle={[styles.body, { paddingBottom: scrollBottom }]}
         showsVerticalScrollIndicator={false}
         refreshControl={refreshControl}
       >
@@ -663,7 +665,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
   picker: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.md },
   chipsSkeleton: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.md },
-  body: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
+  body: { padding: consoleLayout.gutter, paddingTop: space.sm },
   count: { paddingBottom: space.sm },
   card: {
     backgroundColor: colors.nightRaised,

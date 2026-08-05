@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, ScrollView, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 import { useSession } from '../src/state/session.jsx';
 import {
   Text,
@@ -14,6 +13,7 @@ import {
   Header,
   ProgressBar,
   SearchField,
+  useScrollBottom,
 } from '../src/components/ui.jsx';
 import AnswerRow from '../src/components/AnswerRow.jsx';
 import Icon from '../src/components/Icon.jsx';
@@ -103,7 +103,6 @@ export default function SessionScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <StatusBar style="light" />
       <Header
         title={session.name ?? 'Session'}
         subtitle={
@@ -138,8 +137,9 @@ export default function SessionScreen() {
  * worked.
  */
 function Lobby({ session }) {
+  const scrollBottom = useScrollBottom();
   return (
-    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <ScrollView contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]} showsVerticalScrollIndicator={false}>
       <Card style={styles.codeCard}>
         <Text variant="meta" color={colors.inkFaint}>
           Anyone in your organization can join with
@@ -189,6 +189,7 @@ function Lobby({ session }) {
  * would make the rest a copying exercise.
  */
 function Question({ session }) {
+  const scrollBottom = useScrollBottom();
   const [remaining, setRemaining] = useState(session.durationMs ?? 0);
   const fill = useRef(new Animated.Value(1)).current;
 
@@ -211,7 +212,7 @@ function Question({ session }) {
   const seconds = Math.ceil(remaining / 1000);
 
   return (
-    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <ScrollView contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]} showsVerticalScrollIndicator={false}>
       <View style={styles.clockRow}>
         <Text allowFontScaling={false} style={[styles.clock, seconds <= 5 && { color: colors.wrong }]}>
           {seconds}
@@ -266,11 +267,12 @@ function Question({ session }) {
  * needs however long it needs.
  */
 function Result({ session }) {
+  const scrollBottom = useScrollBottom();
   const result = session.result ?? {};
   const total = Math.max(1, result.answered ?? 1);
 
   return (
-    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <ScrollView contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]} showsVerticalScrollIndicator={false}>
       <Text variant="title" style={styles.questionText}>
         {session.question?.text}
       </Text>
@@ -337,8 +339,9 @@ function Result({ session }) {
 
 /** The final board — the thing that goes on the projector at the end. */
 function Ended({ session, onDone }) {
+  const scrollBottom = useScrollBottom();
   return (
-    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <ScrollView contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]} showsVerticalScrollIndicator={false}>
       <Text variant="title" style={{ marginBottom: space.lg }}>
         Final board
       </Text>
@@ -368,7 +371,7 @@ function Ended({ session, onDone }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
+  content: { paddingHorizontal: layout.gutter },
 
   joinBody: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: layout.gutter },
   joinBlurb: { textAlign: 'center', marginTop: space.sm, marginBottom: space.xl, maxWidth: 300 },

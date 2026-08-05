@@ -262,7 +262,7 @@ export default function AdminTournaments() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: layout.scrollBottom },
+  list: { paddingHorizontal: consoleLayout.gutter , paddingBottom: space.xl},
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   fieldLabel: { marginBottom: space.xs },
   input: {

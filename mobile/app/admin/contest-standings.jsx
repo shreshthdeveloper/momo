@@ -14,6 +14,7 @@ import {
   Header,
   RankTile,
   CountRow,
+  useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import { useExport, csvName } from '../../src/lib/download.js';
@@ -29,6 +30,7 @@ import { colors, consoleLayout, space } from '../../src/theme/index.js';
  * never once see the result.
  */
 export default function ContestStandings() {
+  const scrollBottom = useScrollBottom();
   const goBack = useConsoleBack();
   const { id, name } = useLocalSearchParams();
   const adminSpace = useAdminSpace();
@@ -75,7 +77,7 @@ export default function ContestStandings() {
         />
       ) : (
         <ScrollView
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -141,7 +143,7 @@ export default function ContestStandings() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl },
+  list: { paddingHorizontal: consoleLayout.gutter },
   count: { paddingVertical: space.sm },
   row: {
     flexDirection: 'row',

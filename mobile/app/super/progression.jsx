@@ -32,6 +32,7 @@ import {
   Spinner,
   Header,
   IconButton,
+  useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
@@ -62,6 +63,7 @@ const TABS = [
 ];
 
 export default function SuperProgression() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const isSuper = useIsSuperadmin();
   const { refresh: refreshApp } = useProgression();
@@ -117,7 +119,7 @@ export default function SuperProgression() {
 
           <ScrollView
         automaticallyAdjustKeyboardInsets
-            contentContainerStyle={styles.content}
+            contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             refreshControl={
@@ -1151,7 +1153,7 @@ function triggerOf(chest, leagues) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
   subTabs: { paddingBottom: space.md },
-  content: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
+  content: { padding: consoleLayout.gutter, paddingTop: space.sm },
   note: { marginBottom: space.md },
   okNote: {
     flexDirection: 'row',

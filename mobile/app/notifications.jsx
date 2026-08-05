@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/lib/api.js';
 import { useAuth } from '../src/state/auth.jsx';
 import { useNotifications } from '../src/state/notifications.jsx';
-import { Text, Header, EmptyState, ErrorNotice } from '../src/components/ui.jsx';
+import { Text, Header, EmptyState, ErrorNotice, useScrollBottom } from '../src/components/ui.jsx';
 import { ListSkeleton } from '../src/components/Skeletons.jsx';
 import Icon from '../src/components/Icon.jsx';
 import { withAlpha } from '../src/components/TopicMedallion.jsx';
@@ -39,6 +39,7 @@ import { destinationFor, faceFor } from '../src/lib/notifications.js';
  * and a brighter title.
  */
 export default function NotificationsScreen() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const { activeSpaceId, setActiveSpaceId } = useAuth();
   const { markAllRead } = useNotifications();
@@ -130,7 +131,7 @@ export default function NotificationsScreen() {
           data={shown}
           keyExtractor={(n) => n.id}
           renderItem={renderItem}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -217,7 +218,7 @@ function ago(at) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom, gap: space.sm },
+  list: { paddingHorizontal: layout.gutter, gap: space.sm },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

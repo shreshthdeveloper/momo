@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 import { useGame } from '../../src/state/game.jsx';
 import { useAuth } from '../../src/state/auth.jsx';
 import { Text, Button, ErrorNotice, Avatar } from '../../src/components/ui.jsx';
@@ -221,7 +220,6 @@ export default function Searching() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="light" />
 
       {/**
        * The stage, chosen by what is actually being waited for.

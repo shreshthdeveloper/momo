@@ -3,7 +3,7 @@ import { FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-nat
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/lib/api.js';
-import { Text, Header, ErrorNotice, EmptyState, Badge } from '../src/components/ui.jsx';
+import { Text, Header, ErrorNotice, EmptyState, Badge, useScrollBottom } from '../src/components/ui.jsx';
 import { ListSkeleton } from '../src/components/Skeletons.jsx';
 import TopicMedallion from '../src/components/TopicMedallion.jsx';
 import Icon from '../src/components/Icon.jsx';
@@ -34,6 +34,7 @@ import { colors, layout, space } from '../src/theme/index.js';
  * teaches the player to read arriving here as bad news.
  */
 export default function Mistakes() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const [items, setItems] = useState(null);
   const [error, setError] = useState(null);
@@ -102,7 +103,7 @@ export default function Mistakes() {
           data={items}
           keyExtractor={(row) => row.topic.id}
           renderItem={({ item }) => <MistakeRow row={item} onPress={revise} />}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -199,7 +200,7 @@ function MistakeRow({ row, onPress }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
+  list: { paddingHorizontal: layout.gutter },
   intro: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -14,6 +14,7 @@ import {
   ProgressBar,
   RankTile,
   SectionHeader,
+  useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import { colors, consoleLayout, layout, space } from '../../src/theme/index.js';
@@ -31,6 +32,7 @@ const bandOf = (accuracy) =>
   accuracy === null ? colors.inkFaint : accuracy >= 70 ? colors.correct : accuracy >= 40 ? colors.optionC : colors.wrong;
 
 export default function SessionReport() {
+  const scrollBottom = useScrollBottom();
   const goBack = useConsoleBack();
   const { id } = useLocalSearchParams();
   const adminSpace = useAdminSpace();
@@ -69,7 +71,7 @@ export default function SessionReport() {
       {!data && !error ? (
         <ListSkeleton rows={8} />
       ) : !data ? null : (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]} showsVerticalScrollIndicator={false}>
           {/* The single most useful sentence on the screen, said first. */}
           {weakest ? (
             <View style={styles.headline}>
@@ -137,7 +139,7 @@ export default function SessionReport() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: layout.scrollBottom },
+  content: { paddingHorizontal: consoleLayout.gutter },
   headline: {
     gap: space.xs,
     padding: layout.cardPadding,

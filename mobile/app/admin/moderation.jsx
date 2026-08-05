@@ -13,6 +13,7 @@ import {
   ErrorNotice,
   Header,
   Tabs,
+  useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import QuestionArt from '../../src/components/QuestionArt.jsx';
@@ -47,6 +48,7 @@ const REASON = {
 };
 
 export default function AdminModeration() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const adminSpace = useAdminSpace();
   const { canWrite } = useAdminPermissions(adminSpace);
@@ -115,7 +117,7 @@ export default function AdminModeration() {
         />
       ) : (
         <ScrollView
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -242,7 +244,7 @@ export default function AdminModeration() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl, gap: space.md },
+  list: { paddingHorizontal: consoleLayout.gutter, gap: space.md },
   card: { padding: space.lg, gap: space.xs },
   art: { alignItems: 'center', paddingVertical: space.sm },
   question: { marginTop: space.xs },

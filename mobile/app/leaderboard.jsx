@@ -12,6 +12,7 @@ import {
   Header,
   Segmented,
   RankTile,
+  useScrollBottom,
 } from '../src/components/ui.jsx';
 import { LeagueBadge } from '../src/components/League.jsx';
 import { ListSkeleton } from '../src/components/Skeletons.jsx';
@@ -75,6 +76,7 @@ const SPACE_SCOPES = [
 const MEDALS = [colors.gold, colors.silver, colors.bronze];
 
 export default function Leaderboard() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const { activeSpaceId, isPublicArena, user } = useAuth();
   const [scope, setScope] = useState(isPublicArena ? 'global' : 'space');
@@ -159,7 +161,7 @@ export default function Leaderboard() {
         />
       ) : (
         <ScrollView
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -342,7 +344,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
   head: { paddingHorizontal: layout.gutter, paddingTop: space.md, gap: 2 },
   segmented: { marginHorizontal: layout.gutter, marginTop: space.lg, marginBottom: space.lg },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
+  list: { paddingHorizontal: layout.gutter },
 
   podium: {
     backgroundColor: colors.nightRaised,

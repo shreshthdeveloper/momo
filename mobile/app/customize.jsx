@@ -6,7 +6,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../src/state/auth.jsx';
 import { api } from '../src/lib/api.js';
-import { Text, Button, ErrorNotice, Avatar, Header, Spinner } from '../src/components/ui.jsx';
+import { Text, Button, ErrorNotice, Avatar, Header, Spinner, useScrollBottom } from '../src/components/ui.jsx';
 import Icon from '../src/components/Icon.jsx';
 import { resolveBanner } from '../src/lib/banner.js';
 import CountryPicker from '../src/components/CountryPicker.jsx';
@@ -41,6 +41,7 @@ import { colors, elevation, layout, space, type } from '../src/theme/index.js';
  * way "that name is taken" can ever be correct.
  */
 export default function Customize() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const { user, updateProfile } = useAuth();
 
@@ -113,7 +114,7 @@ export default function Customize() {
     <SafeAreaView style={styles.screen} edges={['top']}>
       <Header title="Edit profile" onBack={() => router.back()} />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]} showsVerticalScrollIndicator={false}>
         {/* ── The preview: your half of the versus screen, in miniature. That is
             the whole pitch for editing any of this — it is how you appear at
             the moment two players slam together. */}
@@ -330,7 +331,7 @@ export default function Customize() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { padding: layout.gutter, paddingBottom: layout.scrollBottom },
+  content: { padding: layout.gutter },
 
   preview: { borderRadius: layout.radiusCard, overflow: 'hidden', marginBottom: space.lg },
   previewShade: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(18, 14, 30, 0.38)' },

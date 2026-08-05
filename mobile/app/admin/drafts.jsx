@@ -12,6 +12,7 @@ import {
   ErrorNotice,
   Header,
   Segmented,
+  useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { colors, consoleLayout, layout, space } from '../../src/theme/index.js';
 
@@ -33,6 +34,7 @@ const DIFFICULTIES = [
 ];
 
 export default function AdminDrafts() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const adminSpace = useAdminSpace();
   const { canWrite } = useAdminPermissions(adminSpace);
@@ -102,7 +104,7 @@ export default function AdminDrafts() {
 
       <ScrollView
         automaticallyAdjustKeyboardInsets
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -206,7 +208,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: consoleLayout.gutter,
     // The console header closes with a hairline; content needs air under it.
     paddingTop: space.lg,
-    paddingBottom: space.xxxl,
   },
   fieldLabel: { marginTop: space.lg, marginBottom: space.xs },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },

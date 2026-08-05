@@ -3,7 +3,7 @@ import { FlatList, RefreshControl, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/lib/api.js';
-import { Text, Header, ErrorNotice, EmptyState } from '../src/components/ui.jsx';
+import { Text, Header, ErrorNotice, EmptyState, useScrollBottom } from '../src/components/ui.jsx';
 import { ListSkeleton } from '../src/components/Skeletons.jsx';
 import { TopicProgressRow } from '../src/components/ProfileRows.jsx';
 import { colors, layout, space } from '../src/theme/index.js';
@@ -21,6 +21,7 @@ import { colors, layout, space } from '../src/theme/index.js';
  * has to survive being long.
  */
 export default function MyTopics() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const [items, setItems] = useState(null);
   const [error, setError] = useState(null);
@@ -75,7 +76,7 @@ export default function MyTopics() {
           data={items}
           keyExtractor={(t) => t.topicId}
           renderItem={renderItem}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -101,6 +102,6 @@ export default function MyTopics() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
+  list: { paddingHorizontal: layout.gutter },
   count: { paddingBottom: space.md },
 });

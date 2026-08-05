@@ -4,7 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useIsSuperadmin } from '../../src/lib/admin.js';
-import { Text, Badge, Card, ErrorNotice, Header } from '../../src/components/ui.jsx';
+import { Text, Badge, Card, ErrorNotice, Header, useScrollBottom } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import { colors, consoleLayout, consoleType, elevation, layout, space, type } from '../../src/theme/index.js';
@@ -30,6 +30,7 @@ const QUICK = [
 ];
 
 export default function SuperHome() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const isSuper = useIsSuperadmin();
   const [analytics, setAnalytics] = useState(null);
@@ -99,7 +100,7 @@ export default function SuperHome() {
         <CardsSkeleton count={4} />
       ) : !analytics ? null : (
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -306,7 +307,7 @@ function SysRow({ label, value, tone = colors.ink, last = false }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  content: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
+  content: { padding: consoleLayout.gutter, paddingTop: space.sm },
   stats: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,

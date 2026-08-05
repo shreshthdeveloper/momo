@@ -16,6 +16,7 @@ import {
   ProgressBar,
   Segmented,
   CountRow,
+  useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import { useExport, csvName } from '../../src/lib/download.js';
@@ -37,6 +38,7 @@ const FILTERS = [
 ];
 
 export default function AssignmentDetail() {
+  const scrollBottom = useScrollBottom();
   const goBack = useConsoleBack();
   const { id } = useLocalSearchParams();
   const adminSpace = useAdminSpace();
@@ -98,7 +100,7 @@ export default function AssignmentDetail() {
         <ListSkeleton rows={7} />
       ) : (
         <ScrollView
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -200,7 +202,7 @@ export default function AssignmentDetail() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl },
+  list: { paddingHorizontal: consoleLayout.gutter },
   summary: { paddingVertical: space.md, gap: space.xs },
   tabs: { marginBottom: space.sm },
   row: {

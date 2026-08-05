@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, BackHandler, Easing, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 import { Image } from 'expo-image';
 import { useGame } from '../../src/state/game.jsx';
 import { Text, ConfirmSheet, RollingNumber, Avatar } from '../../src/components/ui.jsx';
@@ -269,7 +268,6 @@ export default function MatchScreen() {
   return (
     <BrandField tone={colors.night}>
       <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
-        <StatusBar style="light" />
 
         {/* ── The thin line: the round draining in real time. */}
         <TimeLine progress={clock.progress} urgent={urgent} tone="onColor" />

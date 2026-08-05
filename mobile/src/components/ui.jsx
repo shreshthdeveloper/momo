@@ -18,7 +18,9 @@ import {
   colors,
   consoleLayout,
   consoleType,
+  DEFAULT_FONT_SCALE_CAP,
   elevation,
+  fontScaleCap,
   fonts,
   layout,
   space,
@@ -86,7 +88,13 @@ export function Text({ variant = 'body', color = colors.ink, style, children, ..
   const inConsole = Boolean(useConsoleNav());
   const scale = inConsole && consoleType[variant] ? consoleType[variant] : type[variant];
   return (
-    <RNText style={[scale, { color }, style]} {...props}>
+    <RNText
+      // Bounded, not refused — see `fontScaleCap`. A caller that knows better
+      // for one instance still wins, because its prop is spread after.
+      maxFontSizeMultiplier={fontScaleCap[variant] ?? DEFAULT_FONT_SCALE_CAP}
+      style={[scale, { color }, style]}
+      {...props}
+    >
       {children}
     </RNText>
   );
@@ -197,6 +205,9 @@ export function Button({
             {icon ? <Icon name={icon} size={18} color={palette.fg} /> : null}
             <RNText
               numberOfLines={1}
+              // The pill's height is fixed and the label may not wrap, so this
+              // is the one place the cap has to be tighter than the type scale's.
+              maxFontSizeMultiplier={1.2}
               style={[type.label, { fontSize: labelSize, color: palette.fg }]}
             >
               {label}
@@ -1393,9 +1404,20 @@ export function LoadingOverlay({ visible, label }) {
  * `scroll` is opt-in rather than always-on because several sheets already hold
  * their own scroller — `Select`'s option list, the shop's chest carousel — and
  * a vertical ScrollView wrapped around another one fights for the gesture.
+ *
+ * ── It knows which app it is in ─────────────────────────────────────────────
+ *
+ * Like `Text` and `Button`, it reads the console context and changes surface:
+ * the player's field is `canvas`, so a sheet lifting off it is `canvas` too,
+ * while the console's field is `sunken` and its raised things are `nightRaised`.
+ * That difference is the only reason five console screens each kept a private
+ * copy of this component — they wanted the console's surface and its tighter
+ * gutter, and copying the whole sheet was the only way to get them. Reading the
+ * context here is what let those five copies go.
  */
 export function Sheet({ visible, title, onClose, children, accessibilityLabel, scroll = false }) {
   const bottom = useBottomInset();
+  const inConsole = Boolean(useConsoleNav());
   const Body = scroll ? ScrollView : View;
   const bodyProps = scroll
     ? { contentContainerStyle: styles.sheetScrollBody, keyboardShouldPersistTaps: 'handled', showsVerticalScrollIndicator: false }
@@ -1425,7 +1447,12 @@ export function Sheet({ visible, title, onClose, children, accessibilityLabel, s
           accessibilityLabel="Close"
         />
         <View
-          style={[styles.sheet, { paddingBottom: bottom + space.lg }, elevation.sheet]}
+          style={[
+            styles.sheet,
+            inConsole && styles.sheetConsole,
+            { paddingBottom: bottom + space.lg },
+            elevation.sheet,
+          ]}
           accessibilityViewIsModal
           accessibilityLabel={accessibilityLabel}
         >
@@ -1505,6 +1532,89 @@ export function ConfirmSheet({
         </View>
       </View>
     </Modal>
+  );
+}
+
+/**
+ * A `ConfirmSheet` that asks for a sentence before it will let you through.
+ *
+ * Suspending an organization, rejecting a report, dismissing a flag — every
+ * moderation verdict in the platform console is owed a reason, because the
+ * person on the other end of it gets shown one. So the decision and the sentence
+ * that justifies it are the same control, and Confirm stays disabled until the
+ * sentence is actually there.
+ *
+ * It lived twice, once on the organizations screen and once on moderation, as
+ * two copies of the same ninety lines that had already drifted — one reset its
+ * field on every open, the other prefilled it. Both behaviours were wanted, so
+ * they are a prop here rather than a fork.
+ *
+ * An error keeps the sheet open with the typing intact. Throwing away a
+ * paragraph because the request failed is the one thing this must never do.
+ */
+export function PromptSheet({
+  visible,
+  title,
+  body,
+  placeholder,
+  confirmLabel,
+  destructive = false,
+  initialValue = '',
+  minLength = 1,
+  maxLength = 300,
+  loading = false,
+  error,
+  onConfirm,
+  onCancel,
+}) {
+  const [text, setText] = useState(initialValue);
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (visible) setText(initialValue);
+  }, [visible, initialValue]);
+
+  const valid = text.trim().length >= minLength;
+
+  return (
+    <Sheet visible={visible} onClose={loading ? undefined : onCancel} accessibilityLabel={title} scroll>
+      <Text variant="display" style={{ marginBottom: space.sm }}>
+        {title}
+      </Text>
+      {body ? (
+        <Text variant="body" color={colors.inkMuted} style={{ marginBottom: space.lg }}>
+          {body}
+        </Text>
+      ) : null}
+      <TextInput
+        style={[styles.promptInput, focused && styles.promptInputFocused]}
+        value={text}
+        onChangeText={setText}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        placeholder={placeholder}
+        placeholderTextColor={colors.inkFaint}
+        maxLength={maxLength}
+        multiline
+        accessibilityLabel={placeholder ?? 'Reason'}
+      />
+      <ErrorNotice error={error} />
+      <Button
+        variant={destructive ? 'danger' : 'primary'}
+        label={confirmLabel}
+        loading={loading}
+        disabled={!valid}
+        style={{ marginTop: space.lg }}
+        onPress={() => onConfirm(text.trim())}
+      />
+      <Button
+        variant="soft"
+        label="Cancel"
+        disabled={loading}
+        style={{ marginTop: space.md }}
+        onPress={onCancel}
+      />
+    </Sheet>
   );
 }
 
@@ -1870,6 +1980,31 @@ const styles = StyleSheet.create({
      */
     maxHeight: '88%',
   },
+  /** The console's raised surface and its tighter gutter — see `Sheet`. */
+  sheetConsole: { backgroundColor: colors.nightRaised, padding: consoleLayout.gutter },
+  /**
+   * The reason field in a `PromptSheet`.
+   *
+   * `sunken` and a visible edge, because both copies this replaced filled the
+   * box with `nightRaised` and gave it a TRANSPARENT border — the same value as
+   * the console sheet it sits on. The field was therefore drawn in exactly the
+   * colour of the surface behind it, and all that marked the one control on the
+   * sheet was its placeholder text floating in space.
+   */
+  promptInput: {
+    ...type.option,
+    color: colors.ink,
+    backgroundColor: colors.sunken,
+    borderRadius: layout.radiusInput,
+    borderWidth: 1.5,
+    borderColor: colors.hairline,
+    paddingHorizontal: space.lg,
+    paddingTop: space.md,
+    paddingBottom: space.md,
+    minHeight: 54,
+    textAlignVertical: 'top',
+  },
+  promptInputFocused: { borderColor: colors.accent },
   sheetScrollBody: { paddingBottom: space.xs },
   sheetGrabber: {
     width: 40,

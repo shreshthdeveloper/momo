@@ -19,7 +19,7 @@ import {
   Sheet,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, consoleLayout, layout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, space } from '../../src/theme/index.js';
 
 /**
  * Live class sessions — the console side.
@@ -217,6 +217,6 @@ export default function AdminSessions() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: layout.scrollBottom },
+  list: { paddingHorizontal: consoleLayout.gutter , paddingBottom: space.xl},
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
 });

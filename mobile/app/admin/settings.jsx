@@ -718,7 +718,7 @@ function DurationChip({ seconds, active, disabled, onPress }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  content: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl },
+  content: { padding: consoleLayout.gutter, paddingTop: space.sm , paddingBottom: space.xl},
   readOnlyNote: { marginBottom: space.lg, marginLeft: space.xs },
 
   section: { marginBottom: space.xl },

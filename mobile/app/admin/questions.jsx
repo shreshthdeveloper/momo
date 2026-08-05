@@ -21,6 +21,7 @@ import {
   CountRow,
   FULL_BLEED_MODAL,
   useBottomInset,
+  useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
@@ -114,6 +115,7 @@ function FilterGroup({ label, options, value, onChange }) {
 }
 
 export default function AdminQuestions() {
+  const scrollBottom = useScrollBottom();
   const bottom = useBottomInset();
   const router = useRouter();
   const adminSpace = useAdminSpace();
@@ -150,6 +152,16 @@ export default function AdminQuestions() {
   const [error, setError] = useState(null);
 
   const [selected, setSelected] = useState(null); // null = browsing, array = selecting
+
+  /**
+   * Whether something below the list already stands on the safe area.
+   *
+   * Three things can hold the bottom of this screen: the primary in a
+   * `ConsoleFooter`, the bulk-selection bar while rows are ticked, or — for a
+   * sub-admin with no write permission, browsing the central bank — nothing at
+   * all. Both bars inset themselves, so only the third case leaves the list
+   * owing the navigation bar its height.
+   */
   const [bulkBusy, setBulkBusy] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -378,6 +390,8 @@ export default function AdminQuestions() {
     return order.sort((a, b) => (a.id === 'NONE' ? 1 : b.id === 'NONE' ? -1 : 0));
   })();
 
+  const bottomOwned = Boolean(selected) || (origin === 'own' && canWrite);
+
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       {/* No `+` in the corner. Creating a question is this screen's primary
@@ -525,7 +539,7 @@ export default function AdminQuestions() {
         )
       ) : (
         <ScrollView
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: bottomOwned ? space.xl : scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -925,7 +939,7 @@ const styles = StyleSheet.create({
     paddingTop: space.md,
     paddingBottom: space.sm,
   },
-  list: { padding: consoleLayout.gutter, paddingTop: 0, paddingBottom: space.xxxl },
+  list: { padding: consoleLayout.gutter, paddingTop: 0 },
   card: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,

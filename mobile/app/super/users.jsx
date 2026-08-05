@@ -17,6 +17,7 @@ import {
   CountRow,
   ListCard,
   ListRow,
+  useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import { colors, consoleLayout, consoleType, space } from '../../src/theme/index.js';
@@ -43,6 +44,7 @@ const STATUSES = [
 const PAGE_SIZE = 50;
 
 export default function SuperUsers() {
+  const scrollBottom = useScrollBottom();
   const [status, setStatus] = useState('active');
   const [query, setQuery] = useState('');
   const [spaceId, setSpaceId] = useState(null);
@@ -170,7 +172,7 @@ export default function SuperUsers() {
         />
       ) : (
         <ScrollView
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -287,7 +289,7 @@ function shortDate(at) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
   controls: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.sm, gap: space.sm },
-  list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl },
+  list: { paddingHorizontal: consoleLayout.gutter },
   identity: { flex: 1, minWidth: 0, gap: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   rating: { color: colors.inkMuted, minWidth: 42, textAlign: 'right' },

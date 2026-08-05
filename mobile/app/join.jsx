@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 import { api } from '../src/lib/api.js';
 import { useAuth } from '../src/state/auth.jsx';
 import { Text, Button, ErrorNotice, Avatar, IconButton } from '../src/components/ui.jsx';
@@ -95,7 +94,6 @@ export default function Join() {
   if (requested) {
     return (
       <BrandField>
-        <StatusBar style="light" />
         <SafeAreaView style={styles.screen}>
           <View style={styles.top}>
             <IconButton name="close" tone="onColor" onPress={() => router.back()} label="Close" />
@@ -124,7 +122,6 @@ export default function Join() {
 
   return (
     <BrandField>
-      <StatusBar style="light" />
       <SafeAreaView style={styles.screen}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
           <View style={styles.top}>

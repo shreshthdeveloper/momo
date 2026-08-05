@@ -2,7 +2,6 @@ import { useCallback, useEffect } from 'react';
 import { View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 /**
@@ -26,6 +25,7 @@ import { ProgressionProvider } from '../src/state/progression.jsx';
 import { NotificationsProvider } from '../src/state/notifications.jsx';
 import { SessionProvider } from '../src/state/session.jsx';
 import NotificationBanner from '../src/components/NotificationBanner.jsx';
+import ErrorBoundary from '../src/components/ErrorBoundary.jsx';
 import Splash from '../src/components/Splash.jsx';
 import { colors, motion } from '../src/theme/index.js';
 
@@ -209,11 +209,25 @@ export default function RootLayout() {
  */
 function Boot() {
   const { booting } = useAuth();
+  const router = useRouter();
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.canvas }}>
-      <StatusBar style="light" />
-      <RootNavigator />
+      {/**
+       * Around the navigator, not around the whole app.
+       *
+       * Everything above this point — the providers, the fonts, the splash — has
+       * to survive a screen blowing up, or "Try again" would remount the session
+       * and sign the player out to recover from a bad render. Inside it is every
+       * screen, which is where the throws are.
+       *
+       * Home is the offer rather than "back", because a boundary catches on the
+       * way UP: whatever route threw is still the current one, and going back to
+       * it is how a player gets a loop instead of a way out.
+       */}
+      <ErrorBoundary onGoHome={() => router.replace('/')}>
+        <RootNavigator />
+      </ErrorBoundary>
       {/* Above every screen and below the splash: it announces things that
           arrive while the player is somewhere else, which is everywhere. */}
       {booting ? null : <NotificationBanner />}

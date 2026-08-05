@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 import { Image } from 'expo-image';
 import { useGame } from '../../src/state/game.jsx';
 import { Text, Avatar } from '../../src/components/ui.jsx';
@@ -105,7 +104,6 @@ export default function Versus() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="light" />
 
       {/* ── Your half, wearing your banner. */}
       <Animated.View

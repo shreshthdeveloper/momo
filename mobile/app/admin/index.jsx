@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
-import { Text, ErrorNotice, EmptyState, Header } from '../../src/components/ui.jsx';
+import { Text, ErrorNotice, EmptyState, Header, useScrollBottom } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
@@ -39,6 +39,7 @@ const QUICK = [
 ];
 
 export default function AdminHome() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const adminSpace = useAdminSpace();
   const [data, setData] = useState(null);
@@ -86,7 +87,7 @@ export default function AdminHome() {
         <CardsSkeleton count={3} />
       ) : (
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -234,7 +235,7 @@ function Metric({ value, label }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  content: { padding: consoleLayout.gutter, paddingTop: space.md, paddingBottom: space.xxxl },
+  content: { padding: consoleLayout.gutter, paddingTop: space.md },
   stats: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,

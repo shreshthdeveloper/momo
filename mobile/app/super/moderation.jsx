@@ -1,13 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -22,8 +17,8 @@ import {
   ConfirmSheet,
   EmptyState,
   ErrorNotice,
-  FULL_BLEED_MODAL,
-  useBottomInset,
+  PromptSheet,
+  useScrollBottom,
   Tabs,
   Header,
 } from '../../src/components/ui.jsx';
@@ -76,6 +71,7 @@ function ago(iso) {
 }
 
 export default function SuperModeration() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const isSuper = useIsSuperadmin();
 
@@ -202,7 +198,7 @@ export default function SuperModeration() {
         )
       ) : (
         <ScrollView
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -292,7 +288,7 @@ export default function SuperModeration() {
         onCancel={() => setConfirm(null)}
       />
 
-      <ReasonSheet
+      <PromptSheet
         visible={Boolean(flagTarget)}
         destructive
         title={`Suspend ${flagTarget?.displayName ?? ''}?`}
@@ -443,87 +439,9 @@ function UserReportCard({ report, onWarn, onSuspend, onDismiss }) {
   );
 }
 
-/**
- * A ConfirmSheet that asks for a sentence — same shape as the one on the
- * organizations screen. The reason arrives prefilled here because the flags list
- * has exactly one cause; the operator can still rewrite it.
- */
-function ReasonSheet({
-  visible,
-  title,
-  body,
-  placeholder,
-  confirmLabel,
-  destructive = false,
-  initialValue = '',
-  minLength = 1,
-  loading = false,
-  error,
-  onConfirm,
-  onCancel,
-}) {
-  const [text, setText] = useState(initialValue);
-  const [focused, setFocused] = useState(false);
-  const bottom = useBottomInset();
-
-  useEffect(() => {
-    if (visible) setText(initialValue);
-  }, [visible, initialValue]);
-
-  const valid = text.trim().length >= minLength;
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onCancel}
-      {...FULL_BLEED_MODAL}
-    >
-      <Pressable style={({ pressed }) => [styles.sheetScrim, pressed && { opacity: 0.7 }]} onPress={loading ? undefined : onCancel}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} pointerEvents="box-none">
-          <Pressable style={[styles.sheet, { paddingBottom: bottom + space.lg }, elevation.sheet]} onPress={() => {}}>
-            <View style={styles.sheetGrabber} />
-            <Text variant="display" style={{ marginBottom: space.sm }}>
-              {title}
-            </Text>
-            {body ? (
-              <Text variant="body" color={colors.inkMuted} style={{ marginBottom: space.lg }}>
-                {body}
-              </Text>
-            ) : null}
-            <TextInput
-              style={[styles.reasonInput, focused && styles.reasonInputFocused]}
-              value={text}
-              onChangeText={setText}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
-              placeholder={placeholder}
-              placeholderTextColor={colors.inkFaint}
-              maxLength={300}
-              multiline
-              accessibilityLabel={placeholder ?? 'Reason'}
-            />
-            <ErrorNotice error={error} />
-            <Button
-              variant={destructive ? 'danger' : 'primary'}
-              label={confirmLabel}
-              loading={loading}
-              disabled={!valid}
-              style={{ marginTop: space.lg }}
-              onPress={() => onConfirm(text.trim())}
-            />
-            <Button variant="soft" label="Cancel" disabled={loading} style={{ marginTop: space.md }} onPress={onCancel} />
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Pressable>
-    </Modal>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  list: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.xs, paddingBottom: space.xxxl },
+  list: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.xs },
   card: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,
@@ -588,20 +506,4 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: space.lg,
   },
-  reasonInput: {
-    ...type.option,
-    color: colors.ink,
-    backgroundColor: colors.nightRaised,
-    borderRadius: layout.radiusInput,
-    borderWidth: 1.5,
-    borderColor: colors.transparent,
-    paddingHorizontal: space.lg,
-    paddingTop: space.md,
-    paddingBottom: space.md,
-    minHeight: 54,
-    maxHeight: 120,
-    textAlignVertical: 'top',
-    marginBottom: space.sm,
-  },
-  reasonInputFocused: { borderColor: colors.accent, backgroundColor: colors.nightRaised },
 });

@@ -3,7 +3,7 @@ import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View } from 'r
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/lib/api.js';
-import { Text, Header, ErrorNotice, EmptyState } from '../src/components/ui.jsx';
+import { Text, Header, ErrorNotice, EmptyState, useScrollBottom } from '../src/components/ui.jsx';
 import { ListSkeleton } from '../src/components/Skeletons.jsx';
 import { MatchHistoryRow } from '../src/components/ProfileRows.jsx';
 import { colors, layout, space } from '../src/theme/index.js';
@@ -31,6 +31,7 @@ const PAGE = 30;
  * ends up comparing, and it cannot loop.
  */
 export default function History() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const [items, setItems] = useState(null);
   const [error, setError] = useState(null);
@@ -106,7 +107,7 @@ export default function History() {
           data={items}
           keyExtractor={(m) => m.id}
           renderItem={renderItem}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           onEndReached={loadMore}
           onEndReachedThreshold={0.4}
@@ -146,7 +147,7 @@ export default function History() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  list: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
+  list: { paddingHorizontal: layout.gutter },
   legend: { textAlign: 'right', paddingBottom: space.sm },
   footer: { paddingVertical: space.lg },
   end: { textAlign: 'center', paddingVertical: space.lg },

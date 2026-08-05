@@ -166,7 +166,7 @@ export default function SuperAnnounce() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  content: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl },
+  content: { paddingHorizontal: consoleLayout.gutter , paddingBottom: space.xl},
   fieldLabel: { marginTop: space.lg, marginBottom: space.xs },
   field: { marginTop: space.lg },
   hint: { marginTop: space.xs },

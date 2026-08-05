@@ -13,6 +13,7 @@ import {
   Header,
   ErrorNotice,
   SectionHeader,
+  useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
@@ -37,6 +38,7 @@ import { colors, layout, space } from '../../src/theme/index.js';
  * name, and it is pinned at the top where a call to action belongs.
  */
 export default function TournamentScreen() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const { activeSpaceId } = useAuth();
@@ -105,7 +107,7 @@ export default function TournamentScreen() {
         <CardsSkeleton rows={4} />
       ) : !data ? null : (
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -277,7 +279,7 @@ function Side({ person, winner, decided, align = 'left' }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: layout.gutter, paddingBottom: layout.scrollBottom },
+  content: { paddingHorizontal: layout.gutter },
   callToAction: { marginBottom: space.lg, borderColor: colors.accent, borderWidth: 1 },
   tieHead: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.sm },
   lobby: { marginBottom: space.lg },

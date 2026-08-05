@@ -11,6 +11,7 @@ import {
   Header,
   ProgressBar,
   SectionHeader,
+  useScrollBottom,
 } from '../src/components/ui.jsx';
 import { CardsSkeleton } from '../src/components/Skeletons.jsx';
 import AssignmentCard from '../src/components/AssignmentCard.jsx';
@@ -26,6 +27,7 @@ import { MATCH_MODE } from '../src/shared/constants.js';
  * "what do I still owe", not "what have I already handed in".
  */
 export default function Assignments() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const { activeSpaceId, spaces } = useAuth();
 
@@ -87,7 +89,7 @@ export default function Assignments() {
         <CardsSkeleton count={4} />
       ) : (
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -178,7 +180,7 @@ const styles = StyleSheet.create({
    * takes the raised surface the theme keeps for exactly this.
    */
   screen: { flex: 1, backgroundColor: colors.canvas },
-  content: { paddingHorizontal: layout.gutter, paddingTop: space.sm, paddingBottom: layout.scrollBottom },
+  content: { paddingHorizontal: layout.gutter, paddingTop: space.sm },
   summary: {
     backgroundColor: colors.nightRaised,
     borderWidth: 1,

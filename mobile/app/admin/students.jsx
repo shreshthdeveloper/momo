@@ -20,6 +20,7 @@ import {
   Sheet,
   Tabs,
   CountRow,
+  useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
@@ -47,6 +48,7 @@ const TABS = [
 const PAGE_SIZE = 50;
 
 export default function AdminStudents() {
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const adminSpace = useAdminSpace();
   const { canManageStudents } = useAdminPermissions(adminSpace);
@@ -297,7 +299,7 @@ export default function AdminStudents() {
         />
       ) : (
         <ScrollView
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -479,7 +481,7 @@ const styles = StyleSheet.create({
     paddingBottom: space.sm,
     gap: space.sm,
   },
-  list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl },
+  list: { paddingHorizontal: consoleLayout.gutter },
   /** The rating column. Fixed width and right-aligned, so it reads downward. */
   figure: { ...consoleType.figure, minWidth: 44, textAlign: 'right' },
   rowPressed: { backgroundColor: colors.nightRaised },

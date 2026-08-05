@@ -17,6 +17,7 @@ import {
   RowMenu,
   Select,
   Loading,
+  useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { colors, consoleLayout, consoleType, elevation, layout, space } from '../../src/theme/index.js';
 
@@ -36,6 +37,7 @@ import { colors, consoleLayout, consoleType, elevation, layout, space } from '..
  * then the full per-topic table.
  */
 export default function AdminStudentDetail() {
+  const scrollBottom = useScrollBottom();
   const goBack = useConsoleBack();
   const params = useLocalSearchParams();
   const adminSpace = useAdminSpace();
@@ -140,7 +142,7 @@ export default function AdminStudentDetail() {
         <Loading />
       ) : !report ? null : (
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -319,7 +321,7 @@ function Metric({ value, label }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  content: { padding: consoleLayout.gutter, paddingBottom: space.xxxl },
+  content: { padding: consoleLayout.gutter },
   identity: {
     flexDirection: 'row',
     alignItems: 'center',

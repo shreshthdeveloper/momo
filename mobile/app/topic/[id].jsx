@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 import { Image } from 'expo-image';
 import { api } from '../../src/lib/api.js';
 import { useAuth } from '../../src/state/auth.jsx';
@@ -95,7 +94,6 @@ export default function TopicScreen() {
   if (!topic) {
     return (
       <View style={styles.screen}>
-        <StatusBar style="light" />
         <TopicSkeleton />
       </View>
     );
@@ -105,7 +103,6 @@ export default function TopicScreen() {
 
   return (
     <View style={styles.screen}>
-      <StatusBar style="light" />
       <ScrollView contentContainerStyle={{ paddingBottom: 132 }} showsVerticalScrollIndicator={false}>
         <View style={styles.cover}>
           {topic.coverUrl ? (

@@ -11,6 +11,7 @@ import {
   EmptyState,
   ErrorNotice,
   Header,
+  useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import QuestionArt from '../../src/components/QuestionArt.jsx';
@@ -27,6 +28,7 @@ import { OPTION_COLORS, colors, consoleLayout, layout, space, type } from '../..
 const LETTERS = ['A', 'B', 'C', 'D'];
 
 export default function AdminReview() {
+  const scrollBottom = useScrollBottom();
   const adminSpace = useAdminSpace();
   const [queue, setQueue] = useState(null);
   const [error, setError] = useState(null);
@@ -88,7 +90,7 @@ export default function AdminReview() {
           body="Nothing is waiting for review. Imported and submitted questions land here before they can be played."
         />
       ) : (
-        <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[styles.list, { paddingBottom: scrollBottom }]} showsVerticalScrollIndicator={false}>
           {items.map((question) => (
             <Card key={question.id} style={styles.card}>
               <View style={styles.cardHead}>
@@ -179,7 +181,7 @@ export default function AdminReview() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  list: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.xxxl, gap: layout.cardGap },
+  list: { padding: consoleLayout.gutter, paddingTop: space.sm, gap: layout.cardGap },
   card: {},
   cardHead: {
     flexDirection: 'row',
