@@ -204,7 +204,7 @@ export default function AdminTournaments() {
         </ConsoleFooter>
       ) : null}
 
-      <Sheet visible={open} title="New tournament" onClose={() => setOpen(false)}>
+      <Sheet visible={open} title="New tournament" onClose={() => setOpen(false)} scroll>
         <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
           Name
         </Text>

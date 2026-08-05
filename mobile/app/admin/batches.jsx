@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  KeyboardAvoidingView,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -229,55 +227,54 @@ export default function AdminBatches() {
         title={editing?.id ? 'Rename batch' : 'New batch'}
         onClose={() => setEditing(null)}
         accessibilityLabel="Batch details"
+        scroll
       >
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
-            Name
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={editing?.name ?? ''}
-            onChangeText={(v) => setEditing((e) => ({ ...e, name: v }))}
-            placeholder="Class 9A"
-            placeholderTextColor={colors.inkFaint}
-            maxLength={60}
-            autoFocus
-            accessibilityLabel="Batch name"
-          />
+        <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
+          Name
+        </Text>
+        <TextInput
+          style={styles.input}
+          value={editing?.name ?? ''}
+          onChangeText={(v) => setEditing((e) => ({ ...e, name: v }))}
+          placeholder="Class 9A"
+          placeholderTextColor={colors.inkFaint}
+          maxLength={60}
+          autoFocus
+          accessibilityLabel="Batch name"
+        />
 
-          <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
-            Year
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={editing?.year ?? ''}
-            onChangeText={(v) => setEditing((e) => ({ ...e, year: v }))}
-            placeholder="2026"
-            placeholderTextColor={colors.inkFaint}
-            maxLength={20}
-            accessibilityLabel="Batch year"
-          />
+        <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
+          Year
+        </Text>
+        <TextInput
+          style={styles.input}
+          value={editing?.year ?? ''}
+          onChangeText={(v) => setEditing((e) => ({ ...e, year: v }))}
+          placeholder="2026"
+          placeholderTextColor={colors.inkFaint}
+          maxLength={20}
+          accessibilityLabel="Batch year"
+        />
 
-          <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
-            Description
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={editing?.description ?? ''}
-            onChangeText={(v) => setEditing((e) => ({ ...e, description: v }))}
-            placeholder="Optional"
-            placeholderTextColor={colors.inkFaint}
-            maxLength={200}
-            accessibilityLabel="Batch description"
-          />
-          <Button
-            label={editing?.id ? 'Save' : 'Create batch'}
-            loading={busy}
-            disabled={!(editing?.name ?? '').trim()}
-            style={{ marginTop: space.md }}
-            onPress={save}
-          />
-        </KeyboardAvoidingView>
+        <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
+          Description
+        </Text>
+        <TextInput
+          style={styles.input}
+          value={editing?.description ?? ''}
+          onChangeText={(v) => setEditing((e) => ({ ...e, description: v }))}
+          placeholder="Optional"
+          placeholderTextColor={colors.inkFaint}
+          maxLength={200}
+          accessibilityLabel="Batch description"
+        />
+        <Button
+          label={editing?.id ? 'Save' : 'Create batch'}
+          loading={busy}
+          disabled={!(editing?.name ?? '').trim()}
+          style={{ marginTop: space.md }}
+          onPress={save}
+        />
       </Sheet>
 
       <ConfirmSheet

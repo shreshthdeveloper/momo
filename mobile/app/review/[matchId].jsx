@@ -3,7 +3,16 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
-import { Text, ErrorNotice, Card, Divider, Button, Header, Badge } from '../../src/components/ui.jsx';
+import {
+  Text,
+  ErrorNotice,
+  Card,
+  Divider,
+  Button,
+  Header,
+  Badge,
+  useScrollBottom,
+} from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import QuestionArt from '../../src/components/QuestionArt.jsx';
@@ -28,6 +37,7 @@ const LETTERS = ['A', 'B', 'C', 'D'];
  * explanations in a row.
  */
 export default function Review() {
+  const scrollBottom = useScrollBottom();
   const { matchId } = useLocalSearchParams();
   const router = useRouter();
   const [match, setMatch] = useState(null);
@@ -81,7 +91,14 @@ export default function Review() {
         right={<Badge label={`${correctCount}/${match.rounds.length}`} tone="soft" />}
       />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      {/* The deck of rounds ends flush at the bottom of the screen, so its
+          padding is the system bar rather than the gutter it inherited — 20pt
+          left the last card under the home indicator and under Android's
+          navigation bar. */}
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         {match.rounds.map((round) => (
           <Card key={round.roundIndex} style={styles.card}>
             <View style={styles.cardHead}>

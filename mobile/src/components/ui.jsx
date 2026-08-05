@@ -3,7 +3,9 @@ import {
   ActivityIndicator,
   Animated,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -28,6 +30,49 @@ import { useConsoleNav } from './consoleNav.js';
 import { useReducedMotion } from '../lib/motion.js';
 import { resolveAvatar } from '../lib/avatar.js';
 import Icon from './Icon.jsx';
+
+/**
+ * The gap a screen owes the bottom of the phone.
+ *
+ * The app is edge-to-edge on Android (`app.json`), so it draws BEHIND the
+ * navigation bar, and that bar is three different heights on the three kinds of
+ * phone we ship to: 34pt for an iPhone's home indicator, ~24dp for Android
+ * gesture navigation, 48dp for Android's three-button bar. Every screen that
+ * wrote a number here instead of asking landed correctly on one of the three and
+ * under the bar on another — which is exactly why the app looked fine on one
+ * device and clipped on the next.
+ *
+ * `space.md` is the floor, so a phone with no bottom bar at all still ends its
+ * content with a gap rather than flush against the glass.
+ */
+export function useBottomInset() {
+  const insets = useSafeAreaInsets();
+  return Math.max(insets.bottom, space.md);
+}
+
+/** The same, plus the breathing room a scroll wants under its last row. */
+export function useScrollBottom() {
+  return useBottomInset() + space.xl;
+}
+
+/**
+ * What every `Modal` in this app passes.
+ *
+ * Without these two, Android insets the modal's own window below the status bar
+ * and above the navigation bar, so a scrim that covers the whole screen on iOS
+ * stops short of both on Android — the live screen shows through in a strip at
+ * the top, and the sheet's own safe-area padding is measured against a window
+ * that has already been shrunk. Turning them on makes the modal genuinely
+ * full-bleed on both platforms, which is what lets one set of insets be right
+ * everywhere.
+ *
+ * `navigationBarTranslucent` requires `statusBarTranslucent`; RN warns if it is
+ * given on its own, so the two always travel together.
+ */
+export const FULL_BLEED_MODAL = {
+  statusBarTranslucent: true,
+  navigationBarTranslucent: true,
+};
 
 /**
  * Text bound to the type scale. Nothing outside design.md §4.2 is reachable.
@@ -809,7 +854,7 @@ export function ListRow({
 /** The sheet of verbs a row or a header opens. One layout for both. */
 function ActionSheet({ visible, title, actions, onClose }) {
   return (
-    <Sheet visible={visible} title={title} onClose={onClose} accessibilityLabel={title}>
+    <Sheet visible={visible} title={title} onClose={onClose} accessibilityLabel={title} scroll>
       <View style={styles.menuList}>
         {actions.map((action) => (
           <Pressable
@@ -1333,10 +1378,46 @@ export function LoadingOverlay({ visible, label }) {
  * no ancestor `Pressable` in the way, gestures inside belong to whatever the
  * caller put there.
  */
-export function Sheet({ visible, title, onClose, children, accessibilityLabel }) {
+/**
+ * ── Why it is capped, and why it can scroll ─────────────────────────────────
+ *
+ * The scrim is `justify-content: flex-end`, which means a sheet taller than the
+ * screen does not push its own bottom down — it overflows off the TOP, taking
+ * its title and first fields with it, unreachable. That was survivable while
+ * every sheet held a sentence and two buttons; it stopped being survivable when
+ * forms moved in (the new-tournament sheet, the roster sheets), because a form
+ * is exactly the thing whose height depends on how many options came back from
+ * the server. So the sheet is capped at 88% of the window, and `scroll` gives
+ * the tall ones somewhere to put the overflow.
+ *
+ * `scroll` is opt-in rather than always-on because several sheets already hold
+ * their own scroller — `Select`'s option list, the shop's chest carousel — and
+ * a vertical ScrollView wrapped around another one fights for the gesture.
+ */
+export function Sheet({ visible, title, onClose, children, accessibilityLabel, scroll = false }) {
+  const bottom = useBottomInset();
+  const Body = scroll ? ScrollView : View;
+  const bodyProps = scroll
+    ? { contentContainerStyle: styles.sheetScrollBody, keyboardShouldPersistTaps: 'handled', showsVerticalScrollIndicator: false }
+    : null;
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.sheetScrim}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      {...FULL_BLEED_MODAL}
+    >
+      {/* The keyboard is the other thing that can bury a sheet, and a sheet is
+          where the app puts most of its short forms. `padding` measures only the
+          OVERLAP between the keyboard and this view's own frame, so on an
+          Android build where the window still resizes itself it correctly
+          resolves to nothing rather than double-counting. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.sheetScrim}
+      >
         <Pressable
           style={StyleSheet.absoluteFill}
           onPress={onClose}
@@ -1344,7 +1425,7 @@ export function Sheet({ visible, title, onClose, children, accessibilityLabel })
           accessibilityLabel="Close"
         />
         <View
-          style={[styles.sheet, elevation.sheet]}
+          style={[styles.sheet, { paddingBottom: bottom + space.lg }, elevation.sheet]}
           accessibilityViewIsModal
           accessibilityLabel={accessibilityLabel}
         >
@@ -1354,9 +1435,9 @@ export function Sheet({ visible, title, onClose, children, accessibilityLabel })
               {title}
             </Text>
           ) : null}
-          {children}
+          <Body {...bodyProps}>{children}</Body>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -1373,8 +1454,16 @@ export function ConfirmSheet({
   onConfirm,
   onCancel,
 }) {
+  const bottom = useBottomInset();
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onCancel}
+      {...FULL_BLEED_MODAL}
+    >
       <View style={styles.sheetScrim}>
         {/* A cancel target, and a sibling rather than a parent — see `Sheet`. */}
         <Pressable
@@ -1383,7 +1472,7 @@ export function ConfirmSheet({
           accessibilityRole="button"
           accessibilityLabel={cancelLabel ?? 'Close'}
         />
-        <View style={[styles.sheet, elevation.sheet]}>
+        <View style={[styles.sheet, { paddingBottom: bottom + space.lg }, elevation.sheet]}>
           <View style={styles.sheetGrabber} />
           {icon ? (
             <View style={[styles.sheetIcon, destructive ? styles.sheetIconDanger : null]}>
@@ -1576,7 +1665,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.hairline,
   },
-  selectList: { maxHeight: 380, flexGrow: 0 },
+  /**
+   * `flexShrink: 1` because React Native defaults it to 0, unlike CSS. Without
+   * it the list keeps its full 380 inside a sheet that is now capped at 88% of
+   * the window, and on a short phone the bottom of the options is simply cut
+   * off with no way to reach it.
+   */
+  selectList: { maxHeight: 380, flexGrow: 0, flexShrink: 1 },
   selectRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1768,8 +1863,14 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
     padding: layout.gutter,
-    paddingBottom: space.xxxl,
+    /**
+     * The cap that keeps a tall sheet on the screen rather than off the top of
+     * it. `paddingBottom` is not here on purpose: it is the safe area, so it is
+     * applied at render from `useBottomInset()`.
+     */
+    maxHeight: '88%',
   },
+  sheetScrollBody: { paddingBottom: space.xs },
   sheetGrabber: {
     width: 40,
     height: 4,

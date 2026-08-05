@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useGame } from '../../src/state/game.jsx';
-import { Text, Button, Avatar } from '../../src/components/ui.jsx';
+import { Text, Button, Avatar, useScrollBottom } from '../../src/components/ui.jsx';
 import { LeagueBadge, leagueMetal } from '../../src/components/League.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import Takeover, { eventsFromResult } from '../../src/components/Takeover.jsx';
@@ -68,6 +68,7 @@ const UNLOCK_FADE = 200;
 
 export default function MatchResult() {
   const game = useGame();
+  const scrollBottom = useScrollBottom();
   const router = useRouter();
   const reduced = useReducedMotion();
   const result = game.result;
@@ -468,7 +469,14 @@ export default function MatchResult() {
       ) : null}
 
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* The screen ends in Share and Home, so the padding under them is the
+            navigation bar's height rather than a guess at it — 32 cleared an
+            iPhone's home indicator and left the buttons half behind Android's
+            48dp three-button bar. */}
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingBottom: scrollBottom }]}
+          showsVerticalScrollIndicator={false}
+        >
           {/**
             * ── The scoreboard.
             *
@@ -954,7 +962,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.night },
   /** Night, not white: this frame sits between the match and Home. */
   blank: { flex: 1, backgroundColor: colors.night },
-  content: { padding: layout.gutter, paddingBottom: space.xxl, alignItems: 'stretch' },
+  content: { padding: layout.gutter, alignItems: 'stretch' },
 
   headline: {
     ...type.scoreHero,

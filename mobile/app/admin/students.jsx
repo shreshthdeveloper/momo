@@ -438,6 +438,7 @@ export default function AdminStudents() {
         title={`Batch for ${assigning?.displayName ?? ''}`}
         onClose={() => setAssigning(null)}
         accessibilityLabel="Choose a batch"
+        scroll
       >
         <Text variant="meta" color={colors.inkMuted} style={styles.sheetNote}>
           Batches scope assignments, contests and leaderboards.

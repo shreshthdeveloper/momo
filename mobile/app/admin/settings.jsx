@@ -29,6 +29,8 @@ import {
   ProgressBar,
   Segmented,
   Spinner,
+  FULL_BLEED_MODAL,
+  useBottomInset,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import { colors, consoleLayout, elevation, fonts, layout, space, type } from '../../src/theme/index.js';
@@ -107,6 +109,7 @@ function toForm(spaceData) {
 }
 
 export default function AdminSettings() {
+  const bottom = useBottomInset();
   /**
    * Settings is a sidebar row like every other, so it wears the menu rather
    * than a back arrow. The unsaved-work guard moves with the button: the menu
@@ -616,10 +619,11 @@ export default function AdminSettings() {
         visible={sheet?.kind === 'team'}
         transparent
         animationType="fade"
+        {...FULL_BLEED_MODAL}
         onRequestClose={() => setSheet(null)}
       >
         <Pressable style={({ pressed }) => [styles.sheetScrim, pressed && { opacity: 0.7 }]} onPress={busy ? undefined : () => setSheet(null)}>
-          <Pressable style={[styles.sheet, elevation.sheet]} onPress={() => {}}>
+          <Pressable style={[styles.sheet, { paddingBottom: bottom + space.lg }, elevation.sheet]} onPress={() => {}}>
             <View style={styles.sheetGrabber} />
             <View style={styles.sheetHead}>
               <Avatar url={teamRow?.avatarUrl} name={teamRow?.displayName} size={44} />
@@ -813,7 +817,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
     padding: consoleLayout.gutter,
-    paddingBottom: space.xxxl,
+    maxHeight: '88%',
   },
   sheetGrabber: {
     width: 40,

@@ -19,6 +19,8 @@ import {
   Sheet,
   Tabs,
   CountRow,
+  FULL_BLEED_MODAL,
+  useBottomInset,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
@@ -112,6 +114,7 @@ function FilterGroup({ label, options, value, onChange }) {
 }
 
 export default function AdminQuestions() {
+  const bottom = useBottomInset();
   const router = useRouter();
   const adminSpace = useAdminSpace();
   const permissions = useAdminPermissions(adminSpace);
@@ -743,6 +746,7 @@ export default function AdminQuestions() {
         title="Filters"
         onClose={() => setFiltersOpen(false)}
         accessibilityLabel="Filter the question bank"
+        scroll
       >
         {/* Two fixed, short sets — so these stay chips. Topic is not one of
             them and lives in its own control on the screen; a wrap of chips
@@ -793,10 +797,11 @@ export default function AdminQuestions() {
         visible={Boolean(forkTarget)}
         transparent
         animationType="fade"
+        {...FULL_BLEED_MODAL}
         onRequestClose={closeFork}
       >
         <Pressable style={({ pressed }) => [styles.sheetScrim, pressed && { opacity: 0.7 }]} onPress={forking ? undefined : closeFork}>
-          <Pressable style={[styles.sheet, elevation.sheet]} onPress={() => {}}>
+          <Pressable style={[styles.sheet, { paddingBottom: bottom + space.lg }, elevation.sheet]} onPress={() => {}}>
             <View style={styles.sheetGrabber} />
             <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false}>
               <Text style={[type.question, { color: colors.ink, marginBottom: space.md }]}>
@@ -969,7 +974,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
     padding: consoleLayout.gutter,
-    paddingBottom: space.xxxl,
+    maxHeight: '88%',
   },
   sheetGrabber: {
     width: 40,

@@ -263,12 +263,26 @@ export const layout = {
   /** The floating dock's height. The dock itself reads this. */
   tabBar: 66,
   /**
-   * The floating dock overlays the scene, so every tab screen's scrollable
-   * content needs this much bottom padding to clear it — the dock and the
-   * gesture bar together. It came down from 140 when the raised Play button
-   * left: there is no longer anything rising above the pill to clear.
+   * The gap under the last row of a TAB screen.
+   *
+   * This was 118, on the belief — stated in the comment that used to live here —
+   * that "the floating dock overlays the scene". It does not. The dock is drawn
+   * by `@react-navigation/bottom-tabs`, which lays the tab bar out as an
+   * ordinary flex sibling BELOW the scene container (`BottomTabView` renders
+   * `<MaybeScreenContainer style={{flex: 1}}>` and then the tab bar, in a
+   * column). The scene has therefore already been shortened by the dock's full
+   * height — 8 of top padding, 66 of pill and the bottom safe area, so 86 to 108
+   * depending on the phone.
+   *
+   * Padding by another 118 on top of that put roughly 220pt of empty canvas
+   * under the last card of Home, Shop, Play, Friends and Profile, against 48 on
+   * every pushed screen. The dock needs no clearance at all; what is left here
+   * is simply the breathing room a list wants before it ends.
+   *
+   * The dock asks the safe area for its own bottom inset (`(tabs)/_layout.jsx`),
+   * so nothing here has to.
    */
-  dockClearance: 118,
+  dockClearance: 24,
   /**
    * The bottom padding a PUSHED screen's scrollable content needs.
    *

@@ -22,6 +22,8 @@ import {
   ConfirmSheet,
   EmptyState,
   ErrorNotice,
+  FULL_BLEED_MODAL,
+  useBottomInset,
   RowMenu,
   SearchField,
   Tabs,
@@ -432,6 +434,7 @@ function ReasonSheet({
 }) {
   const [text, setText] = useState('');
   const [focused, setFocused] = useState(false);
+  const bottom = useBottomInset();
 
   useEffect(() => {
     if (visible) setText('');
@@ -440,10 +443,16 @@ function ReasonSheet({
   const valid = text.trim().length >= minLength;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onCancel}
+      {...FULL_BLEED_MODAL}
+    >
       <Pressable style={({ pressed }) => [styles.sheetScrim, pressed && { opacity: 0.7 }]} onPress={loading ? undefined : onCancel}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} pointerEvents="box-none">
-          <Pressable style={[styles.sheet, elevation.sheet]} onPress={() => {}}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} pointerEvents="box-none">
+          <Pressable style={[styles.sheet, { paddingBottom: bottom + space.lg }, elevation.sheet]} onPress={() => {}}>
             <View style={styles.sheetGrabber} />
             <Text variant="display" style={{ marginBottom: space.sm }}>
               {title}
@@ -524,7 +533,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
     padding: consoleLayout.gutter,
-    paddingBottom: space.xxxl,
+    maxHeight: '88%',
   },
   sheetGrabber: {
     width: 40,

@@ -181,7 +181,7 @@ export default function AdminSessions() {
         </ConsoleFooter>
       ) : null}
 
-      <Sheet visible={open} title="Host a session" onClose={() => setOpen(false)}>
+      <Sheet visible={open} title="Host a session" onClose={() => setOpen(false)} scroll>
         <Text variant="meta" color={colors.inkFaint} style={{ marginBottom: space.md }}>
           The paper is chosen now, so you find out here rather than in front of the
           class if a topic is too thin.

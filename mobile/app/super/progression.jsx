@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -22,6 +24,8 @@ import {
   Button,
   Chip,
   ErrorNotice,
+  FULL_BLEED_MODAL,
+  useBottomInset,
   Segmented,
   Tabs,
   SectionHeader,
@@ -1087,9 +1091,17 @@ function ChestEditor({ chest, data, onClose, onSaved }) {
 // ── Pieces ─────────────────────────────────────────────────────────────────
 
 function Sheet({ title, onClose, children }) {
+  const bottom = useBottomInset();
+
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.sheetBackdrop}>
+    <Modal visible transparent animationType="slide" onRequestClose={onClose} {...FULL_BLEED_MODAL}>
+      {/* This sheet is almost entirely text fields — the one place in the
+          console where the keyboard is guaranteed to be up while the primary
+          button is still below the fold. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.sheetBackdrop}
+      >
         <View style={[styles.sheet, elevation.raised]}>
           <View style={styles.sheetHead}>
             <Text variant="title" style={{ flex: 1 }} numberOfLines={1}>
@@ -1100,14 +1112,14 @@ function Sheet({ title, onClose, children }) {
             </Pressable>
           </View>
           <ScrollView
-            contentContainerStyle={styles.sheetBody}
+            contentContainerStyle={[styles.sheetBody, { paddingBottom: bottom + space.lg }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
             {children}
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -1253,7 +1265,7 @@ const styles = StyleSheet.create({
     paddingTop: space.lg,
     paddingBottom: space.md,
   },
-  sheetBody: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.xxxl, gap: space.md },
+  sheetBody: { paddingHorizontal: consoleLayout.gutter, gap: space.md },
   field: { gap: space.sm },
   input: {
     ...type.option,

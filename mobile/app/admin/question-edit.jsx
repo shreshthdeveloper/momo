@@ -18,6 +18,8 @@ import {
   Header,
   Segmented,
   Skeleton,
+  FULL_BLEED_MODAL,
+  useBottomInset,
 } from '../../src/components/ui.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import QuestionArt, { ART_KEYS, artKeyOf, artUri } from '../../src/components/QuestionArt.jsx';
@@ -75,6 +77,7 @@ const emptyErrors = () => ({
 });
 
 export default function AdminQuestionEdit() {
+  const bottom = useBottomInset();
   const goBack = useConsoleBack();
   const adminSpace = useAdminSpace();
   const permissions = useAdminPermissions(adminSpace);
@@ -630,13 +633,14 @@ export default function AdminQuestionEdit() {
         visible={Boolean(duplicates)}
         transparent
         animationType="fade"
+        {...FULL_BLEED_MODAL}
         onRequestClose={() => (busy ? null : setDuplicates(null))}
       >
         <Pressable
           style={({ pressed }) => [styles.sheetScrim, pressed && { opacity: 0.7 }]}
           onPress={busy ? undefined : () => setDuplicates(null)}
         >
-          <Pressable style={[styles.sheet, elevation.sheet]} onPress={() => {}}>
+          <Pressable style={[styles.sheet, { paddingBottom: bottom + space.lg }, elevation.sheet]} onPress={() => {}}>
             <View style={styles.sheetGrabber} />
             <Text variant="display" style={styles.sheetTitle}>
               This may be a duplicate
@@ -678,10 +682,11 @@ export default function AdminQuestionEdit() {
         visible={Boolean(savedWarnings)}
         transparent
         animationType="fade"
+        {...FULL_BLEED_MODAL}
         onRequestClose={goBack}
       >
         <Pressable style={({ pressed }) => [styles.sheetScrim, pressed && { opacity: 0.7 }]} onPress={goBack}>
-          <Pressable style={[styles.sheet, elevation.sheet]} onPress={() => {}}>
+          <Pressable style={[styles.sheet, { paddingBottom: bottom + space.lg }, elevation.sheet]} onPress={() => {}}>
             <View style={styles.sheetGrabber} />
             <Text variant="display" style={styles.sheetTitle}>
               Saved, with notes
@@ -705,10 +710,11 @@ export default function AdminQuestionEdit() {
         visible={artPicker}
         transparent
         animationType="fade"
+        {...FULL_BLEED_MODAL}
         onRequestClose={() => setArtPicker(false)}
       >
         <Pressable style={styles.sheetScrim} onPress={() => setArtPicker(false)}>
-          <Pressable style={[styles.sheet, elevation.sheet]} onPress={() => {}}>
+          <Pressable style={[styles.sheet, { paddingBottom: bottom + space.lg }, elevation.sheet]} onPress={() => {}}>
             <View style={styles.sheetGrabber} />
             <Text variant="display" style={styles.sheetTitle}>
               Choose art
@@ -864,7 +870,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: layout.radiusCard + 8,
     borderTopRightRadius: layout.radiusCard + 8,
     padding: consoleLayout.gutter,
-    paddingBottom: space.xxxl,
+    maxHeight: '88%',
   },
   sheetGrabber: {
     width: 40,

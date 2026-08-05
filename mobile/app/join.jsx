@@ -126,7 +126,7 @@ export default function Join() {
     <BrandField>
       <StatusBar style="light" />
       <SafeAreaView style={styles.screen}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
           <View style={styles.top}>
             <IconButton name="close" tone="onColor" onPress={() => router.back()} label="Cancel" />
           </View>

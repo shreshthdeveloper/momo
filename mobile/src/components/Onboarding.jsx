@@ -68,8 +68,24 @@ export function StepScaffold({
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
+      {/**
+       * Android gets a behaviour too, and that is the whole point of this line.
+       *
+       * `behavior={undefined}` makes `KeyboardAvoidingView` render as a plain
+       * `View` that does nothing at all, which left the entire sign-up flow —
+       * every screen of it, each one auto-focusing its input — relying on the
+       * window resizing itself under `adjustResize`. The app is edge-to-edge, so
+       * on Android 15 and up the window does NOT resize for the keyboard, and
+       * the code entry and its Confirm button sat under the number pad. Older
+       * Android still resized, which is why this looked fine on one phone and
+       * broken on the next.
+       *
+       * `padding` is safe in both regimes because it pads by the OVERLAP between
+       * the keyboard and this view's own frame: where the window already
+       * resized, the frame ends above the keyboard and the padding is zero.
+       */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.flex}
       >
         <View style={styles.head}>

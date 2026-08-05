@@ -42,6 +42,12 @@ import { maxScoreForRounds } from '../../src/shared/scoring.js';
  * the same second reading, and the scramble starts when the options land.
  */
 
+/**
+ * The width the footer keeps clear at each end for the Leave button — the
+ * gutter, plus the word and the padding around it. See `styles.footer`.
+ */
+const LEAVE_CORNER = 72;
+
 /** How far along the reveal timeline the question (alone) is fully in. */
 const QUESTION_IN = 0.25;
 /** The read-beat: the question stands alone for this long. */
@@ -411,7 +417,11 @@ export default function MatchScreen() {
         <View style={styles.footer}>
           {game.yourAnswer && !resolved ? (
             <View style={styles.lockedPill}>
-              <Text variant="meta" color={colors.onColor}>
+              {/* One line, always. The name inside this sentence belongs to a
+                  stranger the matchmaker picked, so its length is not something
+                  this screen gets to assume — and a second line grew the pill
+                  sideways into the Leave target sitting beside it. */}
+              <Text variant="meta" color={colors.onColor} numberOfLines={1}>
                 Locked in — waiting for {game.opponent?.displayName ?? 'your rival'}
               </Text>
             </View>
@@ -591,15 +601,27 @@ const styles = StyleSheet.create({
     color: colors.onColor,
     textAlign: 'center',
   },
+  /**
+   * The gutter here reserves the Leave button's corner rather than matching the
+   * screen's.
+   *
+   * "Leave" is absolutely positioned at the right edge, and the locked-in pill
+   * is centred in the same row — so the two are only ever apart by luck. With a
+   * long opponent name on a 360dp phone the pill grew under the Leave target and
+   * the player's escape hatch became a strip of translucent white with a name
+   * printed through it. Reserving the corner on BOTH sides keeps the pill
+   * genuinely centred while making the collision impossible to reach.
+   */
   footer: {
     minHeight: 34,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingBottom: space.sm,
-    paddingHorizontal: layout.gutter,
+    paddingHorizontal: LEAVE_CORNER,
   },
   lockedPill: {
+    flexShrink: 1,
     backgroundColor: 'rgba(255,255,255,0.14)',
     paddingHorizontal: space.lg,
     paddingVertical: 5,
