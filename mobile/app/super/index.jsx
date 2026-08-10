@@ -4,10 +4,19 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useIsSuperadmin } from '../../src/lib/admin.js';
-import { Text, Badge, Card, ErrorNotice, Header, useScrollBottom } from '../../src/components/ui.jsx';
+import {
+  Text,
+  Badge,
+  Card,
+  ErrorNotice,
+  Header,
+  IconDisc,
+  StatPanel,
+  useScrollBottom,
+} from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
-import { colors, consoleLayout, consoleType, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, consoleType, layout, space } from '../../src/theme/console.js';
 
 /**
  * The platform operator's control room. One person oversees every tenant, so
@@ -22,11 +31,12 @@ import { colors, consoleLayout, consoleType, elevation, layout, space, type } fr
 const GHOST_TARGET = 0.6;
 
 /** The four the operator starts with. Everything else is in the sidebar. */
+/** `tone` is the domain — the same hue the row wears in the sidebar. */
 const QUICK = [
-  { href: '/super/tenants', icon: 'building', title: 'Organizations', sub: 'Approvals, plans' },
-  { href: '/super/moderation', icon: 'shield', title: 'Moderation', sub: 'Reports and flags' },
-  { href: '/super/users', icon: 'friends', title: 'Users', sub: 'Every account' },
-  { href: '/super/central', icon: 'book', title: 'Central bank', sub: 'Topics and featuring' },
+  { href: '/super/tenants', icon: 'building', title: 'Organizations', sub: 'Approvals, plans', tone: 'people' },
+  { href: '/super/moderation', icon: 'shield', title: 'Moderation', sub: 'Reports and flags', tone: 'oversight' },
+  { href: '/super/users', icon: 'friends', title: 'Users', sub: 'Every account', tone: 'people' },
+  { href: '/super/central', icon: 'book', title: 'Central bank', sub: 'Topics and featuring', tone: 'content' },
 ];
 
 export default function SuperHome() {
@@ -91,7 +101,7 @@ export default function SuperHome() {
   const thin = (liquidity ?? []).filter((t) => !t.healthy);
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Platform" subtitle="Mimo operations" />
 
       <ErrorNotice error={error} onRetry={load} />
@@ -114,34 +124,59 @@ export default function SuperHome() {
             />
           }
         >
-          {/* ── The numbers, as one panel rather than two floating bars — the
-                 same shape the organization console's overview wears. */}
-          <View style={[styles.stats, elevation.raised]}>
-            <View style={styles.statsRow}>
-              <Metric value={analytics.dau ?? 0} label="DAU" />
-              <View style={styles.statDivider} />
-              <Metric value={analytics.mau ?? 0} label="MAU" />
-              <View style={styles.statDivider} />
-              <Metric
-                value={`${Math.round((analytics.dauOverMau ?? 0) * 100)}%`}
-                label="Stickiness"
-                sub="DAU over MAU"
-              />
-            </View>
-            <View style={styles.statsSplit} />
-            <View style={styles.statsRow}>
-              <Metric value={analytics.totalUsers ?? 0} label="Registered" />
-              <View style={styles.statDivider} />
-              <Metric value={analytics.activeSpaces ?? 0} label="Active orgs" />
-              <View style={styles.statDivider} />
-              <Metric
-                value={`${Math.round((analytics.ghostRatio ?? 0) * 100)}%`}
-                label="Ghost ratio"
-                sub={ghostHigh ? 'above target' : 'healthy'}
-                subColor={ghostHigh ? colors.optionC : colors.inkFaint}
-              />
-            </View>
-          </View>
+          {/**
+           * ── The numbers, in two titled panels ─────────────────────────────
+           *
+           * Six figures in one anonymous box, split by a hairline. Reach and
+           * health are different questions and they were drawn as one block, so
+           * the operator's first read of the platform was a wall of digits.
+           *
+           * Named and coloured now, in the order the job asks them: how many
+           * people are here, and is the game actually working for them. Every
+           * figure that counts PEOPLE or ORGANIZATIONS is a door to them; the
+           * two ratios are not lists, so they stay flat rather than pretending
+           * to lead somewhere.
+           */}
+          <StatPanel
+            label="Reach"
+            icon="friends"
+            tone="people"
+            stats={[
+              { value: analytics.dau ?? 0, label: 'DAU', onPress: () => router.push('/super/users') },
+              { value: analytics.mau ?? 0, label: 'MAU', onPress: () => router.push('/super/users') },
+              {
+                value: analytics.totalUsers ?? 0,
+                label: 'Registered',
+                onPress: () => router.push('/super/users'),
+              },
+            ]}
+          />
+
+          <StatPanel
+            label="Health"
+            icon="bolt"
+            tone="platform"
+            style={{ marginTop: layout.cardGap }}
+            stats={[
+              {
+                value: `${Math.round((analytics.dauOverMau ?? 0) * 100)}%`,
+                label: 'Stickiness',
+                sub: 'DAU over MAU',
+              },
+              {
+                value: analytics.activeSpaces ?? 0,
+                label: 'Active orgs',
+                onPress: () => router.push('/super/tenants'),
+              },
+              {
+                value: `${Math.round((analytics.ghostRatio ?? 0) * 100)}%`,
+                label: 'Ghost ratio',
+                sub: ghostHigh ? 'above target' : 'healthy',
+                subColor: ghostHigh ? colors.optionC : colors.inkFaint,
+                color: ghostHigh ? colors.optionC : undefined,
+              },
+            ]}
+          />
 
           {/* ── Where the operator goes next. The sidebar lists everything;
                  these are the four that start a session. */}
@@ -154,9 +189,7 @@ export default function SuperHome() {
                 accessibilityRole="button"
                 accessibilityLabel={item.title}
               >
-                <View style={styles.tileIcon}>
-                  <Icon name={item.icon} size={18} color={colors.accent} />
-                </View>
+                <IconDisc name={item.icon} tone={item.tone} size={38} style={styles.tileIcon} />
                 <Text variant="label" numberOfLines={1}>
                   {item.title}
                 </Text>
@@ -274,24 +307,6 @@ export default function SuperHome() {
   );
 }
 
-function Metric({ value, label, sub, subColor = colors.inkFaint }) {
-  return (
-    <View style={styles.metric}>
-      <Text style={[type.timer, { color: colors.ink }]} numberOfLines={1}>
-        {value}
-      </Text>
-      <Text variant="tiny" color={colors.inkFaint} numberOfLines={1}>
-        {label}
-      </Text>
-      {sub ? (
-        <Text variant="tiny" color={subColor} numberOfLines={1}>
-          {sub}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
 function SysRow({ label, value, tone = colors.ink, last = false }) {
   return (
     <View style={[styles.sysRow, last && { borderBottomWidth: 0 }]}>
@@ -308,22 +323,6 @@ function SysRow({ label, value, tone = colors.ink, last = false }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
   content: { padding: consoleLayout.gutter, paddingTop: space.sm },
-  stats: {
-    backgroundColor: colors.nightRaised,
-    borderRadius: layout.radiusCard,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    paddingVertical: space.lg,
-  },
-  statsRow: { flexDirection: 'row', alignItems: 'center' },
-  statsSplit: {
-    height: 1,
-    backgroundColor: colors.hairline,
-    marginVertical: space.lg,
-    marginHorizontal: layout.cardPadding,
-  },
-  metric: { flex: 1, alignItems: 'center', gap: 2, paddingHorizontal: 4 },
-  statDivider: { width: 1, height: 30, backgroundColor: colors.hairline },
   // The same tile grid the organization console's overview uses — two consoles
   // that look like one product.
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: layout.cardGap, marginTop: space.xl },
@@ -338,15 +337,7 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
     padding: layout.cardPadding,
   },
-  tileIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accentSoft,
-    marginBottom: space.sm,
-  },
+  tileIcon: { marginBottom: space.sm },
   ghostFigure: { ...consoleType.figure, minWidth: 44, textAlign: 'right' },
   card: { marginTop: space.xl },
   bars: {

@@ -18,7 +18,7 @@ import {
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import { useExport, csvName } from '../../src/lib/download.js';
-import { colors, consoleLayout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, space } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.5.3 — who is winning, and who turned up.
@@ -57,7 +57,7 @@ export default function ContestStandings() {
   const rows = board?.rows ?? [];
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header
         title="Standings"
         subtitle={name ? String(name) : adminSpace?.name}

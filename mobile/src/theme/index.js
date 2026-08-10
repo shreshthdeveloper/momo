@@ -189,6 +189,26 @@ export const colors = {
    */
   card: '#272236',
 
+  /**
+   * ── Two jobs that are one colour here and two on paper ────────────────────
+   *
+   * `sunken` was carrying two meanings at once: "the field the whole screen
+   * sits on" AND "a patch that recedes INTO a surface" — a skeleton, a plain
+   * icon button, the box you type a reason into. On a dark field those are the
+   * same colour, so nothing ever forced them apart. On paper they are
+   * opposites: the field went white, and a recess has to be DARKER than the
+   * thing it is cut into.
+   *
+   * So the recessed meanings get their own names. Both are aliases of what
+   * they already were here, which is the point — the night palette does not
+   * change by a single byte, and `theme/light.js` is free to send them
+   * somewhere else. See the ladder note there.
+   */
+  /** A patch cut into a surface: skeletons, plain icon buttons, prompt boxes. */
+  inset: '#110E19',
+  /** The fill of something you operate: an input, a select, a search field. */
+  control: '#272236',
+
   /** Text sitting on any saturated fill. */
   onColor: '#FFFFFF',
   transparent: 'transparent',
@@ -398,13 +418,30 @@ export const DEFAULT_FONT_SCALE_CAP = SCALE_SMALL;
  * (they read the sidebar's context), so no screen has to ask for them.
  */
 export const consoleType = {
-  display: { fontFamily: fonts.heading, fontSize: 20, lineHeight: 26 },
+  display: { fontFamily: fonts.heading, fontSize: 22, lineHeight: 28 },
   title: { fontFamily: fonts.heading, fontSize: 16, lineHeight: 22 },
   body: { fontFamily: fonts.regular, fontSize: 14, lineHeight: 20 },
   bodyStrong: { fontFamily: fonts.medium, fontSize: 14, lineHeight: 20 },
   label: { fontFamily: fonts.semibold, fontSize: 13, lineHeight: 18 },
   meta: { fontFamily: fonts.medium, fontSize: 12, lineHeight: 16 },
   tiny: { fontFamily: fonts.medium, fontSize: 11, lineHeight: 14 },
+  /**
+   * A figure that stands alone — the number in a `Stat`.
+   *
+   * The player app's `timer` is 22, which is right for a rating beside an
+   * avatar and wrong for the six numbers a console overview is entirely made
+   * of. On a dashboard the figures ARE the content and their labels are
+   * captions; at 22 over a 12pt label the two were close enough in weight that
+   * the eye read the row as a paragraph. Tabular, because a row of three
+   * figures is a column of one, and a proportional `1` makes a panel twitch
+   * every time it refreshes.
+   */
+  timer: {
+    fontFamily: fonts.display,
+    fontSize: 27,
+    lineHeight: 33,
+    fontVariant: ['tabular-nums'],
+  },
   /**
    * Figures in a column. Tabular numerals so a rating of 1,200 and one of
    * 999 line up on the decimal instead of shimmering as the list scrolls.
@@ -415,6 +452,25 @@ export const consoleType = {
     lineHeight: 20,
     fontVariant: ['tabular-nums'],
   },
+};
+
+/**
+ * The domain palette, on a DARK ground — the console's navigation rail.
+ *
+ * The light set (see `theme/light.js`) is solved against paper and is far too
+ * deep to read on the night surface the rail is drawn in. These are the same
+ * five families re-struck: each clears 4.5:1 as a glyph on the rail AND on its
+ * own 16% tint, which is the fill the current row takes.
+ *
+ * `content` lands within a hair of the night accent, which is the point — the
+ * brand teal IS the content domain in both palettes.
+ */
+export const domains = {
+  content: { hue: '#359EB6', soft: '#1C2A3A' },
+  people: { hue: '#748EDC', soft: '#262840' },
+  learning: { hue: '#D47725', soft: '#352422' },
+  oversight: { hue: '#D968AA', soft: '#362138' },
+  platform: { hue: '#36A16F', soft: '#1C2B2E' },
 };
 
 export const consoleLayout = {

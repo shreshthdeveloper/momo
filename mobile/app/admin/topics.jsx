@@ -1,11 +1,12 @@
-import { useCallback, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Image } from 'expo-image';
 import { api } from '../../src/lib/api.js';
-import { useAdminSpace, useAdminPermissions } from '../../src/lib/admin.js';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
+import { useConsoleSpace } from '../../src/lib/admin.js';
 import {
+  ConsoleControls,
   ConsoleFooter,
   Text,
   Badge,
@@ -16,12 +17,15 @@ import {
   ErrorNotice,
   Header,
   ProgressBar,
+  Spinner,
+  Tabs,
   CountRow,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
-import { TopicGlyph } from '../../src/components/Illustration.jsx';
+import Icon from '../../src/components/Icon.jsx';
+import TopicMedallion from '../../src/components/TopicMedallion.jsx';
 import { MIN_PUBLISHED_QUESTIONS_TO_LIVE, TOPIC_STATUS } from '../../src/shared/constants.js';
-import { colors, consoleLayout, elevation, layout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.3 — the topic list, from the phone. Every card answers the one
@@ -31,32 +35,58 @@ import { colors, consoleLayout, elevation, layout, space } from '../../src/theme
  *
  * Reloads on focus rather than on mount, because the edit form saves and
  * comes straight back here — the list has to already show what was saved.
+ *
+ * Mounted twice: at `/admin/topics` for an organization's own topics, and at
+ * `/super/topics` for the Central Bank's. `useConsoleSpace` is what tells the
+ * two apart — see the note there.
  */
 export default function AdminTopics() {
   const router = useRouter();
-  const adminSpace = useAdminSpace();
-  const { canManageTopics, canWrite } = useAdminPermissions(adminSpace);
+  const goBack = useConsoleBack();
+  const { spaceId, spaceName, isCentral, inTenant, canManageTopics, canWrite, canManageContests, href } =
+    useConsoleSpace();
+  /**
+   * Assignments belong to an organization, not to the platform: the Public
+   * Arena has no roster to set work for, and `assignmentService` returns
+   * nothing for it. So this door exists in the organization console only —
+   * and not when the platform operator is scoped INTO a tenant either, both
+   * because setting a school's homework is not the operator's job and because
+   * `/admin/assignment-new` is the one hardcoded route in this file, which
+   * from `/super` would jump consoles mid-task.
+   */
+  const canSetWork = !isCentral && !inTenant && canManageContests;
 
   const [items, setItems] = useState(null);
   const [categories, setCategories] = useState(null);
   const [filter, setFilter] = useState('all');
+  const [statusTab, setStatusTab] = useState('all');
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [busyId, setBusyId] = useState(null);
+  const [notice, setNotice] = useState(null);
+  /** Toasts clear themselves — see the console rule in ConsoleShell. */
+  const noticeTimer = useRef(null);
+  useEffect(() => {
+    if (!notice) return undefined;
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 2600);
+    return () => clearTimeout(noticeTimer.current);
+  }, [notice]);
 
   const load = useCallback(async () => {
-    if (!adminSpace) return;
+    if (!spaceId) return;
     try {
       setError(null);
       const [topics, cats] = await Promise.all([
-        api.get('/admin/topics', { spaceId: adminSpace.id }),
-        api.get('/admin/categories', { spaceId: adminSpace.id }),
+        api.get('/admin/topics', { spaceId }),
+        api.get('/admin/categories', { spaceId }),
       ]);
       setItems(topics.items ?? []);
       setCategories(cats.items ?? []);
     } catch (err) {
       setError(err);
     }
-  }, [adminSpace]);
+  }, [spaceId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -64,53 +94,155 @@ export default function AdminTopics() {
     }, [load]),
   );
 
+  /**
+   * Publishing a topic — one tap, from the row.
+   *
+   * It used to be: open the topic, scroll past name, category, description,
+   * both question sources and the cover, find the status chips, pick one, then
+   * press Save. Six screens' worth of scrolling and a form submit to change
+   * one enum, on the single most routine thing an admin does to a topic.
+   *
+   * Optimistic, because the answer is almost always yes and a list that waits
+   * for the server before moving feels broken on a school Wi-Fi connection.
+   * The one refusal that matters — TOPIC_NOT_READY, under 21 published
+   * questions — has a real message from the server, so it is shown verbatim
+   * and the row snaps back.
+   */
+  const setStatus = async (topic, status) => {
+    const before = topic.status;
+    setBusyId(topic.id);
+    setError(null);
+    setNotice(null);
+    setItems((current) => (current ?? []).map((t) => (t.id === topic.id ? { ...t, status } : t)));
+    try {
+      await api.patch(`/admin/topics/${topic.id}`, { spaceId, status });
+      setNotice(
+        status === TOPIC_STATUS.PUBLISHED
+          ? `${topic.name} is published.`
+          : status === TOPIC_STATUS.ARCHIVED
+            ? `${topic.name} is archived.`
+            : `${topic.name} is back to a draft.`,
+      );
+      // The readiness figures and the live flag are the server's to compute.
+      load();
+    } catch (err) {
+      setItems((current) =>
+        (current ?? []).map((t) => (t.id === topic.id ? { ...t, status: before } : t)),
+      );
+      setError(err);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (!spaceId) {
+    return (
+      <SafeAreaView style={styles.screen} edges={[]}>
+        <Header title="Topics" />
+        <EmptyState
+          tone="content"
+          icon="alert"
+          title="No organization to manage"
+          body="This console appears when an organization has made you an admin."
+        />
+      </SafeAreaView>
+    );
+  }
+
   const loaded = Boolean(items && categories);
   const categoryById = new Map((categories ?? []).map((c) => [c.id, c]));
-  const shown = (items ?? []).filter((t) => filter === 'all' || t.categoryId === filter);
+  /**
+   * Two filters, and they answer different questions. The tabs are WHERE YOU
+   * ARE — what students can play, what cannot go live yet, what is retired —
+   * and the select narrows that to one category.
+   *
+   * "Not live" deliberately covers both a draft and a topic that is published
+   * but still short of its 21 questions, because from the outside those are
+   * the same fact: nobody can play it. That second state is the trap this
+   * console has always named out loud in the badge, and until now there was no
+   * way to ask for a list of them.
+   */
+  const inTab = (t) =>
+    statusTab === 'all'
+      ? true
+      : statusTab === 'archived'
+        ? t.status === TOPIC_STATUS.ARCHIVED
+        : statusTab === 'live'
+          ? Boolean(t.readiness?.isLive)
+          : t.status !== TOPIC_STATUS.ARCHIVED && !t.readiness?.isLive;
+  const inTabItems = (items ?? []).filter(inTab);
+  const shown = inTabItems.filter((t) => filter === 'all' || t.categoryId === filter);
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title="Topics" subtitle={adminSpace?.name} />
+    <SafeAreaView style={styles.screen} edges={[]}>
+      {/* Scoped into a tenant it is a PUSHED screen — the platform operator
+          arrived from that organization and has somewhere to go back to. From
+          the sidebar it is a sidebar screen and wears the menu. */}
+      <Header title="Topics" subtitle={spaceName} onBack={inTenant ? goBack : undefined} />
 
       <ErrorNotice error={error} onRetry={load} />
+
+      {/* A status change from a row is quiet by design — the row just changes.
+          One line says which topic and what happened, then clears itself. */}
+      {notice ? (
+        <View style={styles.notice} accessibilityLiveRegion="polite">
+          <Icon name="check" size={16} color={colors.accent} />
+          <Text variant="label" style={{ flex: 1 }}>
+            {notice}
+          </Text>
+        </View>
+      ) : null}
 
       {!loaded && !error ? (
         <CardsSkeleton count={3} />
       ) : !loaded ? null : categories.length === 0 ? (
         <EmptyState
+          tone="content"
           icon="book"
           title="Start with a category"
           body="Every topic lives in a category. Create the first one and topics follow."
           actionLabel={canManageTopics ? 'Create a category' : undefined}
-          onAction={canManageTopics ? () => router.push('/admin/topic-edit') : undefined}
+          onAction={canManageTopics ? () => router.push(href('topic-edit')) : undefined}
         />
       ) : items.length === 0 ? (
         <EmptyState
+          tone="content"
           icon="book"
           title="No topics yet"
           body={`A topic is a question bank students play. It goes live at ${MIN_PUBLISHED_QUESTIONS_TO_LIVE} published questions.`}
           actionLabel={canManageTopics ? 'New topic' : undefined}
-          onAction={canManageTopics ? () => router.push('/admin/topic-edit') : undefined}
+          onAction={canManageTopics ? () => router.push(href('topic-edit')) : undefined}
         />
       ) : (
         <>
+          <Tabs
+            value={statusTab}
+            onChange={setStatusTab}
+            options={[
+              { value: 'all', label: 'All' },
+              { value: 'live', label: 'Live' },
+              { value: 'draft', label: 'Not live' },
+              { value: 'archived', label: 'Archived' },
+            ]}
+          />
+
           {/* Categories are as many as the organization makes. A chip row put
               all but the first three off the right edge of the screen. */}
-          <View style={styles.controls}>
+          <ConsoleControls>
             <Select
               value={filter}
               options={[
-                { value: 'all', label: 'All categories', meta: `${items.length} topics` },
+                { value: 'all', label: 'All categories', meta: `${inTabItems.length} topics` },
                 ...categories.map((cat) => ({
                   value: cat.id,
                   label: cat.name,
-                  meta: `${items.filter((t) => t.categoryId === cat.id).length} topics`,
+                  meta: `${inTabItems.filter((t) => t.categoryId === cat.id).length} topics`,
                 })),
               ]}
               onChange={setFilter}
               placeholder="All categories"
             />
-          </View>
+          </ConsoleControls>
 
           <ScrollView
             contentContainerStyle={styles.list}
@@ -130,7 +262,28 @@ export default function AdminTopics() {
             <CountRow total={shown.length} noun="topic" />
 
             {shown.length === 0 ? (
-              <EmptyState icon="book" title="Nothing here" body="No topics in this category yet." />
+              <EmptyState
+                tone="content"
+                icon={statusTab === 'live' ? 'alert' : 'book'}
+                title={
+                  statusTab === 'live'
+                    ? 'Nothing is live'
+                    : statusTab === 'draft'
+                      ? 'Everything is live'
+                      : statusTab === 'archived'
+                        ? 'Nothing archived'
+                        : 'Nothing here'
+                }
+                body={
+                  statusTab === 'live'
+                    ? `No topic here has ${MIN_PUBLISHED_QUESTIONS_TO_LIVE} published questions and a published status, so students have nothing to play.`
+                    : statusTab === 'draft'
+                      ? 'Every topic in this view is playable.'
+                      : statusTab === 'archived'
+                        ? 'Archived topics appear here.'
+                        : 'No topics in this category yet.'
+                }
+              />
             ) : (
               shown.map((topic) => (
                 <TopicRow
@@ -139,7 +292,11 @@ export default function AdminTopics() {
                   category={categoryById.get(topic.categoryId)}
                   canManageTopics={canManageTopics}
                   canWrite={canWrite}
+                  canSetWork={canSetWork && Boolean(topic.readiness?.isLive)}
                   router={router}
+                  href={href}
+                  onSetStatus={setStatus}
+                  busy={busyId === topic.id}
                 />
               ))
             )}
@@ -149,19 +306,29 @@ export default function AdminTopics() {
 
       {loaded && categories.length > 0 && canManageTopics ? (
         <ConsoleFooter>
-          <Button label="New topic" onPress={() => router.push('/admin/topic-edit')} />
+          <Button label="New topic" onPress={() => router.push(href('topic-edit'))} />
         </ConsoleFooter>
       ) : null}
     </SafeAreaView>
   );
 }
 
-function TopicRow({ topic, category, canManageTopics, canWrite, router }) {
+function TopicRow({ topic, category, canManageTopics, canWrite, canSetWork, router, href, onSetStatus, busy }) {
   const published = topic.readiness?.published ?? topic.publishedQuestionCount ?? 0;
   const required = topic.readiness?.required ?? MIN_PUBLISHED_QUESTIONS_TO_LIVE;
   const remaining = topic.readiness?.remaining ?? Math.max(0, required - published);
   const isLive = Boolean(topic.readiness?.isLive);
   const archived = topic.status === TOPIC_STATUS.ARCHIVED;
+  const isPublished = topic.status === TOPIC_STATUS.PUBLISHED;
+  /**
+   * The 21-question gate, said before it is hit rather than after.
+   *
+   * The server refuses to publish a topic under the line and its message is
+   * good, but a menu row that exists in order to fail is still a menu row that
+   * fails. Below the line the verb goes, and its place is taken by what would
+   * actually help: somewhere to get the questions from.
+   */
+  const canPublishTopic = published >= required;
 
   const sources = [
     topic.questionSources?.own ? 'own bank' : null,
@@ -174,21 +341,52 @@ function TopicRow({ topic, category, canManageTopics, canWrite, router }) {
     .filter(Boolean)
     .join('  ·  ');
 
+  /**
+   * The card IS the link.
+   *
+   * It used to be a slab of text with a soft "Questions" pill at the bottom,
+   * and the pill was the only thing on it you could press — so a list of topics
+   * was a list of things that looked like objects and behaved like posters. The
+   * one question a topic card is opened to answer is "what is in it", the
+   * answer is the question bank, and the target for it should be the whole
+   * 150-point card rather than a 100-point pill in its corner.
+   *
+   * With the card pressable the pill has nothing left to do, so it goes: one
+   * card, one destination, one `⋯` for the verbs, and a chevron that says so.
+   */
+  const open = () => router.push(href('questions', { topicId: topic.id }));
+
   return (
-    <View style={[styles.card, elevation.raised]}>
+    <Pressable
+      onPress={open}
+      accessibilityRole="button"
+      accessibilityLabel={`${topic.name}, ${published} published questions`}
+      accessibilityHint="Opens this topic's questions"
+      style={({ pressed }) => [styles.card, elevation.raised, pressed && styles.cardPressed]}
+    >
       <View style={styles.cardTop}>
-        <View style={styles.thumb}>
-          {topic.coverUrl ? (
-            <Image
-              source={{ uri: topic.coverUrl }}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              transition={160}
-            />
-          ) : (
-            <TopicGlyph name={topic.name} size={64} tone={category?.color} />
-          )}
-        </View>
+        {/**
+         * The topic's real face — the same one its students see.
+         *
+         * This was an `<Image>` pointed straight at `coverUrl`, and `coverUrl`
+         * is not always a URL: the entire seeded catalogue stores
+         * `mimo:icon/<subject>`, a wire scheme meaning "draw this from the
+         * app's own Views" (see `TopicMedallion`). An image loader cannot fetch
+         * that, so it rendered nothing — and because the value is truthy, the
+         * fallback below it never ran either. Every seeded topic showed an
+         * empty square in the console while looking correct in the player app.
+         *
+         * `TopicMedallion` is what the player renders, and it already handles
+         * all three cases: a drawn subject, a real uploaded cover, and a topic
+         * with no cover at all.
+         */}
+        <TopicMedallion
+          coverUrl={topic.coverUrl}
+          name={topic.name}
+          size={64}
+          shape="tile"
+          style={styles.thumb}
+        />
         <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
           <View style={styles.nameRow}>
             <Text variant="label" style={{ flex: 1 }} numberOfLines={1}>
@@ -207,6 +405,7 @@ function TopicRow({ topic, category, canManageTopics, canWrite, router }) {
             </Text>
           ) : null}
         </View>
+        <Icon name="chevronRight" size={16} color={colors.inkFaint} />
       </View>
 
       {/**
@@ -239,55 +438,127 @@ function TopicRow({ topic, category, canManageTopics, canWrite, router }) {
         </View>
       )}
 
-      <Text variant="meta" color={colors.inkFaint} numberOfLines={1} style={styles.sources}>
-        {sourcesLine}
-      </Text>
-
       {/**
-       * One button and one menu, like every other row in the console.
-       *
-       * This card carried three controls in a row — a soft "Questions" pill
-       * then the words "Add" and "Edit" — which is a button beside two things
-       * that look like captions. Seeing this topic's questions is what a topic
-       * card is for, so that stays a button; the two edits go where every
-       * other row's verbs go.
+       * The last line carries the context and the verbs together, because
+       * neither needs a row of its own: where the questions come from and how
+       * much it has been played is one faint sentence, and everything you can
+       * DO to the topic is behind the one `⋯` every card in both consoles ends
+       * with. The card's own press is the destination.
        */}
       <View style={styles.actions}>
-        <Button
-          size="sm"
-          variant="soft"
-          label="Questions"
-          fullWidth={false}
-          onPress={() => router.push({ pathname: '/admin/questions', params: { topicId: topic.id } })}
-        />
-        <View style={{ flex: 1 }} />
+        <Text variant="meta" color={colors.inkFaint} numberOfLines={1} style={{ flex: 1 }}>
+          {sourcesLine}
+        </Text>
+        {busy ? <Spinner size={16} /> : null}
         <RowMenu
           title={topic.name}
           label={`Actions for ${topic.name}`}
           actions={[
+            /**
+             * Filling the topic comes first, because for most of a topic's
+             * life that is the job: it is short of questions and the only
+             * question worth answering is where the next ones come from. A
+             * CSV is how they arrive in bulk, and arriving from HERE means
+             * the import already knows the destination.
+             */
+            canWrite
+              ? {
+                  key: 'import',
+                  label: 'Import questions here',
+                  meta: 'From a CSV or a spreadsheet',
+                  icon: 'download',
+                  onPress: () => router.push(href('import', { topicId: topic.id })),
+                }
+              : null,
             canWrite
               ? {
                   key: 'add',
                   label: 'Write a question here',
                   icon: 'plus',
-                  onPress: () =>
-                    router.push({ pathname: '/admin/question-edit', params: { topicId: topic.id } }),
+                  onPress: () => router.push(href('question-edit', { topicId: topic.id })),
                 }
               : null,
+
+            // ── Live or not, from the row. ────────────────────────────────
+            canManageTopics && !isPublished && canPublishTopic
+              ? {
+                  key: 'publish',
+                  label: 'Publish it',
+                  meta: `${published} published questions — students can play it`,
+                  icon: 'check',
+                  onPress: () => onSetStatus(topic, TOPIC_STATUS.PUBLISHED),
+                }
+              : null,
+            canManageTopics && !isPublished && !canPublishTopic && !archived
+              ? {
+                  key: 'cannot-publish',
+                  label: `${remaining} more questions to publish`,
+                  meta: `A topic goes live at ${required} published questions`,
+                  icon: 'alert',
+                  onPress: () => router.push(href('questions', { topicId: topic.id })),
+                }
+              : null,
+            canManageTopics && isPublished
+              ? {
+                  key: 'unpublish',
+                  label: 'Take it down',
+                  meta: 'Back to a draft. Students lose it; nothing is deleted',
+                  icon: 'lock',
+                  onPress: () => onSetStatus(topic, TOPIC_STATUS.DRAFT),
+                }
+              : null,
+            canManageTopics && archived
+              ? {
+                  key: 'restore',
+                  label: 'Restore it',
+                  meta: 'Back to a draft',
+                  icon: 'history',
+                  onPress: () => onSetStatus(topic, TOPIC_STATUS.DRAFT),
+                }
+              : null,
+
+            /**
+             * A live topic is something you can set work on, and Assignments
+             * is where that happens — a screen an admin had to reach from the
+             * sidebar and then re-find this same topic inside. Only when it is
+             * live (an assignment cannot point at a topic students cannot
+             * play) and only in the organization console: the Public Arena has
+             * no assignments, and `assignmentService` returns nothing for it.
+             */
+            canSetWork
+              ? {
+                  key: 'assign',
+                  label: 'Set an assignment on it',
+                  meta: 'Practice for a batch or the whole school',
+                  icon: 'calendar',
+                  onPress: () =>
+                    router.push({ pathname: '/admin/assignment-new', params: { topicId: topic.id } }),
+                }
+              : null,
+
             canManageTopics
               ? {
                   key: 'edit',
                   label: 'Edit the topic',
-                  meta: 'Name, cover, category, status',
+                  meta: 'Name, cover, category, sources',
                   icon: 'edit',
-                  onPress: () =>
-                    router.push({ pathname: '/admin/topic-edit', params: { topicId: topic.id } }),
+                  onPress: () => router.push(href('topic-edit', { topicId: topic.id })),
+                }
+              : null,
+            canManageTopics && !archived
+              ? {
+                  key: 'archive',
+                  label: 'Archive it',
+                  meta: 'Students lose access. Its questions stay in the bank',
+                  icon: 'trash',
+                  destructive: true,
+                  onPress: () => onSetStatus(topic, TOPIC_STATUS.ARCHIVED),
                 }
               : null,
           ]}
         />
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -310,7 +581,7 @@ function StatusBadge({ topic, isLive }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  list: { padding: consoleLayout.gutter, paddingTop: space.sm, paddingBottom: space.lg },
+  list: { padding: consoleLayout.gutter, paddingTop: space.md, paddingBottom: space.lg },
   card: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,
@@ -319,16 +590,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.hairline,
   },
-  cardTop: { flexDirection: 'row', gap: space.md },
-  thumb: {
-    width: 64,
-    height: 64,
-    borderRadius: layout.radiusInput,
-    overflow: 'hidden',
-    backgroundColor: colors.nightRaised,
-  },
+  cardPressed: { backgroundColor: colors.canvas },
+  cardTop: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  // The medallion draws its own disc, rim and radius; this only reserves the
+  // space beside the name.
+  thumb: { width: 64, height: 64 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  controls: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.md },
   readiness: { marginTop: space.md },
   readinessRow: {
     flexDirection: 'row',
@@ -336,6 +603,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: space.sm,
   },
-  sources: { marginTop: space.sm },
   actions: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md },
+  notice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    backgroundColor: colors.accentSoft,
+    borderRadius: layout.radiusInput,
+    padding: space.md,
+    marginHorizontal: consoleLayout.gutter,
+    marginBottom: space.md,
+  },
 });

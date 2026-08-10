@@ -14,6 +14,7 @@ import {
   ErrorNotice,
   Header,
   ListCard,
+  ConsoleControls,
   ListRow,
   SearchField,
   Select,
@@ -24,7 +25,7 @@ import {
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
-import { colors, consoleLayout, consoleType, layout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, consoleType, layout, space } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.4 — the roster. Approvals first when there are any, because a
@@ -171,21 +172,14 @@ export default function AdminStudents() {
    * What this row can do, by the tab it is in. One list, so the sheet reads
    * the same way for a pending student and a suspended one and the verbs
    * cannot drift apart per branch the way three separate JSX blocks did.
+   *
+   * "Open profile" used to head every branch of it, because the row's press
+   * belonged to this sheet and the profile was reachable no other way. The row
+   * goes there itself now, so the sheet is verbs only.
    */
   const actionsFor = (row) => {
-    const open = {
-      key: 'open',
-      label: 'Open profile',
-      icon: 'user',
-      onPress: () =>
-        router.push({
-          pathname: '/admin/student-detail',
-          params: { membershipId: row.membershipId, userId: row.userId },
-        }),
-    };
     if (status === 'pending') {
       return [
-        open,
         { key: 'approve', label: 'Approve', icon: 'check', onPress: () => decide(row, 'approve') },
         {
           key: 'reject',
@@ -198,7 +192,6 @@ export default function AdminStudents() {
     }
     if (status === 'suspended') {
       return [
-        open,
         { key: 'restore', label: 'Restore', icon: 'check', onPress: () => decide(row, 'restore') },
         {
           key: 'remove',
@@ -210,7 +203,6 @@ export default function AdminStudents() {
       ];
     }
     return [
-      open,
       batches.length > 0
         ? {
             key: 'batch',
@@ -245,7 +237,7 @@ export default function AdminStudents() {
   );
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       {/* No shortcut in the corner. Batches is a row in the sidebar two inches
           away, and a soft pill in the header was the only one of its kind in
           either console — it read as this screen's primary action, which it is
@@ -254,7 +246,7 @@ export default function AdminStudents() {
 
       <Tabs options={TABS} value={status} onChange={setStatus} />
 
-      <View style={styles.controls}>
+      <ConsoleControls>
         <SearchField
           value={query}
           onChangeText={setQuery}
@@ -272,7 +264,7 @@ export default function AdminStudents() {
             placeholder="All batches"
           />
         ) : null}
-      </View>
+      </ConsoleControls>
 
       {/* Two notices, one slot: a failed load offers a retry, a failed export
           does not — retrying an export is the button that just failed. */}
@@ -283,6 +275,7 @@ export default function AdminStudents() {
         <ListSkeleton rows={7} />
       ) : shown.length === 0 ? (
         <EmptyState
+          tone="people"
           icon="friends"
           title={query ? 'Nobody by that name' : status === 'pending' ? 'Nobody waiting' : 'Nobody here'}
           body={
@@ -346,14 +339,20 @@ export default function AdminStudents() {
               last={i === shown.length - 1}
               title={row.displayName}
               actions={canManageStudents ? actionsFor(row) : undefined}
-              onPress={
-                canManageStudents
-                  ? undefined
-                  : () =>
-                      router.push({
-                        pathname: '/admin/student-detail',
-                        params: { membershipId: row.membershipId, userId: row.userId },
-                      })
+              /**
+               * The row opens the student, whoever is looking.
+               *
+               * It used to open the student only for an admin who could NOT
+               * manage them — anyone who could got the action sheet instead, so
+               * the more permission you held the less the roster would show
+               * you. `ListRow` takes both now: press for the person, `⋯` for
+               * what to do about them.
+               */
+              onPress={() =>
+                router.push({
+                  pathname: '/admin/student-detail',
+                  params: { membershipId: row.membershipId, userId: row.userId },
+                })
               }
             >
               <Avatar url={row.avatarUrl} name={row.displayName} size={44} />
@@ -475,13 +474,7 @@ export default function AdminStudents() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  controls: {
-    paddingHorizontal: consoleLayout.gutter,
-    paddingTop: space.md,
-    paddingBottom: space.sm,
-    gap: space.sm,
-  },
-  list: { paddingHorizontal: consoleLayout.gutter },
+  list: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.md },
   /** The rating column. Fixed width and right-aligned, so it reads downward. */
   figure: { ...consoleType.figure, minWidth: 44, textAlign: 'right' },
   rowPressed: { backgroundColor: colors.nightRaised },

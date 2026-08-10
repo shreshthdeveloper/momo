@@ -19,7 +19,7 @@ import {
   Sheet,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, consoleLayout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, space } from '../../src/theme/console.js';
 
 /**
  * Live class sessions — the console side.
@@ -93,7 +93,7 @@ export default function AdminSessions() {
   const live = (rows ?? []).filter((r) => r.status !== 'ended');
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Live sessions" subtitle={adminSpace?.name} />
       <ErrorNotice error={error} onRetry={load} />
 
@@ -101,6 +101,7 @@ export default function AdminSessions() {
         <ListSkeleton rows={6} />
       ) : rows.length === 0 ? (
         <EmptyState
+          tone="learning"
           icon="friends"
           title="No sessions yet"
           body="Host one and your class joins on their phones with a code. Everyone answers the same question at the same time, and the board goes on the projector."

@@ -14,7 +14,7 @@ import {
   Segmented,
   useScrollBottom,
 } from '../../src/components/ui.jsx';
-import { colors, consoleLayout, layout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, layout, space } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.2.6 — ask the machine for questions.
@@ -99,7 +99,7 @@ export default function AdminDrafts() {
   const maxPerRequest = status?.maxPerRequest ?? 20;
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="AI drafts" subtitle={adminSpace?.name} />
 
       <ScrollView
@@ -112,6 +112,7 @@ export default function AdminDrafts() {
 
         {!available ? (
           <EmptyState
+            tone="content"
             icon="robot"
             title="Drafting is switched off"
             body={
@@ -220,7 +221,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   input: {
-    backgroundColor: colors.nightRaised,
+    backgroundColor: colors.control,
     borderRadius: layout.radiusInput,
     borderWidth: 1,
     borderColor: colors.hairline,

@@ -3,17 +3,20 @@ import { Modal, Pressable, RefreshControl, ScrollView, StyleSheet, View } from '
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api, request } from '../../src/lib/api.js';
-import { useAdminPermissions, useAdminSpace } from '../../src/lib/admin.js';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
+import { useConsoleSpace } from '../../src/lib/admin.js';
 import {
   Text,
   Badge,
   Button,
   Chip,
   ConfirmSheet,
+  ConsoleControls,
   EmptyState,
   ErrorNotice,
   Header,
   ConsoleFooter,
+  RowMenu,
   SearchField,
   Select,
   Sheet,
@@ -25,7 +28,7 @@ import {
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
-import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.2 — the question bank. Two banks behind one screen: "Our bank" is
@@ -34,6 +37,10 @@ import { colors, consoleLayout, elevation, layout, space, type } from '../../src
  * live topics as a draft. Long-press (or Select) turns the list into a bulk
  * status tool; delete is per-card and names its consequence — a question that
  * has been served archives, one that never was deletes.
+ *
+ * Mounted at `/admin/questions` and at `/super/questions`. Standing inside the
+ * Central Bank there is only one bank, so the origin switch disappears and
+ * everything on the screen is editable. See `useConsoleSpace`.
  */
 const LETTERS = ['A', 'B', 'C', 'D'];
 const PAGE_SIZE = 25;
@@ -118,25 +125,29 @@ export default function AdminQuestions() {
   const scrollBottom = useScrollBottom();
   const bottom = useBottomInset();
   const router = useRouter();
-  const adminSpace = useAdminSpace();
-  const permissions = useAdminPermissions(adminSpace);
   const params = useLocalSearchParams();
 
-  // The superadmin browses another space (the public one) by passing spaceId.
-  // The server re-checks the caller on every request, so showing the write
-  // affordances here grants nothing.
-  const overrideSpaceId =
-    typeof params.spaceId === 'string' && params.spaceId.length > 0 ? params.spaceId : null;
-  const spaceId = overrideSpaceId ?? adminSpace?.id;
-  const canWrite = overrideSpaceId ? true : permissions.canWrite;
-  const canPublish = overrideSpaceId ? true : permissions.canPublish;
+  // Which bank this is: the admin's own, or the Central Bank when the platform
+  // operator is here. The server re-checks the caller on every request, so
+  // showing the write affordances grants nothing — see `useConsoleSpace`.
+  const goBack = useConsoleBack();
+  const { spaceId, spaceName, isCentral, inTenant, canWrite, canPublish, href } = useConsoleSpace();
 
   const [originChoice, setOriginChoice] = useState('own');
-  const origin = overrideSpaceId ? 'own' : originChoice;
+  // Standing IN the central bank, "Our bank / Central bank" is the same bank
+  // twice, so the switch is not offered.
+  const origin = isCentral ? 'own' : originChoice;
 
   const [query, setQuery] = useState('');
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState('all');
+  /**
+   * Arriving from a figure that already IS a filter — "Questions live" on the
+   * overview — the bank opens on that filter. Landing on an unfiltered list
+   * would make the operator re-derive the thing they just tapped.
+   */
+  const [status, setStatus] = useState(() =>
+    STATUS_FILTERS.some((f) => f.value === params.status) ? params.status : 'all',
+  );
   const [difficulty, setDifficulty] = useState('all');
   const [topicFilter, setTopicFilter] = useState(() =>
     typeof params.topicId === 'string' && params.topicId.length > 0 ? params.topicId : null,
@@ -230,14 +241,9 @@ export default function AdminQuestions() {
     load(0);
   }, [load]);
 
-  const editParams = (extra) => (overrideSpaceId ? { ...extra, spaceId: overrideSpaceId } : extra);
   const goNew = () =>
-    router.push({
-      pathname: '/admin/question-edit',
-      params: editParams(topicFilter ? { topicId: topicFilter } : {}),
-    });
-  const goEdit = (row) =>
-    router.push({ pathname: '/admin/question-edit', params: editParams({ id: row.id }) });
+    router.push(href('question-edit', topicFilter ? { topicId: topicFilter } : {}));
+  const goEdit = (row) => router.push(href('question-edit', { id: row.id }));
 
   const toggle = (id) =>
     setSelected((current) =>
@@ -258,6 +264,88 @@ export default function AdminQuestions() {
       setBulkBusy(null);
     }
   };
+
+  /**
+   * One question's status, from its own card.
+   *
+   * The same `/questions/bulk` endpoint the selection bar uses, with a list of
+   * one — there is no separate single-question status route and there does not
+   * need to be: the server maps the action, re-checks publish permission and
+   * recounts the topic either way.
+   *
+   * Optimistic, and it does NOT reload the list. A reload here would be
+   * actively hostile: the default filter is "All", but an admin working
+   * through drafts has usually filtered to Draft, and re-fetching would make
+   * the row they just published vanish out from under the thumb that published
+   * it. The badge changes in place, the flash says what happened, and the next
+   * real load reconciles.
+   */
+  const setRowStatus = async (row, action, said) => {
+    const next = { publish: 'published', review: 'in_review', draft: 'draft', archive: 'archived' }[
+      action
+    ];
+    const before = row.status;
+    setItems((current) => (current ?? []).map((q) => (q.id === row.id ? { ...q, status: next } : q)));
+    try {
+      setError(null);
+      await api.post('/admin/questions/bulk', { spaceId, ids: [row.id], action });
+      flash(said);
+    } catch (err) {
+      setItems((current) =>
+        (current ?? []).map((q) => (q.id === row.id ? { ...q, status: before } : q)),
+      );
+      setError(err);
+    }
+  };
+
+  /** What this particular question can become, given where it is now. */
+  const statusActions = (row) => [
+    { key: 'edit', label: 'Edit the question', icon: 'edit', onPress: () => goEdit(row) },
+    canPublish && row.status !== 'published'
+      ? {
+          key: 'publish',
+          label: 'Publish it',
+          meta: 'It can come up in play',
+          icon: 'check',
+          onPress: () => setRowStatus(row, 'publish', 'Published.'),
+        }
+      : null,
+    row.status === 'published'
+      ? {
+          key: 'unpublish',
+          label: 'Take it down',
+          meta: 'Back to a draft, out of new matches',
+          icon: 'lock',
+          onPress: () => setRowStatus(row, 'draft', 'Back to a draft.'),
+        }
+      : null,
+    row.status !== 'in_review' && row.status !== 'published'
+      ? {
+          key: 'review',
+          label: 'Send to review',
+          meta: 'Into the queue for someone to check',
+          icon: 'hourglass',
+          onPress: () => setRowStatus(row, 'review', 'Sent to the review queue.'),
+        }
+      : null,
+    row.status !== 'archived'
+      ? {
+          key: 'archive',
+          label: 'Archive it',
+          meta: 'Out of play, kept in the bank',
+          icon: 'close',
+          onPress: () => setRowStatus(row, 'archive', 'Archived.'),
+        }
+      : null,
+    {
+      key: 'delete',
+      label: 'Delete it',
+      meta: row.servedEver ? 'It has been served, so it archives instead' : 'Gone for good',
+      icon: 'trash',
+      destructive: true,
+      onPress: () => setConfirmDelete(row),
+    },
+  ];
 
   const removeQuestion = async () => {
     const row = confirmDelete;
@@ -307,9 +395,10 @@ export default function AdminQuestions() {
 
   if (!spaceId) {
     return (
-      <SafeAreaView style={styles.screen} edges={['top']}>
+      <SafeAreaView style={styles.screen} edges={[]}>
         <Header title="Question bank" />
         <EmptyState
+          tone="content"
           icon="alert"
           title="No organization to manage"
           body="This console appears when an organization has made you an admin."
@@ -393,20 +482,21 @@ export default function AdminQuestions() {
   const bottomOwned = Boolean(selected) || (origin === 'own' && canWrite);
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       {/* No `+` in the corner. Creating a question is this screen's primary
           action, and a primary action lives in the footer on every other page
           in both consoles — a 20pt glyph in the top right was the odd one out
           and the hardest thing here to find. */}
+      {/* Scoped into a tenant it is a PUSHED screen — the platform operator
+          arrived from that organization and has somewhere to go back to. From
+          the sidebar it is a sidebar screen and wears the menu. */}
       <Header
         title="Question bank"
-        subtitle={overrideSpaceId ? 'Central bank' : adminSpace?.name}
-        onBack={overrideSpaceId ? () => router.back() : undefined}
+        subtitle={spaceName}
+        onBack={inTenant ? goBack : undefined}
       />
 
-      {!overrideSpaceId ? (
-        <Tabs options={ORIGINS} value={origin} onChange={setOriginChoice} />
-      ) : null}
+      {!isCentral ? <Tabs options={ORIGINS} value={origin} onChange={setOriginChoice} /> : null}
 
       {/**
        * Search, and one door to everything else.
@@ -423,86 +513,87 @@ export default function AdminQuestions() {
        * are set, and what IS set comes back as a row of chips you can take off
        * — the row appears only when there is something in it.
        */}
-      <View style={styles.searchRow}>
-        <SearchField
-          style={{ flex: 1 }}
-          value={query}
-          onChangeText={setQuery}
-          onClear={() => setQuery('')}
-          placeholder="Search questions"
-          autoCapitalize="none"
-        />
-        <Pressable
-          onPress={() => setFiltersOpen(true)}
-          accessibilityRole="button"
-          accessibilityLabel={
-            activeFilters.length ? `Filters — ${activeFilters.length} set` : 'Filters'
-          }
-          style={({ pressed }) => [
-            styles.filterButton,
-            activeFilters.length ? styles.filterButtonOn : null,
-            pressed && { opacity: 0.7 },
-          ]}
-        >
-          <Icon
-            name="filter"
-            size={18}
-            color={activeFilters.length ? colors.accent : colors.inkMuted}
+      <ConsoleControls>
+        <View style={styles.searchRow}>
+          <SearchField
+            style={{ flex: 1 }}
+            value={query}
+            onChangeText={setQuery}
+            onClear={() => setQuery('')}
+            placeholder="Search questions"
+            autoCapitalize="none"
           />
-          {activeFilters.length ? (
-            <Text variant="meta" color={colors.accent}>
-              {activeFilters.length}
-            </Text>
-          ) : null}
-        </Pressable>
-      </View>
+          <Pressable
+            onPress={() => setFiltersOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={
+              activeFilters.length ? `Filters — ${activeFilters.length} set` : 'Filters'
+            }
+            style={({ pressed }) => [
+              styles.filterButton,
+              activeFilters.length ? styles.filterButtonOn : null,
+              pressed && { opacity: 0.7 },
+            ]}
+          >
+            <Icon
+              name="filter"
+              size={18}
+              color={activeFilters.length ? colors.accent : colors.inkMuted}
+            />
+            {activeFilters.length ? (
+              <Text variant="meta" color={colors.accent}>
+                {activeFilters.length}
+              </Text>
+            ) : null}
+          </Pressable>
+        </View>
 
-      {/**
-       * The topic is the spine of a question bank, so it is a control on the
-       * screen rather than something buried in the filter sheet: an admin's
-       * question is almost always "what does THIS topic have", and with no
-       * topic chosen the list still says which topic each question belongs to,
-       * grouped, so the bank never reads as one undifferentiated pile.
-       */}
-      {topics && topics.length > 0 ? (
-        <View style={styles.controls}>
+        {/**
+         * The topic is the spine of a question bank, so it is a control on the
+         * screen rather than something buried in the filter sheet: an admin's
+         * question is almost always "what does THIS topic have", and with no
+         * topic chosen the list still says which topic each question belongs
+         * to, grouped, so the bank never reads as one undifferentiated pile.
+         */}
+        {topics && topics.length > 0 ? (
           <Select
             value={topicFilter}
             options={topicOptions}
             onChange={setTopicFilter}
             placeholder="Every topic"
           />
-        </View>
-      ) : null}
+        ) : null}
 
-      {activeFilters.length ? (
-        <View style={styles.activeBar}>
-          {activeFilters.map((filter) => (
+        {activeFilters.length ? (
+          <View style={styles.activeBar}>
+            {activeFilters.map((filter) => (
+              <Pressable
+                key={filter.key}
+                onPress={filter.clear}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove the ${filter.label} filter`}
+                style={({ pressed }) => [styles.activeChip, pressed && { opacity: 0.7 }]}
+              >
+                <Text variant="meta" color={colors.accent} numberOfLines={1}>
+                  {filter.label}
+                </Text>
+                <Icon name="close" size={13} color={colors.accent} />
+              </Pressable>
+            ))}
             <Pressable
-              key={filter.key}
-              onPress={filter.clear}
+              onPress={clearFilters}
+              hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel={`Remove the ${filter.label} filter`}
-              style={({ pressed }) => [styles.activeChip, pressed && { opacity: 0.7 }]}
+              style={({ pressed }) => [styles.clearAll, pressed && { opacity: 0.7 }]}
             >
-              <Text variant="meta" color={colors.accent} numberOfLines={1}>
-                {filter.label}
+              <Text variant="meta" color={colors.inkMuted}>
+                Clear
               </Text>
-              <Icon name="close" size={13} color={colors.accent} />
             </Pressable>
-          ))}
-          <Pressable
-            onPress={clearFilters}
-            hitSlop={8}
-            accessibilityRole="button"
-            style={({ pressed }) => [styles.clearAll, pressed && { opacity: 0.7 }]}
-          >
-            <Text variant="meta" color={colors.inkMuted}>
-              Clear
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
+          </View>
+        ) : null}
+      </ConsoleControls>
+
       <ErrorNotice error={error} onRetry={() => load(0)} />
       {notice ? (
         <View style={styles.notice}>
@@ -518,18 +609,21 @@ export default function AdminQuestions() {
       ) : shown.length === 0 ? (
         filtersActive ? (
           <EmptyState
+            tone="content"
             icon="search"
             title="No matches"
             body="No questions match these filters. Loosen the search or clear a filter."
           />
         ) : origin === 'central' ? (
           <EmptyState
+            tone="content"
             icon="book"
             title="Nothing here"
             body="The central bank has no published questions to browse yet."
           />
         ) : (
           <EmptyState
+            tone="content"
             icon="book"
             title="No questions yet"
             body="The bank is empty. Write the first question and the review flow takes it from there."
@@ -572,16 +666,29 @@ export default function AdminQuestions() {
                * The heading is skipped when a topic IS chosen — the Select
                * above already says which one, and repeating it every screenful
                * would be noise.
+               *
+               * And it is the door to that topic. The heading already names
+               * the one thing you would want to narrow to, and narrowing to it
+               * meant going up to the filter sheet and finding the same name
+               * in a list. Tapping the heading you are already looking at is
+               * the shorter path, and the filter chip it produces is how you
+               * get back out.
                */}
               {group.id !== 'ALL' ? (
-                <View style={styles.groupHead}>
+                <Pressable
+                  style={({ pressed }) => [styles.groupHead, pressed && { opacity: 0.6 }]}
+                  onPress={() => setTopicFilter(group.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Show only ${group.name}`}
+                >
                   <Text variant="label" color={colors.inkMuted} style={{ flex: 1 }} numberOfLines={1}>
                     {group.name}
                   </Text>
                   <Text variant="meta" color={colors.inkFaint}>
                     {group.rows.length}
                   </Text>
-                </View>
+                  <Icon name="chevronRight" size={13} color={colors.inkFaint} />
+                </Pressable>
               ) : null}
 
               {group.rows.map((row) => {
@@ -601,7 +708,7 @@ export default function AdminQuestions() {
                 style={({ pressed }) => [
                   styles.card,
                   elevation.raised,
-                  pressed && { backgroundColor: colors.sunken },
+                  pressed && { backgroundColor: colors.canvas },
                 ]}
                 onPress={() => {
                   if (origin === 'central') openFork(row);
@@ -630,19 +737,23 @@ export default function AdminQuestions() {
                   <Text variant="tiny" color={colors.inkFaint}>
                     {ago(row.updatedAt)}
                   </Text>
-                  {/* A bin, not an ✕. In the corner of a card an ✕ means
-                      "dismiss this" everywhere else in software, and this one
-                      deletes the question — sitting a thumb's width from the
-                      timestamp on every card in a list you scroll fast. */}
+                  {/**
+                   * Every verb this card has, in the corner where the console
+                   * keeps a card's verbs.
+                   *
+                   * It used to be a lone bin. Publishing a question — the most
+                   * ordinary thing anyone does in a question bank — was not
+                   * here at all: you had to long-press the card to discover a
+                   * selection mode nothing advertised, tick it, and use the
+                   * bulk bar. So the one action on a card was the destructive
+                   * one, and the routine one was hidden behind a gesture.
+                   */}
                   {origin === 'own' && canWrite && !selected ? (
-                    <Pressable
-                      onPress={() => setConfirmDelete(row)}
-                      hitSlop={10}
-                      accessibilityRole="button"
-                      accessibilityLabel="Delete question"
-                     style={({ pressed }) => (pressed ? { opacity: 0.7 } : null)}>
-                      <Icon name="trash" size={16} color={colors.inkFaint} />
-                    </Pressable>
+                    <RowMenu
+                      title={row.text}
+                      label="Actions for this question"
+                      actions={statusActions(row)}
+                    />
                   ) : null}
                 </View>
 
@@ -886,13 +997,7 @@ const styles = StyleSheet.create({
   // something to lift off. It is also the search field's own colour, which is
   // why the field now carries an edge; see `SearchField`.
   screen: { flex: 1, backgroundColor: colors.sunken },
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    paddingHorizontal: consoleLayout.gutter,
-    marginTop: space.md,
-  },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   filterButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -907,17 +1012,9 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
   },
   filterButtonOn: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
-  controls: { paddingHorizontal: consoleLayout.gutter, marginTop: space.sm },
   // Wraps rather than scrolls: there are at most two of these, and a scroller
   // for two chips is a scroller that hides one of them.
-  activeBar: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: space.sm,
-    paddingHorizontal: consoleLayout.gutter,
-    marginTop: space.sm,
-  },
+  activeBar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.sm },
   activeChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -939,7 +1036,7 @@ const styles = StyleSheet.create({
     paddingTop: space.md,
     paddingBottom: space.sm,
   },
-  list: { padding: consoleLayout.gutter, paddingTop: 0 },
+  list: { padding: consoleLayout.gutter, paddingTop: space.sm },
   card: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,

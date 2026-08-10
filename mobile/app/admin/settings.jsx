@@ -10,13 +10,13 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../src/lib/api.js';
 import { useConsoleNav } from '../../src/components/consoleNav.js';
 import { useAdminSpace, useAdminPermissions } from '../../src/lib/admin.js';
 import { useAuth } from '../../src/state/auth.jsx';
-import Icon from '../../src/components/Icon.jsx';
 import {
   Text,
   Avatar,
@@ -29,11 +29,13 @@ import {
   ProgressBar,
   Segmented,
   Spinner,
+  Swatches,
   FULL_BLEED_MODAL,
   useBottomInset,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, consoleLayout, elevation, fonts, layout, space, type } from '../../src/theme/index.js';
+import Icon from '../../src/components/Icon.jsx';
+import { colors, consoleLayout, elevation, fonts, layout, space, type } from '../../src/theme/console.js';
 
 /**
  * The organization's own controls — brand, door policy, game pace, the plan, the
@@ -44,6 +46,9 @@ import { colors, consoleLayout, elevation, fonts, layout, space, type } from '..
  * code (the old one must die the moment the new one exists) and changing a
  * team member's role (a permission is not a draft).
  */
+/** How many log rows Settings shows before handing over to the Activity log. */
+const AUDIT_PREVIEW = 5;
+
 const JOIN_MODES = [
   { value: 'open', label: 'Open' },
   { value: 'approval', label: 'Approval' },
@@ -110,6 +115,7 @@ function toForm(spaceData) {
 
 export default function AdminSettings() {
   const bottom = useBottomInset();
+  const router = useRouter();
   /**
    * Settings is a sidebar row like every other, so it wears the menu rather
    * than a back arrow. The unsaved-work guard moves with the button: the menu
@@ -138,7 +144,7 @@ export default function AdminSettings() {
         const [settings, auditData] = await Promise.all([
           api.get('/admin/settings', { spaceId: adminSpace.id }),
           // The trail is a bonus, never a blocker — if it fails, the section hides.
-          api.get('/admin/audit', { spaceId: adminSpace.id, limit: 40 }).catch(() => null),
+          api.get('/admin/audit', { spaceId: adminSpace.id, limit: AUDIT_PREVIEW + 1 }).catch(() => null),
         ]);
         setData(settings);
         setAudit(auditData ? (auditData.items ?? []) : null);
@@ -276,7 +282,7 @@ export default function AdminSettings() {
   const planActive = data?.plan?.status === 'active';
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       {/* Save is a footer button, like every other form in both consoles. It
           was a text link in the header — the only one in the product — which
           made the most consequential control on the longest screen the
@@ -350,24 +356,13 @@ export default function AdminSettings() {
                 Accent
               </Text>
               {/* The legal accents come from the server — never a local list. */}
-              <View style={styles.swatches}>
-                {(data.accents ?? []).map((hex) => {
-                  const on = form.accentColor === hex;
-                  return (
-                    <Pressable
-                      key={hex}
-                      disabled={!canManageSettings}
-                      onPress={() => set('accentColor', hex)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Accent colour ${hex}`}
-                      accessibilityState={{ selected: on }}
-                      style={({ pressed }) => [styles.swatch, { backgroundColor: hex }, on && styles.swatchOn, pressed && { opacity: 0.7 }]}
-                    >
-                      {on ? <Icon name="check" size={16} color={colors.onAccent} /> : null}
-                    </Pressable>
-                  );
-                })}
-              </View>
+              <Swatches
+                value={form.accentColor}
+                colors={data.accents ?? []}
+                onChange={(hex) => set('accentColor', hex)}
+                disabled={!canManageSettings}
+                noun="Accent colour"
+              />
               <Text variant="meta" color={colors.inkFaint}>
                 Colours are curated so text stays readable.
               </Text>
@@ -522,7 +517,7 @@ export default function AdminSettings() {
                   style={({ pressed }) => [
                     styles.teamRow,
                     i > 0 && styles.rowDivided,
-                    pressed && tappable ? { backgroundColor: colors.sunken } : null,
+                    pressed && tappable ? { backgroundColor: colors.canvas } : null,
                   ]}
                 >
                   <Avatar url={row.avatarUrl} name={row.displayName} size={40} />
@@ -543,7 +538,16 @@ export default function AdminSettings() {
             })}
           </Section>
 
-          {/* ── Recent activity ──────────────────────────────────────────── */}
+          {/**
+           * ── Recent activity, as a PREVIEW ─────────────────────────────────
+           *
+           * This printed forty rows, inline, under everything else on the
+           * screen — so a settings page that is really six short forms ended in
+           * two thousand points of log, and the log itself could not be
+           * searched, filtered or dated. Five rows answer the question anyone
+           * asks here ("has anything happened lately?"); the Activity log in
+           * the menu answers the rest.
+           */}
           {audit ? (
             <Section title="Recent activity">
               {audit.length === 0 ? (
@@ -551,7 +555,7 @@ export default function AdminSettings() {
                   Nothing here yet. Team actions appear in this list.
                 </Text>
               ) : (
-                audit.map((item, i) => (
+                audit.slice(0, AUDIT_PREVIEW).map((item, i) => (
                   <View key={item.id} style={[styles.auditRow, i > 0 && styles.rowDivided]}>
                     <Text variant="bodyStrong" numberOfLines={2}>
                       {prettyAction(item.action)}
@@ -568,6 +572,23 @@ export default function AdminSettings() {
                   </View>
                 ))
               )}
+              {audit.length > AUDIT_PREVIEW ? (
+                <Pressable
+                  onPress={() => router.push('/admin/audit')}
+                  accessibilityRole="button"
+                  accessibilityLabel="See the full activity log"
+                  style={({ pressed }) => [
+                    styles.auditMore,
+                    styles.rowDivided,
+                    pressed && { backgroundColor: colors.canvas },
+                  ]}
+                >
+                  <Text variant="label" color={colors.accent} style={{ flex: 1 }}>
+                    See the full activity log
+                  </Text>
+                  <Icon name="chevronRight" size={16} color={colors.accent} />
+                </Pressable>
+              ) : null}
             </Section>
           ) : null}
         </ScrollView>
@@ -647,7 +668,7 @@ export default function AdminSettings() {
                     ? setSheet({ kind: 'demote', row: teamRow })
                     : setRole(teamRow, option.key)
                 }
-                style={({ pressed }) => [styles.sheetOption, pressed ? { backgroundColor: colors.sunken } : null]}
+                style={({ pressed }) => [styles.sheetOption, pressed ? { backgroundColor: colors.canvas } : null]}
               >
                 <Text variant="option" color={option.destructive ? colors.wrong : colors.ink}>
                   {option.label}
@@ -748,21 +769,16 @@ const styles = StyleSheet.create({
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.nightRaised,
+    // An inset INSIDE a card, so it takes `canvas` — the console's inset
+    // tone — not the card fill it is sitting on. Filled with `nightRaised`
+    // it was the card's own colour and had no edge at all, which paper only
+    // makes more obvious: a white box on a white card.
+    backgroundColor: colors.control,
     borderRadius: layout.radiusInput,
     paddingHorizontal: space.lg,
     height: 54,
   },
   inputDisabled: { color: colors.inkFaint },
-  swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  swatch: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  swatchOn: { borderWidth: 2.5, borderColor: colors.ink },
 
   // ── Joining ───────────────────────────────────────────────────────────────
   code: {
@@ -804,6 +820,13 @@ const styles = StyleSheet.create({
   },
   rowDivided: { borderTopWidth: 1, borderTopColor: colors.hairline },
   auditRow: { paddingHorizontal: space.lg, paddingVertical: space.md, gap: 3 },
+  auditMore: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingHorizontal: space.lg,
+    minHeight: layout.touchMin,
+  },
   auditMeta: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
 
   // ── The team action sheet (mirrors the kit's ConfirmSheet chrome) ─────────

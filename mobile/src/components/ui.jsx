@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Image,
   KeyboardAvoidingView,
@@ -14,12 +13,23 @@ import {
   View,
   Easing,
 } from 'react-native';
+/**
+ * `colors` is imported here as `night`, and ONLY the header may touch it.
+ *
+ * These components render in the player app's night palette AND in both
+ * consoles' paper one, so a module-level colour import bakes in whichever
+ * happened to load first — every other component in this file resolves its
+ * palette from context through `usePalette()` and must keep doing so.
+ *
+ * The exception is the console header, which is deliberately dark on a light
+ * console: chrome is the night world, the workspace is paper. See
+ * `headerConsole`. It is not resolving a palette, it is naming a surface.
+ */
 import {
-  colors,
+  colors as night,
   consoleLayout,
   consoleType,
   DEFAULT_FONT_SCALE_CAP,
-  elevation,
   fontScaleCap,
   fonts,
   layout,
@@ -27,6 +37,7 @@ import {
   type,
   motion,
 } from '../theme/index.js';
+import { useDomains, usePalette, useTheme, useThemedStyles } from '../theme/palette.jsx';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useConsoleNav } from './consoleNav.js';
 import { useReducedMotion } from '../lib/motion.js';
@@ -84,7 +95,8 @@ export const FULL_BLEED_MODAL = {
  * question at a time in, and the alternative — every console screen naming its
  * own sizes — is how a design system stops being one.
  */
-export function Text({ variant = 'body', color = colors.ink, style, children, ...props }) {
+export function Text({ variant = 'body', color, style, children, ...props }) {
+  const colors = usePalette();
   const inConsole = Boolean(useConsoleNav());
   const scale = inConsole && consoleType[variant] ? consoleType[variant] : type[variant];
   return (
@@ -92,7 +104,7 @@ export function Text({ variant = 'body', color = colors.ink, style, children, ..
       // Bounded, not refused — see `fontScaleCap`. A caller that knows better
       // for one instance still wins, because its prop is spread after.
       maxFontSizeMultiplier={fontScaleCap[variant] ?? DEFAULT_FONT_SCALE_CAP}
-      style={[scale, { color }, style]}
+      style={[scale, { color: color ?? colors.ink }, style]}
       {...props}
     >
       {children}
@@ -120,6 +132,9 @@ export function Button({
   iconRight,
   fullWidth = true,
 }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
+  const { elevation } = useTheme();
   const scale = useRef(new Animated.Value(1)).current;
   const reduced = useReducedMotion();
 
@@ -129,6 +144,8 @@ export function Button({
       duration: reduced ? 0 : 80,
       useNativeDriver: true,
     }).start();
+
+  const inConsole = Boolean(useConsoleNav());
 
   /**
    * `press` is the fill a button takes while held.
@@ -141,15 +158,31 @@ export function Button({
   const palette = {
     primary: { bg: colors.accent, press: colors.accentPress, fg: colors.onAccent, border: colors.transparent },
     soft: { bg: colors.accentSoft, press: colors.accentSoftPress, fg: colors.accent, border: colors.transparent },
-    outline: { bg: colors.transparent, fg: colors.accent, border: colors.accent },
-    ghost: { bg: colors.transparent, fg: colors.inkMuted, border: colors.transparent },
-    danger: { bg: colors.transparent, fg: colors.wrong, border: colors.wrong },
+    outline: { bg: inConsole ? colors.nightRaised : colors.transparent, press: colors.accentSoft, fg: colors.accent, border: colors.accent },
+    /**
+     * A ghost in the CONSOLE is a real secondary button; in the player app it
+     * stays text.
+     *
+     * Text-only was making captions out of controls. On the import's first
+     * stage "Paste it instead" sat under a tinted "Pick a CSV file" pill as
+     * plain grey words in the middle of the screen — one of two equal ways to
+     * get the questions in, drawn as if it were a footnote about the other. The
+     * same thing happened to "Dismiss" beside "Suspend" on the moderation card
+     * and to "Done" in the import footer. A console is dense and monochrome, so
+     * a control needs an edge to be a control; the player app is spacious and
+     * dark, where a bare word still reads as tappable.
+     */
+    ghost: inConsole
+      ? { bg: colors.nightRaised, press: colors.canvas, fg: colors.inkMuted, border: colors.hairline }
+      : { bg: colors.transparent, fg: colors.inkMuted, border: colors.transparent },
+    danger: { bg: inConsole ? colors.nightRaised : colors.transparent, press: colors.wrongSoft, fg: colors.wrong, border: colors.wrong },
     /** The two variants for a button sitting on a saturated field. */
     onColor: { bg: colors.canvas, fg: colors.accent, border: colors.transparent },
     onColorSoft: { bg: 'rgba(255,255,255,0.18)', fg: colors.onColor, border: colors.transparent },
   }[variant];
 
-  const bordered = variant === 'outline' || variant === 'danger';
+  const borderWidth =
+    variant === 'outline' || variant === 'danger' ? 1.5 : inConsole && variant === 'ghost' ? 1 : 0;
   /**
    * `sm` is 44, not 40.
    *
@@ -166,10 +199,25 @@ export function Button({
    * than 16. Still the accessible floor — the height that was lost was
    * presentation, not target.
    */
-  const inConsole = Boolean(useConsoleNav());
   const height =
     size === 'sm' ? 44 : size === 'md' ? 46 : inConsole ? consoleLayout.buttonHeight : layout.buttonHeight;
   const labelSize = size === 'sm' || inConsole ? 14 : 16;
+  /**
+   * The console squares its buttons off; the player app keeps the pill.
+   *
+   * A stadium is the game's shape — it is the Play button, and everything
+   * shaped like it inherits some of that. A console screen is a grid of
+   * rectangles: cards at 18, inputs and selects at 14, a header, a table. Full
+   * pills dropped into it read as visitors, and with a circular `⋯` beside them
+   * a single card was carrying three unrelated geometries. Matching the input
+   * radius costs nothing and makes a row of controls look like one family.
+   */
+  const radius = inConsole ? layout.radiusInput : layout.radiusPill;
+  /**
+   * A hugging button still has to look like a button. "Approve" and "Live" set
+   * at their own width came out barely wider than the word, which is a chip.
+   */
+  const minWidth = fullWidth ? undefined : size === 'sm' ? 88 : 104;
 
   return (
     // `center` rather than `flex-start` when hugging: a small button almost
@@ -190,16 +238,29 @@ export function Button({
           variant === 'primary' && !disabled ? elevation.raised : null,
           {
             height,
+            minWidth,
+            borderRadius: radius,
             backgroundColor: pressed && palette.press ? palette.press : palette.bg,
             borderColor: palette.border,
-            borderWidth: bordered ? 1.5 : 0,
+            borderWidth,
             paddingHorizontal: size === 'sm' ? space.lg : space.xl,
             opacity: disabled ? 0.45 : 1,
           },
         ]}
       >
         {loading ? (
-          <ActivityIndicator color={palette.fg} />
+          /**
+           * The Mimo mark, not the platform's ring.
+           *
+           * A button is where the app waits most often — every save, every
+           * approve, every import — and until now every one of those waits was
+           * drawn by iOS or Android. Two identical-looking buttons would spin
+           * differently depending on the phone, and neither looked like this
+           * app. `Spinner` is the same mark the splash and every full-screen
+           * wait already use; it just takes the button's own label colour so it
+           * works on the accent fill and on paper alike.
+           */
+          <Spinner size={size === 'sm' ? 20 : 24} color={palette.fg} />
         ) : (
           <>
             {icon ? <Icon name={icon} size={18} color={palette.fg} /> : null}
@@ -229,7 +290,8 @@ export function Button({
  *
  * Under reduced motion the value simply updates.
  */
-export function RollingNumber({ value, style, color = colors.ink }) {
+export function RollingNumber({ value, style, color }) {
+  const colors = usePalette();
   const reduced = useReducedMotion();
   const previous = useRef(value);
   const [shown, setShown] = useState(value);
@@ -262,7 +324,7 @@ export function RollingNumber({ value, style, color = colors.ink }) {
     <Animated.Text
       style={[
         type.scoreLive,
-        { color, fontVariant: ['tabular-nums'], transform: [{ scale: pulse }] },
+        { color: color ?? colors.ink, fontVariant: ['tabular-nums'], transform: [{ scale: pulse }] },
         style,
       ]}
       accessibilityLiveRegion="polite"
@@ -278,6 +340,8 @@ export function RollingNumber({ value, style, color = colors.ink }) {
  * bound together from the versus screen onward.
  */
 export function Avatar({ url, name, size = 48, ring, tint, style }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const initials =
     (name ?? '')
       .trim()
@@ -338,6 +402,8 @@ export function Avatar({ url, name, size = 48, ring, tint, style }) {
 
 /** A white card resting on paper. §5.1 — one elevation, never stacked. */
 export function Card({ children, style, onPress, flat = false }) {
+  const styles = useThemedStyles(makeStyles);
+  const { elevation } = useTheme();
   if (onPress) {
     return (
       <Pressable
@@ -361,6 +427,8 @@ export function Card({ children, style, onPress, flat = false }) {
  * →" pattern that runs down every list screen in the app.
  */
 export function SectionHeader({ title, action, onAction, style }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={[styles.sectionHeader, style]}>
       <Text variant="title" style={{ flex: 1 }} numberOfLines={1}>
@@ -385,6 +453,8 @@ export function SectionHeader({ title, action, onAction, style }) {
 
 /** A filter pill. Filled with the accent when on, quiet when off (§6.7). */
 export function Chip({ label, active, onPress, style }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   /**
    * A console chip is smaller. Filters are chrome, not content: at the player's
    * 38pt a row of six of them is a band as tall as two rows of the list it is
@@ -417,6 +487,121 @@ export function Chip({ label, active, onPress, style }) {
 }
 
 /**
+ * Where you are in a flow that has more than one stage.
+ *
+ * The console has several — the import, a new contest, a new organization —
+ * and every one of them replaced the whole screen when it moved on, with
+ * nothing saying a stage had passed or how many were left. That is fine on a
+ * form you fill in once and forget; it is not fine on the import, where the
+ * middle stage asks you to make three hundred decisions and the only clue you
+ * were halfway through was that the buttons had changed.
+ *
+ * Deliberately small: a strip of dots under the header, not a wizard chrome
+ * bar. It says which stage and how many, and then gets out of the way.
+ *
+ * It is a STRIP, though — its own white band closed by a hairline, centred in
+ * the screen. Left-aligned on the bare field with no rule under it, the dots
+ * sat a few points below the header's own text and read as a fourth line of
+ * that header rather than as a separate thing: "Import questions / Central
+ * bank / ①Set up ②Check ③Done", all crowded into the same corner. The band is
+ * what separates the two, and centring is what stops three short words from
+ * hugging the left edge of a screen they are describing the whole of.
+ */
+export function Steps({ steps, current }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
+  return (
+    <View
+      style={styles.steps}
+      accessibilityRole="progressbar"
+      accessibilityLabel={`Step ${current + 1} of ${steps.length}: ${steps[current]}`}
+      accessibilityValue={{ min: 1, max: steps.length, now: current + 1 }}
+    >
+      {steps.map((label, i) => {
+        const done = i < current;
+        const on = i === current;
+        return (
+          // Not focusable and not labelled one by one: the strip already reads
+          // as a whole above, and eight extra stops is a worse experience than
+          // one good one.
+          <View key={label} style={styles.step} importantForAccessibility="no-hide-descendants">
+            {i > 0 ? <View style={[styles.stepLine, (done || on) && styles.stepLineOn]} /> : null}
+            <View style={[styles.stepDot, done && styles.stepDotDone, on && styles.stepDotOn]}>
+              {done ? (
+                <Icon name="check" size={13} color={colors.onAccent} />
+              ) : (
+                <Text variant="tiny" color={on ? colors.onAccent : colors.inkFaint}>
+                  {i + 1}
+                </Text>
+              )}
+            </View>
+            <Text
+              variant={on ? 'label' : 'meta'}
+              color={on ? colors.ink : colors.inkFaint}
+              numberOfLines={1}
+              style={styles.stepLabel}
+            >
+              {label}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
+ * A row of colour choices — a category's colour, an organization's accent.
+ *
+ * One component because there were three, and all three were wrong in the same
+ * way: the dot WAS the button, at 34pt in the organization settings, 36 in the
+ * topic form and 40 in the tenant form. Every one of them under the 44pt floor,
+ * none of them the same size as the next, and the two that drew a tick inside
+ * the dot drew it in two different colours.
+ *
+ * So the target is 44 and the dot is 32, centred inside it. The dot keeps its
+ * size while the finger gets the room the platform asks for, and eight of them
+ * still fit two rows on the narrowest phone.
+ *
+ * `colors` is a list of hex strings — a CURATED list, always. design.md §3.3 is
+ * explicit that free colour entry is not offered, because these have to hold
+ * contrast against the ink they carry.
+ */
+export function Swatches({ value, colors: choices, onChange, disabled = false, noun = 'Colour' }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
+  return (
+    <View style={styles.swatches}>
+      {(choices ?? []).map((hex) => {
+        const on = value === hex;
+        return (
+          <Pressable
+            key={hex}
+            disabled={disabled}
+            onPress={() => onChange?.(hex)}
+            accessibilityRole="button"
+            accessibilityLabel={`${noun} ${hex}`}
+            accessibilityState={{ selected: on, disabled }}
+            style={({ pressed }) => [
+              styles.swatchHit,
+              pressed && !disabled ? { opacity: 0.7 } : null,
+              disabled ? { opacity: 0.5 } : null,
+            ]}
+          >
+            <View style={[styles.swatchDot, { backgroundColor: hex }, on && styles.swatchDotOn]}>
+              {/* Not colour alone: the chosen one carries a tick as well as a
+                  ring, so it is still the chosen one to someone who cannot
+                  separate two of these hues. */}
+              {on ? <Icon name="check" size={16} color={colors.onAccent} /> : null}
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
  * A small count or status pill that sits on artwork — "16 Qs", "Live".
  *
  * Two families, and which one to use is not a matter of taste:
@@ -430,8 +615,16 @@ export function Chip({ label, active, onPress, style }) {
  *   thing on a screen whose actual subject is the topic names beside them.
  */
 export function Badge({ label, tone = 'ink', style }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const bg = {
-    ink: 'rgba(27, 27, 47, 0.72)',
+    /**
+     * The one solid neutral, for a pill sitting ON artwork — a count over a
+     * topic cover, where only a solid fill separates it from the picture. It
+     * stays dark on paper for that reason: the surface under it is a
+     * photograph either way, not the page.
+     */
+    ink: 'rgba(24, 22, 38, 0.75)',
     accent: colors.accent,
     correct: colors.correct,
     wrong: colors.wrong,
@@ -439,12 +632,22 @@ export function Badge({ label, tone = 'ink', style }) {
     live: colors.correctSoft,
     danger: colors.wrongSoft,
     amber: colors.amberSoft,
-    quiet: colors.sunken,
+    /**
+     * One step down from whatever it is drawn on, NOT the field.
+     *
+     * `sunken` was right when the page was grey and a badge sat on a white
+     * card. With a white page it is the colour of both, so the one tone whose
+     * whole job is to be a neutral chip had no chip at all. `inset` rather than
+     * `canvas` so night keeps the exact value it has today.
+     */
+    quiet: colors.inset,
   }[tone];
   /**
-   * The accent fill takes near-black type, not white: the accent is bright
-   * enough that white on it is 1.9:1. `correct` and `wrong` are dark enough to
-   * keep white, so the fill decides rather than one rule for all of them.
+   * The fill decides its own type rather than one rule covering all of them —
+   * and it has to, because the answer flips between palettes. On the night
+   * field the accent is bright and takes near-black (white on it is 1.9:1); on
+   * paper it is a deep teal and takes white. Both are `onAccent`, which is
+   * exactly what that token is for.
    */
   const fg = {
     soft: colors.accent,
@@ -474,14 +677,20 @@ export function Badge({ label, tone = 'ink', style }) {
  * which were readable when the tile sat on paper and all but vanished once the
  * app went night.
  */
-const MEDAL_TILES = {
-  1: { bg: 'rgba(245, 182, 46, 0.18)', fg: colors.gold },
-  2: { bg: 'rgba(199, 206, 219, 0.18)', fg: colors.silver },
-  3: { bg: 'rgba(222, 154, 98, 0.18)', fg: colors.bronze },
-};
+/**
+ * The three medals. A function of the palette rather than a constant, because
+ * the metals themselves are re-struck on paper — the night gold vanishes at
+ * 1.8:1 on white — and a module-level map would have frozen the night ones.
+ */
+const medalTiles = (colors) => ({
+  1: { bg: colors.goldSoft, fg: colors.gold },
+  2: { bg: 'rgba(102, 108, 123, 0.14)', fg: colors.silver },
+  3: { bg: 'rgba(139, 90, 50, 0.14)', fg: colors.bronze },
+});
 
 export function RankTile({ rank, self, size = 30 }) {
-  const medal = MEDAL_TILES[rank];
+  const colors = usePalette();
+  const medal = medalTiles(colors)[rank];
   const bg = self ? colors.accent : medal ? medal.bg : colors.sunken;
   // Near-black on the accent — white on it is 1.9:1.
   const fg = self ? colors.onAccent : medal ? medal.fg : colors.inkMuted;
@@ -522,6 +731,8 @@ export function RankTile({ rank, self, size = 30 }) {
  * so the choice is legible before you read the words.
  */
 export function Segmented({ options, value, onChange, style }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={[styles.segmented, style]}>
       {options.map((option) => {
@@ -580,6 +791,8 @@ export function Segmented({ options, value, onChange, style }) {
  * words is where a shared row stops being readable.
  */
 export function Tabs({ options, value, onChange, style }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const spread = options.length <= 4;
 
   const tabs = options.map((option) => {
@@ -636,6 +849,7 @@ export function Tabs({ options, value, onChange, style }) {
  * edge of the screen and gives you no way to know what is out there.
  */
 export function FilterBar({ options, value, onChange, style }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <ScrollView
       horizontal
@@ -690,6 +904,8 @@ export function Select({
   disabled = false,
   style,
 }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const [open, setOpen] = useState(false);
   const current = options.find((option) => option.value === value);
 
@@ -796,6 +1012,7 @@ export function Select({
 
 /** The one card a list of records lives in. Rows divide themselves. */
 export function ListCard({ children, style }) {
+  const styles = useThemedStyles(makeStyles);
   return <View style={[styles.listCard, style]}>{children}</View>;
 }
 
@@ -803,52 +1020,103 @@ export function ListCard({ children, style }) {
  * One record. `last` drops the divider, which is the whole reason this is a
  * component — every screen was writing that conditional by hand and half of
  * them left a hairline hanging under the final row.
+ *
+ * ── `card`, for a list long enough to virtualize ────────────────────────────
+ *
+ * `ListCard` is a container, and a container cannot wrap the rows of a
+ * `FlatList` — which is a problem for exactly the lists that most need one,
+ * because a table of every account on the platform is the table you cannot
+ * afford to mount in full. Pass `card` and each row carries the card's own
+ * fill, side borders and padding, with `first`/`last` closing the ends. The
+ * result is pixel-identical to the same rows inside a `ListCard`; it just does
+ * not need them all to exist at once.
  */
 export function ListRow({
   children,
   onPress,
   actions,
   title,
+  card = false,
+  first = false,
   last = false,
   style,
   accessibilityLabel,
 }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   /**
-   * `actions` makes the WHOLE ROW the way in.
+   * `actions` alone makes the WHOLE ROW the way in.
    *
    * The row used to carry an overflow button, so a list had two targets per
    * line: the row, and a small glyph inside it that opened everything the row
    * could actually do. Handing the row's own press to the sheet removes the
    * competition — there is one target, it is the full width of the line, and
    * the chevron at the end is the label for it rather than a separate control.
+   *
+   * ── Unless the row leads somewhere ──────────────────────────────────────
+   *
+   * That reasoning holds right up until the record has a SCREEN of its own,
+   * and then it inverts. The roster proved it: a student row handed its press
+   * to the sheet, so the more permission an admin had the less they could
+   * read — a full admin tapping a name got a menu whose first item was "Open
+   * profile", while a sub-admin who could not manage students went straight
+   * to the profile. Tapping a person should show you the person.
+   *
+   * So a row given BOTH navigates on press and ends in a `⋯` for the verbs.
+   * The two targets stop competing once they do different things: one opens
+   * the record, one acts on it, and that is the same division the topic and
+   * organization cards make.
    */
   const [open, setOpen] = useState(false);
   const shown = (actions ?? []).filter(Boolean);
   const hasMenu = shown.length > 0;
-  const press = hasMenu ? () => setOpen(true) : onPress;
+  const navigates = Boolean(onPress);
+  const press = hasMenu && !navigates ? () => setOpen(true) : onPress;
+
+  /**
+   * In card mode the final row keeps its bottom hairline — there it is the
+   * card's edge rather than a divider, and both are drawn in the same
+   * `hairline`, so the row simply does not drop it.
+   */
+  const chrome = [
+    styles.listRow,
+    last && !card && styles.listRowLast,
+    card && styles.listRowCard,
+    card && first && styles.listRowCardFirst,
+    card && last && styles.listRowCardLast,
+  ];
+
+  /**
+   * The row's own trailing mark. A chevron when the press navigates and there
+   * is nothing else to offer; the `⋯` when the verbs need a control of their
+   * own beside the destination.
+   */
+  const tail =
+    navigates && hasMenu ? (
+      <RowMenu title={title} label={`Actions for ${title ?? 'this row'}`} actions={shown} />
+    ) : (
+      // A row that leads somewhere says so, whether that somewhere is a sheet
+      // of actions or another screen.
+      <Icon name="chevronRight" size={16} color={colors.inkFaint} />
+    );
 
   const body = !press ? (
-    <View style={[styles.listRow, last && styles.listRowLast, style]}>{children}</View>
+    <View style={[...chrome, style]}>{children}</View>
   ) : (
     <Pressable
       onPress={press}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? title}
-      style={({ pressed }) => [
-        styles.listRow,
-        last && styles.listRowLast,
-        pressed && styles.listRowPressed,
-        style,
-      ]}
+      style={({ pressed }) => [...chrome, pressed && styles.listRowPressed, style]}
     >
       {children}
-      {/* A row that leads somewhere says so, whether that somewhere is a sheet
-          of actions or another screen. */}
-      <Icon name="chevronRight" size={16} color={colors.inkFaint} />
+      {tail}
     </Pressable>
   );
 
-  if (!hasMenu) return body;
+  // The sheet is the row's own only while the row IS the sheet's trigger; once
+  // there is a `⋯`, that control owns it.
+  if (!hasMenu || navigates) return body;
   return (
     <>
       {body}
@@ -864,6 +1132,8 @@ export function ListRow({
 
 /** The sheet of verbs a row or a header opens. One layout for both. */
 function ActionSheet({ visible, title, actions, onClose }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Sheet visible={visible} title={title} onClose={onClose} accessibilityLabel={title} scroll>
       <View style={styles.menuList}>
@@ -909,6 +1179,8 @@ function ActionSheet({ visible, title, actions, onClose }) {
  * that is not the primary (Select, Export) on the right.
  */
 export function CountRow({ shown, total, noun, action, onAction, meta }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const plural = total === 1 ? noun : `${noun}s`;
   const count =
     shown != null && total != null && shown < total
@@ -940,6 +1212,71 @@ export function CountRow({ shown, total, noun, action, onAction, meta }) {
 }
 
 /**
+ * A titled card of figures — the unit every console overview is built from.
+ *
+ * The three overview screens each had their own: a bare row of numbers in a
+ * bordered box on one, two rows split by a hairline on another, a third
+ * variant on the tenant screen. Same idea, three shapes, three stylesheets,
+ * and no way to tell from any of them what the numbers were ABOUT.
+ *
+ * The header is what fixes that. A glyph on its domain's tint, the domain's
+ * name in the domain's hue, and then the figures — so "240 / Students" is
+ * filed under People before it is read, and the same three figures on the
+ * platform screen, the organization screen and a tenant's screen are
+ * recognisably the same kind of statement.
+ *
+ * The disc sits inside the card on purpose: it is drawn on white, which is the
+ * surface its contrast was solved against. See `IconDisc`.
+ */
+export function StatPanel({ label, icon, tone = 'content', stats, style }) {
+  const domains = useDomains();
+  const styles = useThemedStyles(makeStyles);
+  const { elevation } = useTheme();
+  const hue = (domains[tone] ?? domains.content).hue;
+  return (
+    <View style={[styles.statPanel, elevation.raised, style]}>
+      {label ? (
+        <View style={styles.statPanelHead}>
+          {icon ? <IconDisc name={icon} tone={tone} size={28} /> : null}
+          <Text variant="label" color={hue} numberOfLines={1}>
+            {label}
+          </Text>
+        </View>
+      ) : null}
+      <View style={styles.statPanelBody}>
+        {stats.filter(Boolean).map((stat, i) => (
+          <View key={stat.label} style={styles.statPanelCell}>
+            {i > 0 ? <View style={styles.statPanelDivider} /> : null}
+            <Stat {...stat} />
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * The band of chrome between a header and a scrolling list.
+ *
+ * Search, a topic select, the chips saying what is filtered — every console
+ * list has some of this, and every one of them had it sitting loose on the
+ * field with a margin above and nothing at all below. Nothing overlaps: the
+ * list is BENEATH these controls in layout, not behind them. But with no rule
+ * and no gap, the first card comes up flush against the bottom edge of the last
+ * control, and a card whose top edge touches a select reads as CLIPPED by it
+ * rather than as the start of a list that scrolls underneath.
+ *
+ * One band with one hairline fixes it everywhere at once: the header region
+ * visibly ends, and the list visibly begins. It keeps the field's own colour
+ * rather than lifting to a card — a white toolbar under a transparent tab bar
+ * would be a third surface in the top eighty points of the screen.
+ */
+export function ConsoleControls({ children, style }) {
+  const styles = useThemedStyles(makeStyles);
+  return <View style={[styles.consoleControls, style]}>{children}</View>;
+}
+
+/**
  * The footer that holds the one primary action.
  *
  * Its own safe-area inset and its own hairline, so the button sits above the
@@ -947,6 +1284,7 @@ export function CountRow({ shown, total, noun, action, onAction, meta }) {
  * ending in an ambiguous gap.
  */
 export function ConsoleFooter({ children }) {
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.consoleFooter, { paddingBottom: Math.max(insets.bottom, space.md) }]}>
@@ -985,14 +1323,16 @@ export function ConsoleFooter({ children }) {
  * Every row in both consoles now ends the same way: one `⋯`, and a sheet that
  * names what it can do. Destructive entries are red and last.
  */
-export function RowMenu({ title, actions, label = 'Actions', size = 16 }) {
+export function RowMenu({ title, actions, label = 'Actions', size = 16, tone = 'ink' }) {
   const [open, setOpen] = useState(false);
   const shown = actions.filter(Boolean);
   if (shown.length === 0) return null;
 
   return (
     <>
-      <IconButton name="more" size={size} label={label} onPress={() => setOpen(true)} />
+      {/* `tone` is for the two menus that sit in a console HEADER, which is
+          night chrome — the sheet it opens stays on paper either way. */}
+      <IconButton name="more" size={size} label={label} tone={tone} onPress={() => setOpen(true)} />
       <ActionSheet
         visible={open}
         title={title}
@@ -1005,6 +1345,8 @@ export function RowMenu({ title, actions, label = 'Actions', size = 16 }) {
 
 /** The rounded search field used on Search, Friends and the join sheet. */
 export function SearchField({ value, onChangeText, placeholder, onClear, style, ...props }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={[styles.searchField, style]}>
       <Icon name="search" size={18} color={colors.inkFaint} />
@@ -1028,6 +1370,8 @@ export function SearchField({ value, onChangeText, placeholder, onClear, style, 
 
 /** A circular icon button — back arrows, the bell, the gear. */
 export function IconButton({ name, onPress, label, tone = 'ink', size = 20, style }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const fg = tone === 'onColor' ? colors.onColor : tone === 'accent' ? colors.accent : colors.ink;
   return (
     <Pressable
@@ -1056,10 +1400,18 @@ export function IconButton({ name, onPress, label, tone = 'ink', size = 20, styl
  * sidebar exists — and it is why the console's twenty-odd operations can be
  * listed somewhere rather than buried behind a chain of pushes.
  */
-export function Header({ title, subtitle, onBack, onMenu, right, tone = 'ink', style }) {
-  const fg = tone === 'onColor' ? colors.onColor : colors.ink;
-  const subFg = tone === 'onColor' ? 'rgba(255,255,255,0.72)' : colors.inkMuted;
+export function Header({ title, subtitle, onBack, onMenu, right, tone, style }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const console_ = useConsoleNav();
+  /**
+   * A console header is night chrome, so it takes the on-colour treatment
+   * whether or not the caller asked for it — white title, translucent-white
+   * icon buttons, a 72%-white caption. See `headerConsole`.
+   */
+  const resolved = tone ?? (console_ ? 'onColor' : 'ink');
+  const fg = resolved === 'onColor' ? colors.onColor : colors.ink;
+  const subFg = resolved === 'onColor' ? 'rgba(255,255,255,0.72)' : colors.inkMuted;
   const menu = !onBack && console_ && !console_.pinned;
   return (
     /**
@@ -1068,7 +1420,7 @@ export function Header({ title, subtitle, onBack, onMenu, right, tone = 'ink', s
      * reads as a separate region rather than as more header.
      */
     <View style={[styles.header, console_ && styles.headerConsole, style]}>
-      {onBack ? <IconButton name="back" onPress={onBack} label="Back" tone={tone} /> : null}
+      {onBack ? <IconButton name="back" onPress={onBack} label="Back" tone={resolved} /> : null}
       {/* `onMenu` is how a screen with unsaved work gets a word in before the
           sidebar takes it away — the settings form is the only one that needs
           it, and without the hook its guard would have been the reason it kept
@@ -1078,12 +1430,21 @@ export function Header({ title, subtitle, onBack, onMenu, right, tone = 'ink', s
           name="menu"
           onPress={onMenu ?? console_.open}
           label="Open the menu"
-          tone={tone}
+          tone={resolved}
         />
       ) : null}
       <View style={{ flex: 1, minWidth: 0 }}>
         {title ? (
-          <Text variant="title" color={fg} numberOfLines={1}>
+          /**
+           * `display` in a console, `title` in the player app.
+           *
+           * The player's headers sit under a hero or over artwork and 19pt is
+           * plenty. A console screen has nothing above it — the header IS the
+           * top of the page — and at 16pt (the console's `title`) it read as a
+           * caption for the tab bar under it rather than as the name of the
+           * screen. 22 is still smaller than the player's 26.
+           */
+          <Text variant={console_ ? 'display' : 'title'} color={fg} numberOfLines={1}>
             {title}
           </Text>
         ) : null}
@@ -1113,6 +1474,8 @@ export function Header({ title, subtitle, onBack, onMenu, right, tone = 'ink', s
  * gradient. Neither is a title with a caption, so neither is this.
  */
 export function TabHeader({ title, caption, right }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.tabHeader}>
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
@@ -1131,16 +1494,56 @@ export function TabHeader({ title, caption, right }) {
 }
 
 export function Divider({ style }) {
+  const styles = useThemedStyles(makeStyles);
   return <View style={[styles.divider, style]} />;
 }
 
+/**
+ * A glyph on a tinted disc of its own hue.
+ *
+ * One shape, used everywhere the console names a KIND of thing: the audit
+ * row's action, the door into a tenant's topics, the empty state, a figure
+ * panel. It exists because the alternative — a bare icon in the accent — makes
+ * every category of thing look like the same category of thing, and a console
+ * is almost entirely categories of things.
+ *
+ * `tone` is a domain (see the domain palette) or an explicit `{hue, soft}`.
+ * The disc is always drawn on a card or on the canvas, never on the bare
+ * field: the tint is 12% and the field is already grey, so the two stack into
+ * mud and the glyph loses the contrast that was solved for it.
+ */
+export function IconDisc({ name, tone = 'content', size = 36, style }) {
+  const colors = usePalette();
+  const domains = useDomains();
+  const pair = typeof tone === 'string' ? (domains[tone] ?? domains.content) : tone;
+  const hue = pair?.hue ?? colors.accent;
+  const soft = pair?.soft ?? colors.accentSoft;
+  return (
+    <View
+      style={[
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: soft,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        style,
+      ]}
+    >
+      <Icon name={name} size={Math.round(size * 0.5)} color={hue} />
+    </View>
+  );
+}
+
 /** design.md §10 — every empty state names the single next action. */
-export function EmptyState({ title, body, actionLabel, onAction, icon = 'sparkle' }) {
+export function EmptyState({ title, body, actionLabel, onAction, icon = 'sparkle', tone = 'content' }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.empty}>
-      <View style={styles.emptyIcon}>
-        <Icon name={icon} size={30} color={colors.accent} />
-      </View>
+      <IconDisc name={icon} tone={tone} size={64} style={{ marginBottom: space.lg }} />
       <Text variant="title" style={{ textAlign: 'center', marginBottom: space.sm }}>
         {title}
       </Text>
@@ -1163,6 +1566,8 @@ export function EmptyState({ title, body, actionLabel, onAction, icon = 'sparkle
  * apologise and they are never vague.
  */
 export function ErrorNotice({ error, onRetry }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   if (!error) return null;
   return (
     <View style={styles.errorNotice}>
@@ -1182,6 +1587,7 @@ export function ErrorNotice({ error, onRetry }) {
 }
 
 export function Screen({ children, style }) {
+  const styles = useThemedStyles(makeStyles);
   return <View style={[styles.screen, style]}>{children}</View>;
 }
 
@@ -1194,10 +1600,15 @@ export function Screen({ children, style }) {
  * parsing the response it is waiting for, which is exactly when a stuttering
  * spinner looks like a hang.
  */
-export function Spinner({ size = 28, tone = 'accent' }) {
+/**
+ * @param color overrides `tone` entirely — for a mark that has to match
+ *   something already decided, like the label of the button it is replacing.
+ */
+export function Spinner({ size = 28, tone = 'accent', color }) {
+  const colors = usePalette();
   const spin = useRef(new Animated.Value(0)).current;
   const reduced = useReducedMotion();
-  const fg = tone === 'onColor' ? colors.onColor : colors.accent;
+  const fg = color ?? (tone === 'onColor' ? colors.onColor : colors.accent);
 
   useEffect(() => {
     if (reduced) return undefined;
@@ -1213,20 +1624,18 @@ export function Spinner({ size = 28, tone = 'accent' }) {
     return () => loop.stop();
   }, [spin, reduced]);
 
-  // Under reduced motion the mark simply sits there — a static logo reads as
-  // "loading" in context, and a spinner is decoration the moment it cannot turn.
-  if (reduced) {
-    return (
-      <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={fg} />
-      </View>
-    );
-  }
-
   const d = size * 0.42;
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   return (
+    /**
+     * Under reduced motion the mark simply sits there. It used to hand over to
+     * `ActivityIndicator` at this point, which was the one place in the app
+     * that drew the platform's ring instead of the product's own shape — and it
+     * did it by ANIMATING, on behalf of somebody who asked for less animation.
+     * A static mark under a "Loading" role is what the skeletons already do:
+     * they stop pulsing and sit still.
+     */
     <Animated.View
       accessibilityRole="progressbar"
       accessibilityLabel="Loading"
@@ -1235,7 +1644,7 @@ export function Spinner({ size = 28, tone = 'accent' }) {
         height: size,
         alignItems: 'center',
         justifyContent: 'center',
-        transform: [{ rotate }],
+        transform: reduced ? undefined : [{ rotate }],
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -1264,6 +1673,8 @@ export function Spinner({ size = 28, tone = 'accent' }) {
  * both as the only child of a screen and as a row inside a list.
  */
 export function Loading({ label, tone = 'accent', style }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={[styles.loading, style]}>
       <Spinner tone={tone} />
@@ -1289,6 +1700,7 @@ export function Loading({ label, tone = 'accent', style }) {
  * and costs nothing on a mid-range Android.
  */
 export function Skeleton({ width = '100%', height = 14, radius = 8, style }) {
+  const colors = usePalette();
   const pulse = useRef(new Animated.Value(0.55)).current;
   const reduced = useReducedMotion();
 
@@ -1309,7 +1721,7 @@ export function Skeleton({ width = '100%', height = 14, radius = 8, style }) {
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
       style={[
-        { width, height, borderRadius: radius, backgroundColor: colors.sunken, opacity: reduced ? 0.7 : pulse },
+        { width, height, borderRadius: radius, backgroundColor: colors.inset, opacity: reduced ? 0.7 : pulse },
         style,
       ]}
     />
@@ -1333,6 +1745,9 @@ export function SkeletonText({ lines = 2, width = '100%', gap = space.sm, style 
  * inline spinner because the screen behind it must stop accepting taps.
  */
 export function LoadingOverlay({ visible, label }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
+  const { elevation } = useTheme();
   if (!visible) return null;
   return (
     <View style={styles.overlay} accessibilityViewIsModal accessibilityLiveRegion="polite">
@@ -1416,6 +1831,8 @@ export function LoadingOverlay({ visible, label }) {
  * context here is what let those five copies go.
  */
 export function Sheet({ visible, title, onClose, children, accessibilityLabel, scroll = false }) {
+  const styles = useThemedStyles(makeStyles);
+  const { elevation } = useTheme();
   const bottom = useBottomInset();
   const inConsole = Boolean(useConsoleNav());
   const Body = scroll ? ScrollView : View;
@@ -1481,6 +1898,9 @@ export function ConfirmSheet({
   onConfirm,
   onCancel,
 }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
+  const { elevation } = useTheme();
   const bottom = useBottomInset();
 
   return (
@@ -1567,6 +1987,8 @@ export function PromptSheet({
   onConfirm,
   onCancel,
 }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const [text, setText] = useState(initialValue);
   const [focused, setFocused] = useState(false);
 
@@ -1619,15 +2041,17 @@ export function PromptSheet({
 }
 
 /** A progress bar. Indigo by default; a Space passes its own accent (§3.3). */
-export function ProgressBar({ value, max, color = colors.accent, height = 8, track = colors.sunken }) {
+export function ProgressBar({ value, max, color, height = 8, track }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const pct = Math.max(0, Math.min(1, (value ?? 0) / (max || 1)));
   return (
-    <View style={[styles.progressTrack, { height, borderRadius: height / 2, backgroundColor: track }]}>
+    <View style={[styles.progressTrack, { height, borderRadius: height / 2, backgroundColor: track ?? colors.sunken }]}>
       <View
         style={{
           width: `${pct * 100}%`,
           height: '100%',
-          backgroundColor: color,
+          backgroundColor: color ?? colors.accent,
           borderRadius: height / 2,
         }}
       />
@@ -1636,20 +2060,79 @@ export function ProgressBar({ value, max, color = colors.accent, height = 8, tra
 }
 
 /** A number over its label. The unit of every stats strip in the app. */
-export function Stat({ value, label, color = colors.ink, style }) {
-  return (
-    <View style={[{ flex: 1, alignItems: 'center', gap: 2 }, style]}>
+export function Stat({ value, label, sub, subColor, color, icon, tone, onPress, style }) {
+  const colors = usePalette();
+  const styles = useThemedStyles(makeStyles);
+  /**
+   * A number, and — when there is one — the way to the thing it counts.
+   *
+   * All three consoles open on a panel of figures, and every figure was inert.
+   * "Students 240" is not a fact about the organization so much as a door to
+   * the roster; "12 waiting" is the review queue with a number on it. Leaving
+   * them flat made the first screen of each console a poster, and put the
+   * sidebar between the operator and every single thing the poster mentioned.
+   *
+   * `onPress` is optional because some figures genuinely lead nowhere — a
+   * stickiness ratio is not a list — and a stat that cannot be pressed must
+   * not look pressable.
+   */
+  const body = (
+    <>
+      {/**
+       * An optional disc above the figure, in the domain the figure belongs to.
+       *
+       * A panel of three bare numbers is legible and anonymous; the same three
+       * with a glyph each are scannable from across a desk, and on the two
+       * overview screens — six figures apiece, which is the whole page — that
+       * is the difference between a dashboard and a receipt.
+       */}
+      {icon ? <IconDisc name={icon} tone={tone ?? 'content'} size={34} style={{ marginBottom: 6 }} /> : null}
+      {/**
+       * `timer` is 27pt and tabular INSIDE A CONSOLE (see `consoleType`), 22 in
+       * the player app. On a dashboard the figure is the content and the label
+       * is its caption; at the player's size over a 12pt label the two were
+       * close enough in weight that a stats row read as a paragraph.
+       */}
       <Text variant="timer" color={color}>
         {value}
       </Text>
-      <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
+      <Text variant="meta" color={onPress ? colors.inkMuted : colors.inkFaint} numberOfLines={1}>
         {label}
       </Text>
-    </View>
+      {sub ? (
+        <Text variant="tiny" color={subColor ?? colors.inkFaint} numberOfLines={1}>
+          {sub}
+        </Text>
+      ) : null}
+    </>
+  );
+
+  if (!onPress) return <View style={[styles.stat, style]}>{body}</View>;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      // The number alone is meaningless read aloud out of context, so the
+      // label goes with it — "240, Students" rather than "240".
+      accessibilityLabel={`${value} ${label}`}
+      style={({ pressed }) => [styles.stat, styles.statPressable, pressed && { opacity: 0.6 }, style]}
+    >
+      {body}
+    </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+/**
+ * Every style in this file, as a function of the palette.
+ *
+ * It was a module-level `StyleSheet.create`, which snapshots whatever the
+ * colour tokens held at import time — so these components were dark for ever
+ * and a light console was impossible without duplicating the whole file. The
+ * sheet is now built once PER PALETTE, on first use, and handed out by
+ * identity after that; see `useThemedStyles`.
+ */
+const makeStyles = (colors, elevation) => ({
   screen: {
     flex: 1,
     backgroundColor: colors.canvas,
@@ -1705,7 +2188,8 @@ const styles = StyleSheet.create({
   },
   segmented: {
     flexDirection: 'row',
-    backgroundColor: colors.nightRaised,
+    /** The TRACK of a segmented control is a groove, not a card. */
+    backgroundColor: colors.control,
     borderRadius: layout.radiusPill,
     padding: 4,
   },
@@ -1737,12 +2221,14 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: 'row',
     alignItems: 'stretch',
+    backgroundColor: colors.nightRaised,
     borderBottomWidth: 1,
     borderBottomColor: colors.hairline,
     paddingHorizontal: space.sm,
   },
   tabBarScroll: {
     flexGrow: 0,
+    backgroundColor: colors.nightRaised,
     borderBottomWidth: 1,
     borderBottomColor: colors.hairline,
   },
@@ -1771,7 +2257,13 @@ const styles = StyleSheet.create({
     minHeight: consoleLayout.buttonHeight,
     paddingHorizontal: space.md,
     borderRadius: layout.radiusInput,
-    backgroundColor: colors.nightRaised,
+    /**
+     * A select is something you OPERATE, so it is recessed rather than raised.
+     * It used to be `nightRaised` — which on paper is the colour of the card
+     * it sits on and of the page behind that, so the only thing marking the one
+     * control in a filter bar was its own hairline.
+     */
+    backgroundColor: colors.control,
     borderWidth: 1,
     borderColor: colors.hairline,
   },
@@ -1793,6 +2285,61 @@ const styles = StyleSheet.create({
   },
 
   // ── The console page ─────────────────────────────────────────────────────
+  stat: { flex: 1, alignItems: 'center', gap: 2, paddingHorizontal: 4 },
+  /** A pressable figure still has to clear the touch floor. */
+  statPressable: { minHeight: layout.touchMin, justifyContent: 'center' },
+  /** Its own band, centred, closed by a hairline. See `Steps`. */
+  steps: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: consoleLayout.gutter,
+    paddingTop: space.md,
+    paddingBottom: space.md,
+    backgroundColor: colors.nightRaised,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.hairline,
+  },
+  step: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexShrink: 1 },
+  stepLine: {
+    width: 20,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: colors.hairline,
+    marginHorizontal: space.sm,
+  },
+  stepLineOn: { backgroundColor: colors.accent },
+  stepDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.canvas,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
+  stepDotOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  stepDotDone: { backgroundColor: colors.accent, borderColor: colors.accent },
+  stepLabel: { flexShrink: 1 },
+  swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs },
+  /** The 44pt target. The dot inside it is what you see. */
+  swatchHit: {
+    width: layout.touchMin,
+    height: layout.touchMin,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  swatchDot: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2.5,
+    borderColor: colors.transparent,
+  },
+  swatchDotOn: { borderColor: colors.ink },
   listCard: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,
@@ -1812,6 +2359,26 @@ const styles = StyleSheet.create({
   },
   listRowLast: { borderBottomWidth: 0 },
   listRowPressed: { backgroundColor: colors.canvas },
+  /** `ListCard`'s chrome, worn by the row — see `ListRow`'s `card`. */
+  listRowCard: {
+    backgroundColor: colors.nightRaised,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderLeftColor: colors.hairline,
+    borderRightColor: colors.hairline,
+    paddingHorizontal: layout.cardPadding,
+    overflow: 'hidden',
+  },
+  listRowCardFirst: {
+    borderTopWidth: 1,
+    borderTopColor: colors.hairline,
+    borderTopLeftRadius: layout.radiusCard,
+    borderTopRightRadius: layout.radiusCard,
+  },
+  listRowCardLast: {
+    borderBottomLeftRadius: layout.radiusCard,
+    borderBottomRightRadius: layout.radiusCard,
+  },
   countRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1824,7 +2391,40 @@ const styles = StyleSheet.create({
     paddingTop: space.md,
     borderTopWidth: 1,
     borderTopColor: colors.hairline,
-    backgroundColor: colors.sunken,
+    // White, like the app bar at the other end. Chrome is chrome at both ends
+    // of a screen, and a grey footer under a grey list had nothing to say it
+    // was not just more list.
+    backgroundColor: colors.nightRaised,
+  },
+  statPanel: {
+    backgroundColor: colors.nightRaised,
+    borderRadius: layout.radiusCard,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    overflow: 'hidden',
+  },
+  statPanelHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingHorizontal: layout.cardPadding,
+    paddingVertical: space.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.hairline,
+  },
+  statPanelBody: { flexDirection: 'row', paddingVertical: space.lg },
+  statPanelCell: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  statPanelDivider: { width: 1, alignSelf: 'stretch', backgroundColor: colors.hairline },
+
+  /** The footer's opposite number, and the last band of the app bar. */
+  consoleControls: {
+    paddingHorizontal: consoleLayout.gutter,
+    paddingTop: space.sm,
+    paddingBottom: space.md,
+    gap: space.sm,
+    backgroundColor: colors.nightRaised,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.hairline,
   },
 
   // ── RowMenu ──────────────────────────────────────────────────────────────
@@ -1836,7 +2436,14 @@ const styles = StyleSheet.create({
     minHeight: 52,
     paddingHorizontal: space.md,
     borderRadius: layout.radiusInput,
-    backgroundColor: colors.nightRaised,
+    /**
+     * One step down from the sheet, so a verb reads as a target.
+     *
+     * These were `nightRaised` — the sheet's own colour — so on paper every
+     * safe action in a row menu was an invisible rectangle and only the
+     * destructive one, on its red wash, looked like something you could press.
+     */
+    backgroundColor: colors.canvas,
   },
   menuRowDanger: { backgroundColor: colors.wrongSoft },
 
@@ -1852,16 +2459,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    backgroundColor: colors.nightRaised,
+    /** Recessed, like every other thing you type into. See `select`. */
+    backgroundColor: colors.control,
     borderRadius: layout.radiusPill,
     paddingHorizontal: space.lg,
     minHeight: 48,
     /**
-     * The edge, because the fill alone is not always one. A search field is
-     * `sunken`, and the console's own content region is `sunken` too — on the
-     * question bank the field was the same colour as the screen behind it, so
-     * all that was left of it was a magnifier and some grey placeholder text
-     * floating on the background.
+     * The edge, because the fill alone is not always one — on night the control
+     * fill and the card it sits on are a single step apart, and this is what
+     * keeps the field from dissolving into the surface behind it.
      */
     borderWidth: 1,
     borderColor: colors.hairline,
@@ -1879,7 +2485,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  iconButtonPlain: { backgroundColor: colors.sunken },
+  iconButtonPlain: { backgroundColor: colors.inset },
   iconButtonOnColor: { backgroundColor: 'rgba(255, 255, 255, 0.18)' },
   header: {
     flexDirection: 'row',
@@ -1896,11 +2502,51 @@ const styles = StyleSheet.create({
     paddingTop: space.md,
     paddingBottom: space.md,
   },
+  /**
+   * ── The console app bar ──────────────────────────────────────────────────
+   *
+   * A console screen opened with a 20pt title and a 12pt grey subtitle floating
+   * on the same grey as everything under them. Then tabs on grey, then a filter
+   * band on grey — four stacked strips of identical colour, told apart only by
+   * hairlines. Nothing said "this is the top of the screen", so no screen had a
+   * beginning.
+   *
+   * The CONTROLS are white now — the tab bar, the filter band, the footer — so
+   * the interactive chrome is a surface and the list is the page. The title
+   * block stays on the field, and gets its presence from type instead: 22pt
+   * (see `consoleType.display`) with room around it.
+   *
+   * It stays on the field for a mundane reason worth writing down. Every
+   * console screen is a `SafeAreaView` with `edges={['top']}`, which paints the
+   * status-bar inset in the SCREEN's colour — so a white header would have hung
+   * below a grey strip on every notched phone in the product. Fixing that
+   * properly means moving the field colour off `screen` and onto thirty scroll
+   * containers; it is not worth it for a band the type already carries.
+   */
+  /**
+   * ── Chrome is night, the workspace is paper ──────────────────────────────
+   *
+   * A console screen used to open with grey text on the same grey as
+   * everything under it: status inset, header, tabs, filters, list — five
+   * stacked strips of #EFEFF3 and #FFFFFF, told apart by hairlines. Nothing
+   * anchored the page and nothing in it belonged to this product rather than
+   * to any admin template.
+   *
+   * The rule now is the one the sidebar states: NAVIGATION is the night world,
+   * WORKSPACE is paper. This is the phone's half of that — on a phone the rail
+   * is a drawer, so the header is the only chrome always on screen, and it
+   * carries the brand for both.
+   *
+   * `ConsoleShell` paints the status-bar inset in the same surface, which is
+   * why console screens pass `edges={[]}` rather than `['top']`: a
+   * `SafeAreaView` paints its inset in the SCREEN's colour, and that grey strip
+   * above a dark bar was the reason this was left on the field the first time.
+   */
   headerConsole: {
     paddingHorizontal: consoleLayout.gutter,
-    paddingVertical: space.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.hairline,
+    paddingTop: space.md,
+    paddingBottom: space.md,
+    backgroundColor: night.canvas,
   },
   divider: {
     height: 1,
@@ -1914,15 +2560,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: layout.gutter,
     paddingVertical: space.xxxl,
-  },
-  emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.accentSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: space.lg,
   },
   errorNotice: {
     flexDirection: 'row',
@@ -1994,7 +2631,7 @@ const styles = StyleSheet.create({
   promptInput: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.inset,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.hairline,

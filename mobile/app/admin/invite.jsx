@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Share, StyleSheet, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import { Text, Button, ConfirmSheet, ErrorNotice, Header, Loading } from '../../src/components/ui.jsx';
-import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.4.1 — the join code, big enough to read off a phone held up at
@@ -12,6 +13,7 @@ import { colors, consoleLayout, elevation, layout, space, type } from '../../src
  * Rotation kills the old code instantly, so it goes through a confirm.
  */
 export default function AdminInvite() {
+  const router = useRouter();
   const adminSpace = useAdminSpace();
   const [invite, setInvite] = useState(null);
   const [error, setError] = useState(null);
@@ -47,7 +49,7 @@ export default function AdminInvite() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Invite code" subtitle={adminSpace?.name} />
 
       <ErrorNotice error={error} onRetry={load} />
@@ -90,6 +92,29 @@ export default function AdminInvite() {
             Rotating kills the old code the moment the new one exists. Anyone still holding the
             old one cannot join with it.
           </Text>
+
+          {/**
+           * What happens after you share it.
+           *
+           * This screen ended on a red button and a warning, which is a strange
+           * place to leave someone whose next move is obvious: they have handed
+           * out the code, and now they want to see who used it. In approval
+           * mode that is a queue with their name on it — the students are
+           * waiting on this admin specifically — so the link says so.
+           */}
+          <Button
+            variant="ghost"
+            size="md"
+            label={invite.joinMode === 'approval' ? 'See who is waiting' : 'See the roster'}
+            style={styles.onward}
+            onPress={() =>
+              router.push(
+                invite.joinMode === 'approval'
+                  ? { pathname: '/admin/students', params: { status: 'pending' } }
+                  : '/admin/students',
+              )
+            }
+          />
         </View>
       ) : null}
 
@@ -129,5 +154,6 @@ const styles = StyleSheet.create({
     letterSpacing: 10,
     includeFontPadding: false,
   },
+  onward: { marginTop: space.lg },
   note: { textAlign: 'center', marginTop: space.md },
 });

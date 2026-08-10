@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import { ConsoleFooter, Text, Button, Chip, ErrorNotice, Header } from '../../src/components/ui.jsx';
-import { colors, consoleLayout, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, layout, space, type } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.5.5 — setting work: a title, a topic, what counts as done, and
@@ -27,10 +28,20 @@ const DUE = [
 export default function AdminAssignmentNew() {
   const goBack = useConsoleBack();
   const adminSpace = useAdminSpace();
+  const params = useLocalSearchParams();
 
   const [title, setTitle] = useState('');
   const [topics, setTopics] = useState(null);
-  const [topicId, setTopicId] = useState(null);
+  /**
+   * Prefilled when this form was opened FROM a topic — a student's weakest
+   * subject, or the topic's own menu. Setting practice on the thing you were
+   * just looking at is the whole reason those doors exist, and making the
+   * admin find the same name again in a chip row is the console forgetting
+   * what it was doing a second ago.
+   */
+  const [topicId, setTopicId] = useState(() =>
+    typeof params.topicId === 'string' && params.topicId.length > 0 ? params.topicId : null,
+  );
   const [requirement, setRequirement] = useState('matches3');
   const [due, setDue] = useState('3d');
   const [busy, setBusy] = useState(false);
@@ -44,6 +55,9 @@ export default function AdminAssignmentNew() {
       const usable = (data.items ?? []).filter((t) => t.readiness?.isLive);
       setTopics(usable);
       if (usable.length === 1) setTopicId(usable[0].id);
+      // A topic handed in that is not live cannot carry an assignment, so the
+      // chip row would show nothing selected while the form believed one was.
+      else setTopicId((current) => (current && !usable.some((t) => t.id === current) ? null : current));
     } catch (err) {
       setError(err);
     }
@@ -76,7 +90,7 @@ export default function AdminAssignmentNew() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Set an assignment" subtitle={adminSpace?.name} onBack={goBack} />
 
       <ScrollView
@@ -171,7 +185,7 @@ const styles = StyleSheet.create({
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.nightRaised,
+    backgroundColor: colors.control,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,

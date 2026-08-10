@@ -17,7 +17,7 @@ import {
   useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, consoleLayout, layout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, layout, space } from '../../src/theme/console.js';
 
 /**
  * What a class actually got wrong.
@@ -60,7 +60,7 @@ export default function SessionReport() {
     .sort((a, b) => a.accuracy - b.accuracy)[0];
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header
         title={data?.name ?? 'Session'}
         subtitle={data?.topic?.name ?? adminSpace?.name}

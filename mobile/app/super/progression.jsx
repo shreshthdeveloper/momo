@@ -39,7 +39,7 @@ import Icon from '../../src/components/Icon.jsx';
 import { faceSource } from '../../src/lib/avatar.js';
 import { BANNERS } from '../../src/lib/banner.js';
 import { CHEST_SLOT_COUNT, LEAGUE_METALS, SPACE_ACCENTS } from '../../src/shared/constants.js';
-import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/console.js';
 
 /**
  * The ladder, as an operator sees it (leagues-and-progression.md §9).
@@ -103,7 +103,7 @@ export default function SuperProgression() {
   if (!isSuper) return null;
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header
         title="Ladder"
         subtitle={data ? `Config v${data.version}` : 'Progression'}
@@ -1232,7 +1232,7 @@ const styles = StyleSheet.create({
     ...type.option,
     flex: 1,
     color: colors.ink,
-    backgroundColor: colors.nightRaised,
+    backgroundColor: colors.control,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,
@@ -1252,7 +1252,10 @@ const styles = StyleSheet.create({
   colorDotOn: { borderColor: colors.ink },
 
   // Sheet
-  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(10,10,20,0.55)', justifyContent: 'flex-end' },
+  // The palette's own scrim, not a hand-rolled one — this was the single
+  // hardcoded colour left in either console, and it would have stayed a
+  // night-weight black behind a paper sheet.
+  sheetBackdrop: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.nightRaised,
     borderTopLeftRadius: layout.radiusCard,
@@ -1272,7 +1275,7 @@ const styles = StyleSheet.create({
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.nightRaised,
+    backgroundColor: colors.control,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,

@@ -5,7 +5,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useIsSuperadmin } from '../../src/lib/admin.js';
@@ -24,8 +24,8 @@ import {
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton, ListSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
-import { QUESTION_TEXT_SOFT_MAX } from '../../src/shared/constants.js';
-import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
+import { PUBLIC_SPACE_ID, QUESTION_TEXT_SOFT_MAX } from '../../src/shared/constants.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/console.js';
 
 /**
  * Moderation, in the order the work arrives: reported questions, reported
@@ -105,10 +105,22 @@ export default function SuperModeration() {
     }
   }, [isSuper, tab]);
 
+  // Cleared when the tab changes so the old tab's cards do not linger under
+  // the new tab's heading.
   useEffect(() => {
     setItems(null);
-    load();
-  }, [load]);
+  }, [tab]);
+
+  /**
+   * On FOCUS, so a question corrected through "Open the question" is shown as
+   * corrected when you come back — the report stays open until it is resolved,
+   * and a card still quoting the typo you just fixed reads as a failed save.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   /**
    * Optimistic removal: the card leaves the queue the moment the decision is
@@ -173,7 +185,7 @@ export default function SuperModeration() {
     : null;
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Moderation" subtitle="Reports and cheat flags" />
 
       <Tabs options={TABS} value={tab} onChange={setTab} />
@@ -188,9 +200,10 @@ export default function SuperModeration() {
         )
       ) : !items ? null : items.length === 0 ? (
         tab === 'flags' ? (
-          <EmptyState icon="check" title="Nobody is at five flags." body="Players whose answer speed crosses the threshold appear here." />
+          <EmptyState tone="oversight" icon="check" title="Nobody is at five flags." body="Players whose answer speed crosses the threshold appear here." />
         ) : (
           <EmptyState
+            tone="oversight"
             icon="check"
             title="Queue clear"
             body={tab === 'question' ? 'No open reports on questions.' : 'No open reports on players.'}
@@ -261,6 +274,12 @@ export default function SuperModeration() {
                 report={report}
                 onArchive={() => setConfirm({ type: 'archive', report })}
                 onDismiss={() => resolve(report, 'dismiss')}
+                onOpen={() =>
+                  router.push({
+                    pathname: '/super/question-edit',
+                    params: { id: report.question.id },
+                  })
+                }
               />
             ))
           ) : (
@@ -309,11 +328,12 @@ export default function SuperModeration() {
  * answer. When the item analysis flags the key as suspect, the card commits:
  * the reporter is probably right.
  */
-function QuestionReportCard({ report, onArchive, onDismiss }) {
+function QuestionReportCard({ report, onArchive, onDismiss, onOpen }) {
   const reason = REASONS[report.reason] ?? REASONS.other;
   const question = report.question;
   const percent = question?.itemAnalysis?.percentCorrect;
   const suspect = question?.itemAnalysis?.flag === 'suspect_key';
+  const isCentral = question?.origin === PUBLIC_SPACE_ID;
 
   return (
     <View style={[styles.card, elevation.raised]}>
@@ -369,6 +389,27 @@ function QuestionReportCard({ report, onArchive, onDismiss }) {
           The question is no longer available.
         </Text>
       )}
+
+      {/**
+       * A reported key can be WRONG, and archiving the whole question is a
+       * heavy answer to a one-character mistake — it takes a working question
+       * out of every match rather than correcting it.
+       *
+       * Only offered for the Central Bank, which is the operator's own to
+       * edit. A tenant's question belongs to that tenant: it is already in
+       * THEIR moderation queue with the same three choices, and editing it
+       * from here would mean leaving the platform console for an organization
+       * console that has nothing else to say to a superadmin.
+       */}
+      {question && isCentral ? (
+        <Button
+          label="Open the question"
+          size="md"
+          variant="soft"
+          style={{ marginTop: space.md }}
+          onPress={onOpen}
+        />
+      ) : null}
 
       <View style={styles.decisions}>
         {question ? (

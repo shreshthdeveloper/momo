@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
@@ -17,7 +17,8 @@ import {
   CountRow,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, consoleLayout, elevation, layout, space } from '../../src/theme/index.js';
+import Icon from '../../src/components/Icon.jsx';
+import { colors, consoleLayout, elevation, layout, space } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.5 — contests, from the phone: everything scheduled, live or done,
@@ -76,7 +77,7 @@ export default function AdminContests() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Contests" subtitle={adminSpace?.name} />
 
       <ErrorNotice error={error} onRetry={load} />
@@ -103,6 +104,7 @@ export default function AdminContests() {
 
           {items.length === 0 ? (
             <EmptyState
+              tone="learning"
               icon="clock"
               title="No contests yet"
               body="Schedule one and every student answers the same paper against the clock."
@@ -112,8 +114,35 @@ export default function AdminContests() {
           ) : (
             items.map((contest) => {
               const phase = phaseOf(contest);
+              const openStandings = () =>
+                router.push({
+                  pathname: '/admin/contest-standings',
+                  params: { id: contest.id, name: contest.name },
+                });
               return (
-                <View key={contest.id} style={[styles.card, elevation.raised]}>
+                /**
+                 * The card IS the link, and it leads to the standings — the
+                 * ADMIN board, which shows every entrant including those still
+                 * playing and ignores the contest's own standings-visibility
+                 * setting, so an admin running a hidden-standings contest is
+                 * not shown the same nothing their students are.
+                 *
+                 * It was a soft pill in the card's corner, which made the other
+                 * ninety percent of the card inert. Same fix as the topic card:
+                 * the whole thing presses, and `⋯` keeps the verbs.
+                 */
+                <Pressable
+                  key={contest.id}
+                  onPress={openStandings}
+                  accessibilityRole="button"
+                  accessibilityLabel={contest.name}
+                  accessibilityHint="Opens the standings"
+                  style={({ pressed }) => [
+                    styles.card,
+                    elevation.raised,
+                    pressed && styles.cardPressed,
+                  ]}
+                >
                   <View style={styles.cardHead}>
                     <Text variant="label" style={{ flex: 1 }} numberOfLines={1}>
                       {contest.name}
@@ -122,6 +151,7 @@ export default function AdminContests() {
                       label={phase.label}
                       tone={phase.tone}
                     />
+                    <Icon name="chevronRight" size={16} color={colors.inkFaint} />
                   </View>
 
                   <Text variant="meta" color={colors.inkFaint} style={styles.meta} numberOfLines={1}>
@@ -131,34 +161,12 @@ export default function AdminContests() {
                   </Text>
 
                   {/**
-                   * Standings is the button because it is what an admin opens
-                   * a contest for; finalising an ended one is the exception
-                   * that earns a second. Delete goes in the menu with every
-                   * other destructive verb in the console — it used to be a
-                   * bare red icon on some cards and nothing at all on others,
-                   * so the same card taught you two different layouts.
+                   * Finalising an ended contest is the one verb that earns a
+                   * button of its own — it is time-critical and it is what the
+                   * "Ended" badge above is asking for. Everything else goes in
+                   * the `⋯` with every other destructive verb in the console.
                    */}
                   <View style={styles.actions}>
-                    <Button
-                      size="sm"
-                      variant="soft"
-                      label="Standings"
-                      fullWidth={false}
-                      /**
-                       * The ADMIN board, which shows every entrant including
-                       * those still playing and ignores the contest's
-                       * standings-visibility setting. This used to open the
-                       * student's contest screen, so an admin running a
-                       * hidden-standings contest was shown the same nothing
-                       * their students were.
-                       */
-                      onPress={() =>
-                        router.push({
-                          pathname: '/admin/contest-standings',
-                          params: { id: contest.id, name: contest.name },
-                        })
-                      }
-                    />
                     {phase.key === 'ended' ? (
                       <Button
                         size="sm"
@@ -177,11 +185,7 @@ export default function AdminContests() {
                           key: 'standings',
                           label: 'Standings',
                           icon: 'trophy',
-                          onPress: () =>
-                            router.push({
-                              pathname: '/admin/contest-standings',
-                              params: { id: contest.id, name: contest.name },
-                            }),
+                          onPress: openStandings,
                         },
                         phase.key === 'upcoming'
                           ? {
@@ -195,7 +199,7 @@ export default function AdminContests() {
                       ]}
                     />
                   </View>
-                </View>
+                </Pressable>
               );
             })
           )}
@@ -255,6 +259,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.hairline,
   },
+  cardPressed: { backgroundColor: colors.canvas },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   meta: { marginTop: space.xs, marginBottom: space.md },
   actions: { flexDirection: 'row', alignItems: 'center', gap: space.sm },

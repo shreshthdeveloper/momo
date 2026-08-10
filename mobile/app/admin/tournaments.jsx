@@ -21,7 +21,7 @@ import {
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import { TOURNAMENT_SIZES } from '../../src/shared/constants.js';
-import { colors, consoleLayout, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, layout, space, type } from '../../src/theme/console.js';
 
 /**
  * Knockout tournaments — the console side.
@@ -104,7 +104,7 @@ export default function AdminTournaments() {
   }, [draw, adminSpace, load]);
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Tournaments" subtitle={adminSpace?.name} />
       <ErrorNotice error={error} onRetry={load} />
 
@@ -112,6 +112,7 @@ export default function AdminTournaments() {
         <ListSkeleton rows={5} />
       ) : rows.length === 0 ? (
         <EmptyState
+          tone="learning"
           icon="ranks"
           title="No tournaments yet"
           body="A bracket gives a topic a story — quarter-finals, a semi somebody nearly lost, and a winner. Students enter, and you draw the bracket when everyone is in."
@@ -142,13 +143,10 @@ export default function AdminTournaments() {
                 key={row.id}
                 last={i === rows.length - 1}
                 title={row.name}
+                // The bracket is what a tournament row is for, so the row goes
+                // there; drawing and cancelling are verbs and live in the `⋯`.
+                onPress={() => router.push(`/tournament/${row.id}`)}
                 actions={[
-                  {
-                    key: 'view',
-                    label: 'See the bracket',
-                    icon: 'ranks',
-                    onPress: () => router.push(`/tournament/${row.id}`),
-                  },
                   row.status === 'open' &&
                     canManageContests && {
                       key: 'start',
@@ -268,7 +266,7 @@ const styles = StyleSheet.create({
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.sunken,
+    backgroundColor: colors.control,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.hairline,

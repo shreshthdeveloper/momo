@@ -24,7 +24,7 @@ import {
   Sheet,
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, consoleLayout, consoleType, elevation, layout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, consoleType, elevation, layout, space } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.4.5 — batches, which scope assignments, contests and leaderboards.
@@ -103,7 +103,7 @@ export default function AdminBatches() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Batches" subtitle={adminSpace?.name} />
 
       <ErrorNotice error={error} onRetry={load} />
@@ -112,6 +112,7 @@ export default function AdminBatches() {
         <ListSkeleton rows={5} />
       ) : rows?.length === 0 ? (
         <EmptyState
+          tone="people"
           icon="book"
           title="No batches yet"
           body="A batch is a class or a year group. Assignments, contests and leaderboards can be scoped to one."
@@ -152,20 +153,17 @@ export default function AdminBatches() {
                 key={batch.id}
                 last={i === rows.length - 1}
                 title={batch.name}
+                /**
+                 * A batch IS its students — the figure at the end of the row is
+                 * counting them — so the row opens the roster filtered to it,
+                 * and renaming or deleting stays in the `⋯`.
+                 */
+                onPress={() =>
+                  router.push({ pathname: '/admin/students', params: { batchId: batch.id } })
+                }
                 actions={
                   canManageStudents
                     ? [
-                        {
-                          key: 'students',
-                          label: 'See who is in it',
-                          meta: `${batch.studentCount ?? 0} ${batch.studentCount === 1 ? 'student' : 'students'}`,
-                          icon: 'friends',
-                          onPress: () =>
-                            router.push({
-                              pathname: '/admin/students',
-                              params: { batchId: batch.id },
-                            }),
-                        },
                         {
                           key: 'edit',
                           label: 'Rename or edit',
@@ -299,7 +297,7 @@ const styles = StyleSheet.create({
   figure: { ...consoleType.figure, minWidth: 32, textAlign: 'right' },
   fieldLabel: { marginTop: space.md, marginBottom: space.xs },
   input: {
-    backgroundColor: colors.nightRaised,
+    backgroundColor: colors.control,
     borderRadius: layout.radiusInput,
     borderWidth: 1,
     borderColor: colors.hairline,

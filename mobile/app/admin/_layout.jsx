@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router';
 import ConsoleShell from '../../src/components/ConsoleShell.jsx';
 import { useAdminSpace } from '../../src/lib/admin.js';
-import { colors, motion } from '../../src/theme/index.js';
+import { colors, motion } from '../../src/theme/console.js';
 
 /**
  * The admin console is its own app: when an organization admin signs in they
@@ -15,14 +15,21 @@ import { colors, motion } from '../../src/theme/index.js';
  * whole point: the navigation doubles as the inventory of what an admin can
  * do here.
  */
+/**
+ * `tone` names the DOMAIN each section belongs to, and the sidebar draws its
+ * rows in that hue — see the note in `ConsoleShell`. The five are fixed in the
+ * theme so the same domain is the same colour in both consoles.
+ */
 const SECTIONS = [
   {
     title: 'Organization',
+    tone: 'platform',
     base: 'admin',
     items: [{ route: 'index', label: 'Overview', icon: 'home' }],
   },
   {
     title: 'Content',
+    tone: 'content',
     base: 'admin',
     items: [
       // `match` is every route that belongs under this row, so an editor
@@ -36,6 +43,7 @@ const SECTIONS = [
   },
   {
     title: 'People',
+    tone: 'people',
     base: 'admin',
     items: [
       { route: 'students', label: 'Students', icon: 'friends', match: ['students', 'student-detail'] },
@@ -45,6 +53,7 @@ const SECTIONS = [
   },
   {
     title: 'Learning',
+    tone: 'learning',
     base: 'admin',
     items: [
       { route: 'contests', label: 'Contests', icon: 'trophy', match: ['contests', 'contest-new', 'contest-edit'] },
@@ -77,10 +86,18 @@ const SECTIONS = [
   },
   {
     title: 'Oversight',
+    tone: 'oversight',
     base: 'admin',
     items: [
       { route: 'reports', label: 'Reports', icon: 'chart' },
       { route: 'moderation', label: 'Reported questions', icon: 'shield' },
+      /**
+       * The organization's own audit, which had no door. Forty rows of it were
+       * printed at the bottom of Settings, under the team list, under the join
+       * code, under everything — so Settings scrolled forever and the log was
+       * unsearchable. Settings keeps five; this is the rest.
+       */
+      { route: 'audit', label: 'Activity log', icon: 'history' },
       { route: 'settings', label: 'Settings', icon: 'gear' },
     ],
   },

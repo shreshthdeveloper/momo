@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../src/lib/api.js';
-import { useAdminPermissions, useAdminSpace } from '../../src/lib/admin.js';
+import { useConsoleSpace } from '../../src/lib/admin.js';
 import {
   ConsoleFooter,
   Text,
@@ -23,7 +23,7 @@ import {
 } from '../../src/components/ui.jsx';
 import Icon from '../../src/components/Icon.jsx';
 import QuestionArt, { ART_KEYS, artKeyOf, artUri } from '../../src/components/QuestionArt.jsx';
-import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.2 — the question editor. One form for both jobs: no `id` param
@@ -34,9 +34,10 @@ import { colors, consoleLayout, elevation, layout, space, type } from '../../src
  * word: its validation failures land inline, its duplicate refusal opens a
  * sheet showing what it found, and its warnings are shown before leaving.
  *
- * The superadmin edits the central bank by passing `spaceId`, which then
- * scopes every request on this screen; the server re-checks the caller each
- * time, so honouring the param here grants nothing.
+ * Mounted at `/admin/question-edit` and at `/super/question-edit`, where it is
+ * the Central Bank's editor; `useConsoleSpace` decides which bank every request
+ * on this screen is scoped to, and the server re-checks the caller each time,
+ * so honouring that here grants nothing.
  */
 const LETTERS = ['A', 'B', 'C', 'D'];
 
@@ -79,18 +80,11 @@ const emptyErrors = () => ({
 export default function AdminQuestionEdit() {
   const bottom = useBottomInset();
   const goBack = useConsoleBack();
-  const adminSpace = useAdminSpace();
-  const permissions = useAdminPermissions(adminSpace);
-  /** The drawn-art key in `imageUrl`, or null when it is an uploaded URL. */
-  const drawnArtKey = artKeyOf(imageUrl);
+  const { spaceId, spaceName, canPublish } = useConsoleSpace();
   const params = useLocalSearchParams();
 
   const id = typeof params.id === 'string' && params.id.length > 0 ? params.id : undefined;
   const editing = Boolean(id);
-  const overrideSpaceId =
-    typeof params.spaceId === 'string' && params.spaceId.length > 0 ? params.spaceId : null;
-  const spaceId = overrideSpaceId ?? adminSpace?.id;
-  const canPublish = overrideSpaceId ? true : permissions.canPublish;
 
   const [ready, setReady] = useState(!editing);
   const [topics, setTopics] = useState(null);
@@ -108,6 +102,14 @@ export default function AdminQuestionEdit() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [explanation, setExplanation] = useState('');
   const [imageUrl, setImageUrl] = useState(null);
+  /**
+   * The drawn-art key in `imageUrl`, or null when it is an uploaded URL.
+   *
+   * Below the state it reads, not above it: declared first, this was a `const`
+   * used before its initializer, which is a ReferenceError on the very first
+   * render — the editor could not open at all.
+   */
+  const drawnArtKey = artKeyOf(imageUrl);
   /** Open when choosing from the drawn set — see the Picture block below. */
   const [artPicker, setArtPicker] = useState(false);
   const [timeLimitMs, setTimeLimitMs] = useState(null);
@@ -302,7 +304,7 @@ export default function AdminQuestionEdit() {
 
   if (!spaceId) {
     return (
-      <SafeAreaView style={styles.screen} edges={['top']}>
+      <SafeAreaView style={styles.screen} edges={[]}>
         <Header title="New question" onBack={goBack} />
         <EmptyState
           icon="alert"
@@ -319,15 +321,11 @@ export default function AdminQuestionEdit() {
   const primaryBusy = busy === 'published' || busy === 'in_review';
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header
         title={editing ? 'Edit question' : 'New question'}
         subtitle={
-          servedEver
-            ? 'Served in matches — edits affect future matches only.'
-            : overrideSpaceId
-              ? 'Public space'
-              : adminSpace?.name
+          servedEver ? 'Served in matches — edits affect future matches only.' : spaceName
         }
         onBack={goBack}
       />
@@ -801,7 +799,7 @@ const styles = StyleSheet.create({
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.nightRaised,
+    backgroundColor: colors.control,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,

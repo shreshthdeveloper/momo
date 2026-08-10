@@ -20,7 +20,7 @@ import {
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import { useExport, csvName } from '../../src/lib/download.js';
-import { colors, consoleLayout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, space } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.5.5–6 — who has actually done the homework.
@@ -86,7 +86,7 @@ export default function AssignmentDetail() {
   const total = data?.students?.length ?? 0;
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header
         title={data?.title ?? 'Assignment'}
         subtitle={data?.topic?.name ?? adminSpace?.name}

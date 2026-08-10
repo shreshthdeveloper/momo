@@ -1,14 +1,21 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
+import { ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useIsSuperadmin } from '../../src/lib/admin.js';
-import { ConsoleFooter, Text, Button, Chip, ErrorNotice, Header } from '../../src/components/ui.jsx';
-import Icon from '../../src/components/Icon.jsx';
+import {
+  ConsoleFooter,
+  Text,
+  Button,
+  Chip,
+  ErrorNotice,
+  Header,
+  Swatches,
+} from '../../src/components/ui.jsx';
 import { SPACE_ACCENTS } from '../../src/shared/constants.js';
-import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/console.js';
 
 /**
  * Creating an organization is a phone call made real: a name, the owner's number,
@@ -78,7 +85,7 @@ export default function SuperTenantNew() {
   // ── The one showing of the join code. ────────────────────────────────────
   if (created) {
     return (
-      <SafeAreaView style={styles.screen} edges={['top']}>
+      <SafeAreaView style={styles.screen} edges={[]}>
         <Header title="New organization" onBack={goBack} />
         <View style={styles.result}>
           <Text variant="display" style={{ textAlign: 'center' }}>
@@ -113,7 +120,7 @@ export default function SuperTenantNew() {
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="New organization" onBack={goBack} />
 
       <ScrollView
@@ -210,23 +217,12 @@ export default function SuperTenantNew() {
         <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
           Accent
         </Text>
-        <View style={styles.swatches}>
-          {SPACE_ACCENTS.map((hex) => {
-            const on = accent === hex;
-            return (
-              <Pressable
-                key={hex}
-                onPress={() => setAccent(hex)}
-                accessibilityRole="button"
-                accessibilityLabel={`Accent colour ${hex}`}
-                accessibilityState={{ selected: on }}
-                style={({ pressed }) => [styles.swatch, { backgroundColor: hex }, on && styles.swatchOn, pressed && { opacity: 0.7 }]}
-              >
-                {on ? <Icon name="check" size={16} color={colors.onColor} /> : null}
-              </Pressable>
-            );
-          })}
-        </View>
+        <Swatches
+          value={accent}
+          colors={SPACE_ACCENTS}
+          onChange={setAccent}
+          noun="Accent colour"
+        />
         <Text variant="meta" color={colors.inkFaint} style={styles.hint}>
           The organization’s colour across the app. Their admin can change it later.
         </Text>
@@ -247,7 +243,7 @@ const styles = StyleSheet.create({
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.nightRaised,
+    backgroundColor: colors.control,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,
@@ -271,15 +267,6 @@ const styles = StyleSheet.create({
   seatInput: { width: 120 },
   hint: { marginTop: space.sm },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: space.md },
-  swatch: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  swatchOn: { borderWidth: 2.5, borderColor: colors.ink },
   result: { padding: consoleLayout.gutter, paddingTop: space.xl },
   codeCard: {
     alignItems: 'center',

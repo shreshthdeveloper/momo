@@ -3,26 +3,33 @@ import { Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'reac
 import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
+import TopicMedallion, {
+  ICON_SCHEME,
+  SUBJECTS,
+  resolveTopicFace,
+} from '../../src/components/TopicMedallion.jsx';
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../../src/lib/api.js';
 import { useConsoleBack } from '../../src/lib/consoleBack.js';
-import { useAdminSpace } from '../../src/lib/admin.js';
+import { useConsoleSpace } from '../../src/lib/admin.js';
 import {
   ConsoleFooter,
   Text,
   Button,
   Chip,
   ConfirmSheet,
+  EmptyState,
   ErrorNotice,
   Header,
   Skeleton,
+  Swatches,
 } from '../../src/components/ui.jsx';
 import {
   MIN_PUBLISHED_QUESTIONS_TO_LIVE,
   SPACE_ACCENTS,
   TOPIC_STATUS,
 } from '../../src/shared/constants.js';
-import { colors, consoleLayout, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, layout, space, type } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.3 — one form for both jobs: no `topicId` param means a new topic,
@@ -34,12 +41,24 @@ import { colors, consoleLayout, layout, space, type } from '../../src/theme/inde
  * Archiving asks first, in the app's own sheet; the 21-question rule is
  * enforced by the server, and its refusal is shown verbatim beside the status
  * chips — the message already says exactly what is missing.
+ *
+ * Mounted at `/admin/topic-edit` and at `/super/topic-edit`, where it is the
+ * Central Bank's topic form and, with it, the only place a central CATEGORY
+ * gets made. See `useConsoleSpace`.
  */
 const STATUS_OPTIONS = [
   { value: TOPIC_STATUS.DRAFT, label: 'Draft' },
   { value: TOPIC_STATUS.PUBLISHED, label: 'Published' },
   { value: TOPIC_STATUS.ARCHIVED, label: 'Archived' },
 ];
+
+/** The drawn faces, in the order `TopicMedallion` declares them. */
+const ICON_KEYS = Object.keys(SUBJECTS);
+
+/** `general` → "General". The wire key is lowercase; the chooser is not. */
+function subjectLabel(key) {
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
 
 const STATUS_HINTS = {
   [TOPIC_STATUS.DRAFT]: 'Hidden from students.',
@@ -49,7 +68,7 @@ const STATUS_HINTS = {
 
 export default function AdminTopicEdit() {
   const goBack = useConsoleBack();
-  const adminSpace = useAdminSpace();
+  const { spaceId, spaceName } = useConsoleSpace();
   const params = useLocalSearchParams();
   const topicId = typeof params.topicId === 'string' ? params.topicId : undefined;
   const editing = Boolean(topicId);
@@ -78,12 +97,12 @@ export default function AdminTopicEdit() {
   const [confirmArchive, setConfirmArchive] = useState(false);
 
   const load = useCallback(async () => {
-    if (!adminSpace) return;
+    if (!spaceId) return;
     try {
       setError(null);
       const [cats, topics] = await Promise.all([
-        api.get('/admin/categories', { spaceId: adminSpace.id }),
-        topicId ? api.get('/admin/topics', { spaceId: adminSpace.id }) : Promise.resolve(null),
+        api.get('/admin/categories', { spaceId }),
+        topicId ? api.get('/admin/topics', { spaceId }) : Promise.resolve(null),
       ]);
       const catItems = cats.items ?? [];
       setCategories(catItems);
@@ -107,7 +126,7 @@ export default function AdminTopicEdit() {
     } catch (err) {
       setError(err);
     }
-  }, [adminSpace, topicId]);
+  }, [spaceId, topicId]);
 
   useEffect(() => {
     load();
@@ -118,7 +137,7 @@ export default function AdminTopicEdit() {
     setError(null);
     try {
       const created = await api.post('/admin/categories', {
-        spaceId: adminSpace.id,
+        spaceId,
         name: catName.trim(),
         color: catColor,
       });
@@ -169,13 +188,21 @@ export default function AdminTopicEdit() {
     setStatusError(null);
     try {
       const body = {
-        spaceId: adminSpace.id,
+        spaceId,
         name: name.trim(),
         categoryId,
         questionSources: { own: sourceOwn, central: sourceCentral },
       };
       const desc = description.trim();
-      if (coverUrl) body.coverUrl = coverUrl;
+      /**
+       * An edit sends the cover EVERY time, empty included.
+       *
+       * The server treats an absent key as "leave it alone", so while this was
+       * `if (coverUrl)` the new Clear button could not have worked — you could
+       * pick a different icon but never take one off.
+       */
+      if (editing) body.coverUrl = coverUrl ?? '';
+      else if (coverUrl) body.coverUrl = coverUrl;
       if (editing) {
         body.description = desc;
         body.status = status;
@@ -193,13 +220,28 @@ export default function AdminTopicEdit() {
     }
   };
 
-  const selectedCategory = categories.find((c) => c.id === categoryId);
+  /** Whether the stored cover is a real picture or one the app draws. */
+  const face = resolveTopicFace(coverUrl, name);
+
+  if (!spaceId) {
+    return (
+      <SafeAreaView style={styles.screen} edges={[]}>
+        <Header title="New topic" onBack={goBack} />
+        <EmptyState
+          tone="content"
+          icon="alert"
+          title="No organization to manage"
+          body="This area appears when an organization has made you an admin."
+        />
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header
         title={editing ? 'Edit topic' : 'New topic'}
-        subtitle={adminSpace?.name}
+        subtitle={spaceName}
         onBack={goBack}
       />
 
@@ -265,20 +307,12 @@ export default function AdminTopicEdit() {
                   placeholderTextColor={colors.inkFaint}
                   accessibilityLabel="Category name"
                 />
-                <View style={styles.swatches}>
-                  {SPACE_ACCENTS.map((hex) => (
-                    <Pressable
-                      key={hex}
-                      onPress={() => setCatColor(hex)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Category colour ${hex}`}
-                      accessibilityState={{ selected: catColor === hex }}
-                      style={({ pressed }) => [styles.swatchRing, catColor === hex && styles.swatchRingOn, pressed && { opacity: 0.7 }]}
-                    >
-                      <View style={[styles.swatch, { backgroundColor: hex }]} />
-                    </Pressable>
-                  ))}
-                </View>
+                <Swatches
+                  value={catColor}
+                  colors={SPACE_ACCENTS}
+                  onChange={setCatColor}
+                  noun="Category colour"
+                />
                 <Button
                   size="sm"
                   variant="soft"
@@ -326,36 +360,93 @@ export default function AdminTopicEdit() {
             <Text variant="label" color={colors.inkMuted} style={styles.fieldLabel}>
               Cover
             </Text>
-            <View
-              style={[
-                styles.cover,
-                { backgroundColor: selectedCategory?.color ?? colors.sunken },
-              ]}
-            >
-              {coverUrl ? (
+            {/**
+             * A real uploaded cover fills the frame. Anything else — a drawn
+             * `mimo:icon/<subject>`, or no cover at all — is the medallion,
+             * centred, because that is literally what a student will see.
+             *
+             * This used to hand `coverUrl` straight to an `<Image>`, which
+             * cannot fetch the icon scheme most topics actually carry: opening
+             * a seeded topic showed a flat category-coloured box, with even the
+             * fallback letter suppressed because the value was truthy.
+             */}
+            {face.kind === 'image' ? (
+              <View style={styles.cover}>
                 <Image
-                  source={{ uri: coverUrl }}
+                  source={{ uri: face.uri }}
                   style={StyleSheet.absoluteFill}
                   contentFit="cover"
                   transition={160}
                 />
-              ) : (
-                <Text allowFontScaling={false} style={styles.coverInitial}>
-                  {(name.trim() || 'A').charAt(0).toUpperCase()}
-                </Text>
-              )}
+              </View>
+            ) : (
+              <View style={[styles.cover, styles.coverDrawn]}>
+                <TopicMedallion coverUrl={coverUrl} name={name} size={96} shape="tile" />
+              </View>
+            )}
+            {/**
+             * Pick the face, don't hunt for one.
+             *
+             * The only way to set a cover was to leave the app, open the photo
+             * library and find a picture — for a topic called "Thermodynamics",
+             * on a phone, in a school office. So almost nobody did, and the
+             * catalogue we seeded is the proof: every one of its topics carries
+             * a drawn `mimo:icon/<subject>` that the admin console had no way to
+             * choose, change, or even see.
+             *
+             * These are the same thirteen faces the player app draws, so what
+             * an admin taps here is literally what a student will look at.
+             */}
+            <View style={styles.iconGrid}>
+              {ICON_KEYS.map((key) => {
+                const value = `${ICON_SCHEME}${key}`;
+                const on = coverUrl === value;
+                return (
+                  <Pressable
+                    key={key}
+                    onPress={() => setCoverUrl(on ? null : value)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: on }}
+                    accessibilityLabel={`${subjectLabel(key)} icon`}
+                    style={styles.iconCell}
+                  >
+                    <View style={[styles.iconRing, on && styles.iconRingOn]}>
+                      <TopicMedallion coverUrl={value} name={key} size={42} shape="tile" />
+                    </View>
+                    <Text
+                      variant="tiny"
+                      color={on ? colors.accent : colors.inkFaint}
+                      numberOfLines={1}
+                    >
+                      {subjectLabel(key)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
-            <Button
-              size="sm"
-              variant="soft"
-              label={coverUrl ? 'Change cover' : 'Add a cover'}
-              fullWidth={false}
-              loading={uploading}
-              style={{ alignSelf: 'flex-start', marginTop: space.md }}
-              onPress={pickCover}
-            />
+
+            <View style={styles.coverActions}>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="plus"
+                label="Upload a photo"
+                fullWidth={false}
+                loading={uploading}
+                onPress={pickCover}
+              />
+              {coverUrl ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  label="Clear it"
+                  fullWidth={false}
+                  onPress={() => setCoverUrl(null)}
+                />
+              ) : null}
+            </View>
             <Text variant="meta" color={colors.inkFaint} style={{ marginTop: space.sm }}>
-              Without a cover, Mimo generates one from the category colour.
+              With no cover at all, Mimo draws one from the name of the topic.
             </Text>
 
             {editing ? (
@@ -463,7 +554,7 @@ const styles = StyleSheet.create({
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.nightRaised,
+    backgroundColor: colors.control,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,
@@ -480,15 +571,6 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
     gap: space.md,
   },
-  swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  swatchRing: {
-    padding: 2,
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: colors.transparent,
-  },
-  swatchRingOn: { borderColor: colors.ink },
-  swatch: { width: 28, height: 28, borderRadius: 14 },
   sourceRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -503,6 +585,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // The drawn face sits ON the field rather than on a colour block: the
+  // medallion brings its own tint, and a category-coloured slab behind it was
+  // two competing backgrounds.
+  coverDrawn: {
+    backgroundColor: colors.canvas,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
   coverInitial: {
     ...type.display,
     color: colors.onColor,
@@ -511,6 +601,22 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     textAlignVertical: 'center',
   },
+  /** Fixed cells rather than a flex basis, so the wrap is the same every time. */
+  iconGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.sm,
+    marginTop: space.lg,
+  },
+  iconCell: { width: 60, alignItems: 'center', gap: 4 },
+  iconRing: {
+    padding: 3,
+    borderRadius: 17,
+    borderWidth: 2,
+    borderColor: colors.transparent,
+  },
+  iconRingOn: { borderColor: colors.accent },
+  coverActions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.lg },
   note: { marginTop: space.xl },
   skeleton: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.lg, gap: space.sm },
 });

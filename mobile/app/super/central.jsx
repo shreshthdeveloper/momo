@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
@@ -19,8 +19,10 @@ import {
   ListRow,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
+import Icon from '../../src/components/Icon.jsx';
+import TopicMedallion from '../../src/components/TopicMedallion.jsx';
 import { PUBLIC_SPACE_ID } from '../../src/shared/constants.js';
-import { colors, consoleLayout, consoleType, elevation, layout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, consoleType, elevation, layout, space } from '../../src/theme/console.js';
 
 /**
  * The Central bank — the Public Arena's content, seen as inventory. The
@@ -28,11 +30,25 @@ import { colors, consoleLayout, consoleType, elevation, layout, space } from '..
  * featured, because featuring is the one editorial lever the operator holds:
  * featured topics lead the home feed for every player.
  *
- * The Public Arena is a real space (a fixed ObjectId, not a null sentinel),
- * and the backend grants superadmins admin scope on it — so the topic list
- * and the question bank ride the existing /admin surface with that spaceId.
- * The /super routes themselves never carry one.
+ * The Public Arena is a real space (a fixed ObjectId, not a null sentinel) and
+ * the backend grants superadmins admin scope on it, so the four screens that
+ * actually EDIT this bank — topics, questions, the review queue, the CSV
+ * import — are the organization console's own screens, mounted at `/super/*`
+ * and scoped by `useConsoleSpace`. This page is the inventory above them.
+ *
+ * The /super routes themselves never carry a spaceId: the path is the scope.
  */
+/**
+ * The three jobs this page is the front of, as tiles rather than as sidebar
+ * rows alone: on a phone the sidebar is a drawer, so a screen that names the
+ * work is the only place the work is visible without opening it.
+ */
+const DOORS = [
+  { href: '/super/questions', icon: 'book', title: 'Questions', sub: 'Write, edit, publish' },
+  { href: '/super/import', icon: 'download', title: 'Import CSV', sub: 'A spreadsheet at a time' },
+  { href: '/super/review', icon: 'check', title: 'Review queue', sub: 'What is waiting' },
+];
+
 export default function SuperCentral() {
   const router = useRouter();
   const isSuper = useIsSuperadmin();
@@ -107,7 +123,7 @@ export default function SuperCentral() {
   const rest = inCategory.filter((t) => !t.featured);
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Central bank" subtitle="Public Arena topics and featuring" />
 
       <ErrorNotice error={error} onRetry={load} />
@@ -130,15 +146,56 @@ export default function SuperCentral() {
             />
           }
         >
-          {/* ── How much exists. */}
+          {/* ── How much exists, and the way into each of it. Categories are
+                 made inside the topic form, so that figure leads there too. */}
           <View style={[styles.stats, elevation.raised]}>
-            <Stat value={summary.categories ?? 0} label="Categories" />
+            <Stat
+              value={summary.categories ?? 0}
+              label="Categories"
+              onPress={() => router.push('/super/topic-edit')}
+            />
             <View style={styles.statDivider} />
-            <Stat value={summary.topics ?? 0} label="Topics" />
+            <Stat
+              value={summary.topics ?? 0}
+              label="Topics"
+              onPress={() => router.push('/super/topics')}
+            />
             <View style={styles.statDivider} />
-            <Stat value={summary.questions ?? 0} label="Questions" />
+            <Stat
+              value={summary.questions ?? 0}
+              label="Questions"
+              onPress={() => router.push('/super/questions')}
+            />
             <View style={styles.statDivider} />
-            <Stat value={summary.publishedQuestions ?? 0} label="Published" />
+            <Stat
+              value={summary.publishedQuestions ?? 0}
+              label="Published"
+              onPress={() =>
+                router.push({ pathname: '/super/questions', params: { status: 'published' } })
+              }
+            />
+          </View>
+
+          <View style={styles.grid}>
+            {DOORS.map((door) => (
+              <Pressable
+                key={door.href}
+                style={({ pressed }) => [styles.tile, pressed && { backgroundColor: colors.canvas }]}
+                onPress={() => router.push(door.href)}
+                accessibilityRole="button"
+                accessibilityLabel={door.title}
+              >
+                <View style={styles.tileIcon}>
+                  <Icon name={door.icon} size={18} color={colors.accent} />
+                </View>
+                <Text variant="label" numberOfLines={1}>
+                  {door.title}
+                </Text>
+                <Text variant="meta" color={colors.inkFaint} numberOfLines={1}>
+                  {door.sub}
+                </Text>
+              </Pressable>
+            ))}
           </View>
 
           {/**
@@ -154,7 +211,14 @@ export default function SuperCentral() {
            * with the numbers in a column instead of buried in a sentence.
            */}
           {topics.length === 0 ? (
-            <EmptyState icon="book" title="No topics yet" body="Public Arena topics appear here once created." />
+            <EmptyState
+              tone="content"
+              icon="book"
+              title="No topics yet"
+              body="A topic is a question bank every player can reach. Make the first one — the category creator is inside the form."
+              actionLabel="New topic"
+              onAction={() => router.push('/super/topic-edit')}
+            />
           ) : (
             <>
               <View style={styles.filterRow}>
@@ -179,6 +243,7 @@ export default function SuperCentral() {
                         topic={topic}
                         last={i === featured.length - 1}
                         onToggle={toggleFeature}
+                        router={router}
                       />
                     ))}
                   </ListCard>
@@ -201,6 +266,7 @@ export default function SuperCentral() {
                       topic={topic}
                       last={i === rest.length - 1}
                       onToggle={toggleFeature}
+                      router={router}
                     />
                   ))}
                 </ListCard>
@@ -210,12 +276,12 @@ export default function SuperCentral() {
         </ScrollView>
       )}
 
-      {loaded ? (
+      {/* One primary, and it is the thing this list is short of when it is
+          short of anything: another topic. The other three doors are tiles
+          above, and every one of them is a sidebar row as well. */}
+      {loaded && topics.length > 0 ? (
         <ConsoleFooter>
-          <Button
-            label="Open question bank"
-            onPress={() => router.push({ pathname: '/admin/questions', params: { spaceId: PUBLIC_SPACE_ID } })}
-          />
+          <Button label="New topic" onPress={() => router.push('/super/topic-edit')} />
         </ConsoleFooter>
       ) : null}
     </SafeAreaView>
@@ -228,7 +294,7 @@ export default function SuperCentral() {
  * — not a ghost button whose label is the state it is already in ("Featured"
  * on a featured row read as a badge, not as "press to unfeature").
  */
-function TopicRow({ topic, last, onToggle }) {
+function TopicRow({ topic, last, onToggle, router }) {
   const isLive = Boolean(topic.readiness?.isLive);
   const published = topic.readiness?.published ?? 0;
   const matches = topic.stats?.matchesPlayed ?? 0;
@@ -237,6 +303,12 @@ function TopicRow({ topic, last, onToggle }) {
     <ListRow
       last={last}
       title={topic.name}
+      /**
+       * Same rule as the topic list it mirrors: the row opens what is IN the
+       * topic, and the `⋯` holds what you can do to it. The published count in
+       * the column at the end is the thing being pressed towards.
+       */
+      onPress={() => router.push({ pathname: '/super/questions', params: { topicId: topic.id } })}
       actions={[
         {
           key: 'feature',
@@ -245,8 +317,27 @@ function TopicRow({ topic, last, onToggle }) {
           icon: topic.featured ? 'close' : 'sparkle',
           onPress: () => onToggle(topic),
         },
+        {
+          key: 'import',
+          label: 'Import questions here',
+          meta: 'From a CSV or a spreadsheet',
+          icon: 'download',
+          onPress: () => router.push({ pathname: '/super/import', params: { topicId: topic.id } }),
+        },
+        {
+          key: 'edit',
+          label: 'Edit the topic',
+          meta: 'Name, cover, category, status',
+          icon: 'edit',
+          onPress: () => router.push({ pathname: '/super/topic-edit', params: { topicId: topic.id } }),
+        },
       ]}
     >
+      {/* The same face the topic wears in the topic list and on a student's
+          home screen. This row named the topic and drew nothing, which made
+          the Central bank the one place a topic had no identity at all. */}
+      <TopicMedallion coverUrl={topic.coverUrl} name={topic.name} size={36} />
+
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
         <View style={styles.nameRow}>
           <Text variant="label" style={{ flexShrink: 1 }} numberOfLines={1}>
@@ -285,9 +376,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,
+    // The hairline its two sibling panels already carry. On the night field a
+    // card separated on fill alone; on paper white-on-grey is a 1.15:1 step, so
+    // the border is what actually draws the edge.
+    borderWidth: 1,
+    borderColor: colors.hairline,
     paddingVertical: space.lg,
   },
   statDivider: { width: 1, height: 30, backgroundColor: colors.hairline },
+  // The same tile grid the two overview screens use — three consoles that look
+  // like one product.
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: layout.cardGap, marginTop: space.lg },
+  tile: {
+    flexGrow: 1,
+    flexBasis: 150,
+    minWidth: 150,
+    gap: 2,
+    backgroundColor: colors.nightRaised,
+    borderRadius: layout.radiusCard,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    padding: layout.cardPadding,
+  },
+  tileIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accentSoft,
+    marginBottom: space.sm,
+  },
   note: { marginBottom: space.sm, paddingHorizontal: space.xs },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
 });

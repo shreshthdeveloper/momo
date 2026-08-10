@@ -4,10 +4,18 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
-import { Text, ErrorNotice, EmptyState, Header, useScrollBottom } from '../../src/components/ui.jsx';
+import {
+  Text,
+  ErrorNotice,
+  EmptyState,
+  Header,
+  IconDisc,
+  StatPanel,
+  useScrollBottom,
+} from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import Icon from '../../src/components/Icon.jsx';
-import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, layout, space } from '../../src/theme/console.js';
 
 /**
  * The organization's control room, in the app — the same features the web portal
@@ -31,11 +39,16 @@ import { colors, consoleLayout, elevation, layout, space, type } from '../../src
  * the shortest path to the handful of things you actually start with. Four
  * tiles in a grid, in one colour, because they are peers.
  */
+/**
+ * `tone` is the domain each door belongs to, and it is the same hue that row
+ * wears in the sidebar. Four tiles, four colours, one each — this is where the
+ * screen spends its colour, and everything around it stays paper-quiet.
+ */
 const QUICK = [
-  { href: '/admin/review', icon: 'check', title: 'Review queue', sub: 'Publish or reject' },
-  { href: '/admin/questions', icon: 'book', title: 'Question bank', sub: 'Write and edit' },
-  { href: '/admin/students', icon: 'friends', title: 'Students', sub: 'Roster and approvals' },
-  { href: '/admin/contests', icon: 'trophy', title: 'Contests', sub: 'Schedule and finalise' },
+  { href: '/admin/review', icon: 'check', title: 'Review queue', sub: 'Publish or reject', tone: 'content' },
+  { href: '/admin/questions', icon: 'book', title: 'Question bank', sub: 'Write and edit', tone: 'content' },
+  { href: '/admin/students', icon: 'friends', title: 'Students', sub: 'Roster and approvals', tone: 'people' },
+  { href: '/admin/contests', icon: 'trophy', title: 'Contests', sub: 'Schedule and finalise', tone: 'learning' },
 ];
 
 export default function AdminHome() {
@@ -61,7 +74,7 @@ export default function AdminHome() {
 
   if (!adminSpace) {
     return (
-      <SafeAreaView style={styles.screen} edges={['top']}>
+      <SafeAreaView style={styles.screen} edges={[]}>
         <Header title="Admin" />
         <EmptyState
           icon="alert"
@@ -76,7 +89,7 @@ export default function AdminHome() {
   const alerts = data?.alerts ?? [];
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       {/* The face in the corner carries the account — who is signed in, and
           the one action that belongs to a session rather than a screen. */}
       <Header title={adminSpace.name} subtitle="Admin console" />
@@ -102,32 +115,67 @@ export default function AdminHome() {
           }
         >
           {/**
-           * ── The numbers, as one panel.
+           * ── The numbers, in two titled panels ─────────────────────────────
            *
-           * Six of them in two floating bars used to read as two unrelated
-           * widgets; they are one answer to one question. People first, then
-           * the bank, then how it is going — the order the questions come in.
+           * They were six figures in one bordered box split by a hairline —
+           * legible, and mute. Nothing said which of the six belonged together
+           * or what any of them was about, so the first thing on the screen was
+           * also the thing that took longest to read.
+           *
+           * Two panels, named and coloured by domain, in the order the
+           * questions come in: is anybody here, and is there anything for them
+           * to play. Every figure is still a door to the list behind it.
            */}
-          <View style={[styles.stats, elevation.raised]}>
-            <View style={styles.statsRow}>
-              <Metric value={summary?.students ?? 0} label="Students" />
-              <View style={styles.divider} />
-              <Metric value={summary?.activeThisWeek ?? 0} label="Active this week" />
-              <View style={styles.divider} />
-              <Metric value={summary?.activeToday ?? 0} label="Active today" />
-            </View>
-            <View style={styles.statsSplit} />
-            <View style={styles.statsRow}>
-              <Metric value={summary?.questionsInBank ?? 0} label="Questions live" />
-              <View style={styles.divider} />
-              <Metric value={summary?.matchesPlayed ?? 0} label="Matches, 30d" />
-              <View style={styles.divider} />
-              <Metric
-                value={summary?.avgAccuracy != null ? `${summary.avgAccuracy}%` : '—'}
-                label="Avg accuracy"
-              />
-            </View>
-          </View>
+          <StatPanel
+            label="People"
+            icon="friends"
+            tone="people"
+            stats={[
+              {
+                value: summary?.students ?? 0,
+                label: 'Students',
+                onPress: () => router.push('/admin/students'),
+              },
+              {
+                value: summary?.activeThisWeek ?? 0,
+                label: 'Active, 7d',
+                onPress: () => router.push('/admin/reports'),
+              },
+              {
+                value: summary?.activeToday ?? 0,
+                label: 'Active today',
+                onPress: () => router.push('/admin/reports'),
+              },
+            ]}
+          />
+
+          <StatPanel
+            label="Content and play"
+            icon="book"
+            tone="content"
+            style={{ marginTop: layout.cardGap }}
+            stats={[
+              {
+                value: summary?.questionsInBank ?? 0,
+                label: 'Questions live',
+                // Straight to the published questions — the figure IS that
+                // filter, so an unfiltered bank would make the operator
+                // re-derive what they just tapped.
+                onPress: () =>
+                  router.push({ pathname: '/admin/questions', params: { status: 'published' } }),
+              },
+              {
+                value: summary?.matchesPlayed ?? 0,
+                label: 'Matches, 30d',
+                onPress: () => router.push('/admin/reports'),
+              },
+              {
+                value: summary?.avgAccuracy != null ? `${summary.avgAccuracy}%` : '—',
+                label: 'Avg accuracy',
+                onPress: () => router.push('/admin/reports'),
+              },
+            ]}
+          />
 
           {/* ── What needs a decision, straight off the alerts feed. */}
           {alerts.length > 0 ? (
@@ -172,9 +220,7 @@ export default function AdminHome() {
                   accessibilityRole="button"
                   accessibilityLabel={item.title}
                 >
-                  <View style={styles.tileIcon}>
-                    <Icon name={item.icon} size={18} color={colors.accent} />
-                  </View>
+                  <IconDisc name={item.icon} tone={item.tone} size={38} style={styles.tileIcon} />
                   <Text variant="label" numberOfLines={1}>
                     {item.title}
                   </Text>
@@ -220,38 +266,9 @@ function hrefFor(key) {
   }
 }
 
-function Metric({ value, label }) {
-  return (
-    <View style={styles.metric}>
-      <Text style={[type.timer, { color: colors.ink }]} numberOfLines={1}>
-        {value}
-      </Text>
-      <Text variant="tiny" color={colors.inkFaint} numberOfLines={1}>
-        {label}
-      </Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
   content: { padding: consoleLayout.gutter, paddingTop: space.md },
-  stats: {
-    backgroundColor: colors.nightRaised,
-    borderRadius: layout.radiusCard,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    paddingVertical: space.lg,
-  },
-  statsRow: { flexDirection: 'row', alignItems: 'center' },
-  statsSplit: {
-    height: 1,
-    backgroundColor: colors.hairline,
-    marginVertical: space.lg,
-    marginHorizontal: layout.cardPadding,
-  },
-  metric: { flex: 1, alignItems: 'center', gap: 2, paddingHorizontal: 4 },
-  divider: { width: 1, height: 30, backgroundColor: colors.hairline },
   block: { marginTop: space.xl },
   blockLabel: { marginBottom: space.sm },
   alerts: { gap: space.sm },
@@ -284,14 +301,6 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
     padding: layout.cardPadding,
   },
-  tileIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accentSoft,
-    marginBottom: space.sm,
-  },
+  tileIcon: { marginBottom: space.sm },
   menuHint: { marginTop: space.md },
 });

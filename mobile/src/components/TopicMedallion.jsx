@@ -3,6 +3,7 @@ import { Image } from 'expo-image';
 import Icon from './Icon.jsx';
 import { Text } from './ui.jsx';
 import { fonts } from '../theme/index.js';
+import { useTheme } from '../theme/palette.jsx';
 
 /**
  * A topic's face — a tinted disc with its subject's glyph struck on it.
@@ -34,20 +35,35 @@ const ICON_SCHEME = 'mimo:icon/';
  * `mimo:icon/programming` in `coverUrl`, so no payload anywhere had to learn a
  * new field.
  */
+/**
+ * `hue` is the night hue and `paper` is the same subject re-struck for a light
+ * surface — the consoles.
+ *
+ * The construction is a 16% tint of the hue for the disc and the full hue for
+ * the mark, which works because on the night card that tint is DARK: a bright
+ * cyan glyph on a dark cyan wash separates cleanly. Over white the same
+ * arithmetic collapses — a 16% wash of a light hue is nearly white, and the
+ * light hue on top of it is nearly invisible. Sports was the worst at 1.64:1.
+ *
+ * So each subject carries a second, deeper hue for paper, solved so the mark
+ * clears 4.5:1 against its own tint on white. It is the same colour family and
+ * the same glyph, which is the point: a topic has ONE face, and an admin should
+ * recognise the thing their students are looking at.
+ */
 export const SUBJECTS = {
-  programming: { icon: 'code', hue: '#4CA9E8' },
-  mathematics: { icon: 'calculator', hue: '#9B8CF5' },
-  science: { icon: 'flask', hue: '#48C99B' },
-  entertainment: { icon: 'film', hue: '#F2789F' },
-  sports: { icon: 'trophy', hue: '#F5B62E' },
-  history: { icon: 'hourglass', hue: '#E0A46A' },
-  general: { icon: 'globe', hue: '#5FC9D6' },
-  music: { icon: 'music', hue: '#C98BE8' },
-  arts: { icon: 'brush', hue: '#F09A5B' },
-  nature: { icon: 'leaf', hue: '#7CC950' },
-  fantasy: { icon: 'sparkle', hue: '#9B7BE8' },
-  comics: { icon: 'bolt', hue: '#E0554F' },
-  mythology: { icon: 'flame', hue: '#F0A93B' },
+  programming: { icon: 'code', hue: '#4CA9E8', paper: '#316C94' },
+  mathematics: { icon: 'calculator', hue: '#9B8CF5', paper: '#685EA4' },
+  science: { icon: 'flask', hue: '#48C99B', paper: '#297358' },
+  entertainment: { icon: 'film', hue: '#F2789F', paper: '#9D4E67' },
+  sports: { icon: 'trophy', hue: '#F5B62E', paper: '#826018' },
+  history: { icon: 'hourglass', hue: '#E0A46A', paper: '#84613F' },
+  general: { icon: 'globe', hue: '#5FC9D6', paper: '#346F76' },
+  music: { icon: 'music', hue: '#C98BE8', paper: '#7F5892' },
+  arts: { icon: 'brush', hue: '#F09A5B', paper: '#8E5B36' },
+  nature: { icon: 'leaf', hue: '#7CC950', paper: '#47732E' },
+  fantasy: { icon: 'sparkle', hue: '#9B7BE8', paper: '#715AA9' },
+  comics: { icon: 'bolt', hue: '#E0554F', paper: '#AF423E' },
+  mythology: { icon: 'flame', hue: '#F0A93B', paper: '#865F21' },
 };
 
 /** `#RRGGBB` + alpha → rgba(). The hues are hex; the tints are not. */
@@ -73,7 +89,8 @@ export function resolveTopicFace(coverUrl, name) {
   // colour on every screen and between sessions.
   const keys = Object.keys(SUBJECTS);
   const seed = (name ?? '?').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  return { kind: 'letter', hue: SUBJECTS[keys[seed % keys.length]].hue };
+  const subject = SUBJECTS[keys[seed % keys.length]];
+  return { kind: 'letter', hue: subject.hue, paper: subject.paper };
 }
 
 /**
@@ -84,7 +101,10 @@ export function resolveTopicFace(coverUrl, name) {
  * @param {'circle'|'tile'} props.shape
  */
 export default function TopicMedallion({ coverUrl, name, size = 48, shape = 'circle', style }) {
+  const { dark } = useTheme();
   const face = resolveTopicFace(coverUrl, name);
+  // The night hue in the player app, the paper one in a console.
+  const hue = (dark ? face.hue : face.paper) ?? face.hue;
   const radius = shape === 'circle' ? size / 2 : Math.round(size * 0.28);
 
   // A real photograph fills the frame; there is nothing to tint or centre.
@@ -107,14 +127,14 @@ export default function TopicMedallion({ coverUrl, name, size = 48, shape = 'cir
           width: size,
           height: size,
           borderRadius: radius,
-          backgroundColor: withAlpha(face.hue, 0.16),
-          borderColor: withAlpha(face.hue, 0.32),
+          backgroundColor: withAlpha(hue, 0.16),
+          borderColor: withAlpha(hue, 0.32),
         },
         style,
       ]}
     >
       {face.kind === 'icon' ? (
-        <Icon name={face.icon} size={Math.round(size * 0.44)} color={face.hue} />
+        <Icon name={face.icon} size={Math.round(size * 0.44)} color={hue} />
       ) : (
         <Text
           allowFontScaling={false}
@@ -124,7 +144,7 @@ export default function TopicMedallion({ coverUrl, name, size = 48, shape = 'cir
             // Poppins ascenders clip against a fixed lineHeight from the scale.
             lineHeight: Math.round(size * 0.5),
             includeFontPadding: false,
-            color: face.hue,
+            color: hue,
           }}
         >
           {(name ?? '?').trim().charAt(0).toUpperCase()}

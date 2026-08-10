@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
-import { useAdminSpace } from '../../src/lib/admin.js';
+import { useConsoleBack } from '../../src/lib/consoleBack.js';
+import { useConsoleSpace } from '../../src/lib/admin.js';
 import {
   Text,
   Badge,
@@ -16,44 +18,57 @@ import {
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
 import QuestionArt from '../../src/components/QuestionArt.jsx';
 import Icon from '../../src/components/Icon.jsx';
-import { OPTION_COLORS, colors, consoleLayout, layout, space, type } from '../../src/theme/index.js';
+import { OPTION_COLORS, colors, consoleLayout, layout, space, type } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.2.8 — the review queue. One card per waiting question with the
- * full text, the four options, the correct one marked, and two decisions:
- * publish or reject. AI drafts are labelled — a reviewer weighs a machine's
- * draft differently from a colleague's, and hiding the source would invite
- * approving without reading.
+ * full text, the four options, the correct one marked, and the three things a
+ * reviewer can conclude: it is right, it is nearly right, it is wrong. AI
+ * drafts are labelled — a reviewer weighs a machine's draft differently from a
+ * colleague's, and hiding the source would invite approving without reading.
+ *
+ * Mounted at `/admin/review` and at `/super/review`, because an import into the
+ * Central Bank lands in review exactly like an import into an organization's —
+ * the queue has to exist in the console that can fill it.
  */
 const LETTERS = ['A', 'B', 'C', 'D'];
 
 export default function AdminReview() {
   const scrollBottom = useScrollBottom();
-  const adminSpace = useAdminSpace();
+  const router = useRouter();
+  const goBack = useConsoleBack();
+  const { spaceId, spaceName, inTenant, href } = useConsoleSpace();
   const [queue, setQueue] = useState(null);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
   const load = useCallback(async () => {
-    if (!adminSpace) return;
+    if (!spaceId) return;
     try {
       setError(null);
-      setQueue(await api.get('/admin/review', { spaceId: adminSpace.id }));
+      setQueue(await api.get('/admin/review', { spaceId }));
     } catch (err) {
       setError(err);
     }
-  }, [adminSpace]);
+  }, [spaceId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  /**
+   * Reloads on FOCUS, not on mount — "Fix it" opens the editor and comes
+   * straight back here, and a question that was corrected and published from
+   * the editor has to have left the queue by the time you land.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   const decide = async (question, action) => {
     setBusyId(question.id);
     try {
       setError(null);
       await api.post('/admin/review/batch', {
-        spaceId: adminSpace.id,
+        spaceId,
         ids: [question.id],
         action, // 'publish' | 'archive'
       });
@@ -73,10 +88,14 @@ export default function AdminReview() {
   const items = queue?.items ?? [];
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
+      {/* Scoped into a tenant it is a PUSHED screen — the platform operator
+          arrived from that organization and has somewhere to go back to. From
+          the sidebar it is a sidebar screen and wears the menu. */}
       <Header
         title="Review queue"
-        subtitle={queue ? `${queue.total} waiting${queue.aiPending ? ` · ${queue.aiPending} from AI` : ''}` : adminSpace?.name}
+        subtitle={queue ? `${queue.total} waiting${queue.aiPending ? ` · ${queue.aiPending} from AI` : ''}` : spaceName}
+        onBack={inTenant ? goBack : undefined}
       />
 
       <ErrorNotice error={error} onRetry={load} />
@@ -85,6 +104,7 @@ export default function AdminReview() {
         <CardsSkeleton count={3} lines={4} bar={false} />
       ) : items.length === 0 ? (
         <EmptyState
+          tone="content"
           icon="check"
           title="Queue clear"
           body="Nothing is waiting for review. Imported and submitted questions land here before they can be played."
@@ -149,6 +169,18 @@ export default function AdminReview() {
                 </View>
               ) : null}
 
+              {/**
+               * Three decisions, not two.
+               *
+               * A reviewer reads a question and finds a typo, a fourth option
+               * that gives the answer away, or a missing explanation — and
+               * this screen offered Publish or Reject. Neither is the right
+               * answer to "it is nearly right": rejecting a colleague's
+               * question over a spelling mistake throws away the work, and
+               * publishing it ships the mistake. The queue had no way to
+               * simply FIX it, so the only route was to reject, go to the
+               * bank, find it among the archived, and start again.
+               */}
               <View style={styles.decisions}>
                 <Button
                   label="Publish"
@@ -156,6 +188,14 @@ export default function AdminReview() {
                   style={{ flex: 1 }}
                   loading={busyId === question.id}
                   onPress={() => decide(question, 'publish')}
+                />
+                <Button
+                  label="Fix it"
+                  size="md"
+                  variant="soft"
+                  style={{ flex: 1 }}
+                  disabled={busyId === question.id}
+                  onPress={() => router.push(href('question-edit', { id: question.id }))}
                 />
                 <Button
                   label="Reject"
@@ -213,11 +253,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   explanation: {
-    backgroundColor: colors.nightRaised,
+    // An inset INSIDE a card, so it takes `canvas` — the console's inset
+    // tone — not the card fill it is sitting on. Filled with `nightRaised`
+    // it was the card's own colour and had no edge at all, which paper only
+    // makes more obvious: a white box on a white card.
+    backgroundColor: colors.canvas,
     borderRadius: layout.radiusInput,
     padding: space.md,
     marginTop: space.xs,
   },
-  decisions: { flexDirection: 'row', gap: space.md, marginTop: space.lg },
+  // Three across, so the gap tightens — at `md` the labels start wrapping on
+  // a 375pt screen.
+  decisions: { flexDirection: 'row', gap: space.sm, marginTop: space.lg },
   byline: { textAlign: 'center', marginTop: space.sm },
 });

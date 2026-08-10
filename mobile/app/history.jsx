@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View } from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../src/lib/api.js';
-import { Text, Header, ErrorNotice, EmptyState, useScrollBottom } from '../src/components/ui.jsx';
+import { Text, Header, ErrorNotice, EmptyState, Spinner, useScrollBottom } from '../src/components/ui.jsx';
 import { ListSkeleton } from '../src/components/Skeletons.jsx';
 import { MatchHistoryRow } from '../src/components/ProfileRows.jsx';
 import { colors, layout, space } from '../src/theme/index.js';
@@ -131,7 +131,8 @@ export default function History() {
           ListFooterComponent={
             loadingMore ? (
               <View style={styles.footer}>
-                <ActivityIndicator color={colors.accent} />
+                {/* The app's own mark, like every other wait in it. */}
+                <Spinner size={24} />
               </View>
             ) : done && items.length > PAGE ? (
               <Text variant="tiny" color={colors.inkFaint} style={styles.end}>

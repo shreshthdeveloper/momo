@@ -1,5 +1,8 @@
 import { View } from 'react-native';
-import { colors, layout, type } from '../theme/index.js';
+import { layout, type } from '../theme/index.js';
+// The topic glyph stands in for a cover on the player's home feed and in
+// the console's topic list, so its tones follow whichever palette it is in.
+import { usePalette } from '../theme/palette.jsx';
 import { Text } from './ui.jsx';
 
 /**
@@ -20,6 +23,7 @@ import { Text } from './ui.jsx';
  * needs a mark that is legible at 24px, always about its subject, and free.
  */
 export function TopicGlyph({ name, size = 56, radius = layout.radiusInput, tone }) {
+  const colors = usePalette();
   const palette = [colors.optionA, colors.optionB, colors.optionC, colors.optionD, colors.accent];
   const seed = (name ?? '?').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
   const fill = tone ?? palette[seed % palette.length];

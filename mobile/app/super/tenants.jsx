@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -23,10 +24,12 @@ import {
   Tabs,
   Header,
   CountRow,
+  ConsoleControls,
   ConsoleFooter,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, consoleLayout, elevation, fonts, layout, space } from '../../src/theme/index.js';
+import Icon from '../../src/components/Icon.jsx';
+import { colors, consoleLayout, elevation, fonts, layout, space } from '../../src/theme/console.js';
 
 /**
  * Every tenant on the platform. A pending organization is a person waiting at the
@@ -159,25 +162,26 @@ export default function SuperTenants() {
       }[status];
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Organizations" subtitle="Approvals, suspensions, support access" />
 
       <Tabs options={TABS} value={status} onChange={setStatus} />
-      <SearchField
-        style={styles.search}
-        value={query}
-        onChangeText={setQuery}
-        onClear={() => setQuery('')}
-        placeholder="Find an organization"
-        autoCapitalize="none"
-      />
+      <ConsoleControls>
+        <SearchField
+          value={query}
+          onChangeText={setQuery}
+          onClear={() => setQuery('')}
+          placeholder="Find an organization"
+          autoCapitalize="none"
+        />
+      </ConsoleControls>
 
       <ErrorNotice error={error} onRetry={load} />
 
       {!rows && !error ? (
         <CardsSkeleton count={4} lines={2} bar={false} />
       ) : !rows ? null : rows.length === 0 ? (
-        <EmptyState icon="home" title={emptyCopy.title} body={emptyCopy.body} />
+        <EmptyState tone="people" icon="home" title={emptyCopy.title} body={emptyCopy.body} />
       ) : (
         <ScrollView
           contentContainerStyle={styles.list}
@@ -215,6 +219,9 @@ export default function SuperTenants() {
                 setSuspendTarget(row);
               }}
               onReactivate={() => decide(row, 'reactivate')}
+              onOpen={(org) =>
+                router.push({ pathname: '/super/tenant-detail', params: { id: org.id, name: org.name } })
+              }
             />
           ))}
         </ScrollView>
@@ -286,7 +293,7 @@ export default function SuperTenants() {
   );
 }
 
-function TenantCard({ row, busy, onApprove, onReject, onSupport, onSuspend, onReactivate }) {
+function TenantCard({ row, busy, onApprove, onReject, onSupport, onSuspend, onReactivate, onOpen }) {
   const matches = row.stats?.matchesPlayed ?? 0;
   const meta = [
     row.plan?.tier,
@@ -297,8 +304,26 @@ function TenantCard({ row, busy, onApprove, onReject, onSupport, onSuspend, onRe
     .filter(Boolean)
     .join('  ·  ');
 
+  /**
+   * The card IS the link, and it leads to the organization.
+   *
+   * A card that opened a filtered user list was an improvement on a card that
+   * did nothing, but it still answered a narrower question than the one being
+   * asked. An organization is its students AND its topics AND its bank AND
+   * whether any of it is being used, and none of that fits on a row. It has a
+   * screen of its own now; this card is the summary of it.
+   *
+   * Everything the operator can DO to a tenant stays behind the `⋯`, here and
+   * there — including both irreversible ones.
+   */
   return (
-    <View style={[styles.card, elevation.raised]}>
+    <Pressable
+      onPress={() => onOpen(row)}
+      accessibilityRole="button"
+      accessibilityLabel={row.name}
+      accessibilityHint="Opens this organization"
+      style={({ pressed }) => [styles.card, elevation.raised, pressed && styles.cardPressed]}
+    >
       <View style={styles.cardTop}>
         <View style={[styles.logo, { backgroundColor: row.accentColor ?? colors.accent }]}>
           {row.logoUrl ? (
@@ -320,6 +345,7 @@ function TenantCard({ row, busy, onApprove, onReject, onSupport, onSuspend, onRe
             {row.slug}
           </Text>
         </View>
+        <Icon name="chevronRight" size={16} color={colors.inkFaint} />
       </View>
 
       <Text variant="meta" color={colors.inkFaint} numberOfLines={1} style={styles.metaLine}>
@@ -388,7 +414,7 @@ function TenantCard({ row, busy, onApprove, onReject, onSupport, onSuspend, onRe
           ]}
         />
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -409,8 +435,7 @@ function StatusBadge({ status }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.sunken },
-  search: { marginHorizontal: consoleLayout.gutter, marginTop: space.md, marginBottom: space.sm },
-  list: { paddingHorizontal: consoleLayout.gutter, paddingBottom: space.lg },
+  list: { paddingHorizontal: consoleLayout.gutter, paddingTop: space.md, paddingBottom: space.lg },
   card: {
     backgroundColor: colors.nightRaised,
     borderRadius: layout.radiusCard,
@@ -419,6 +444,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.hairline,
   },
+  cardPressed: { backgroundColor: colors.canvas },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   logo: {
     width: 44,

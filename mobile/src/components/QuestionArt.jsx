@@ -1,6 +1,8 @@
 import { StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
-import { colors, layout } from '../theme/index.js';
+import { layout } from '../theme/index.js';
+// Drawn in a match AND in both consoles' review queues.
+import { usePalette } from '../theme/palette.jsx';
 
 /**
  * The picture on a picture question — "which emblem is this?".
@@ -426,6 +428,7 @@ function withAlpha(hex, alpha) {
  * @param {string} [props.label]   what the picture shows, for VoiceOver
  */
 export default function QuestionArt({ imageUrl, size = 132, label }) {
+  const colors = usePalette();
   const art = resolveQuestionArt(imageUrl);
   if (!art) return null;
 
@@ -442,7 +445,7 @@ export default function QuestionArt({ imageUrl, size = 132, label }) {
 
   if (art.kind === 'image') {
     return (
-      <View style={[styles.frame, { width: size, height: size }]} {...a11y}>
+      <View style={[styles.frame, { width: size, height: size, backgroundColor: colors.nightRaised }]} {...a11y}>
         <Image source={{ uri: art.uri }} style={styles.photo} contentFit="cover" transition={140} />
       </View>
     );
@@ -472,12 +475,17 @@ export default function QuestionArt({ imageUrl, size = 132, label }) {
 }
 
 const styles = StyleSheet.create({
+  /**
+   * No `backgroundColor` here on purpose. Every other style in this file is
+   * geometry — positions and radii that are the same in any palette — and only
+   * the frame's fill depends on where the picture is drawn, so that one value
+   * is applied at render instead of freezing the whole sheet to one theme.
+   */
   frame: {
     borderRadius: layout.radiusCard,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.nightRaised,
   },
   drawn: { borderWidth: 1 },
   photo: { width: '100%', height: '100%' },

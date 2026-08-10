@@ -11,7 +11,7 @@ import {
   Select,
   ConsoleFooter,
 } from '../../src/components/ui.jsx';
-import { colors, consoleLayout, layout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, layout, space } from '../../src/theme/console.js';
 
 /**
  * prd.md F9.4.5 — the platform announcement.
@@ -65,7 +65,7 @@ export default function SuperAnnounce() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Announcement" subtitle="Every account you choose" />
 
       <ScrollView
@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   input: {
-    backgroundColor: colors.nightRaised,
+    backgroundColor: colors.control,
     borderRadius: layout.radiusInput,
     borderWidth: 1,
     borderColor: colors.hairline,

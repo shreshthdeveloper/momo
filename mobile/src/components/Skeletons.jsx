@@ -1,6 +1,9 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { Skeleton } from './ui.jsx';
-import { colors, elevation, layout, space } from '../theme/index.js';
+import { layout, space } from '../theme/index.js';
+// Not `colors`/`elevation`: these skeletons stand in for both the player app's
+// screens and the consoles', so the palette is resolved where they render.
+import { useTheme, useThemedStyles } from '../theme/palette.jsx';
 
 /**
  * Screen-shaped loading states.
@@ -32,6 +35,8 @@ import { colors, elevation, layout, space } from '../theme/index.js';
  * covers and then deleting them would be the only version that jumps.
  */
 export function HomeFeedSkeleton() {
+  const styles = useThemedStyles(makeStyles);
+  const { elevation } = useTheme();
   return (
     <View style={styles.feed}>
       <View style={[styles.banner, elevation.raised]}>
@@ -67,6 +72,7 @@ export function HomeFeedSkeleton() {
  * two lines of text, and a trailing number.
  */
 export function ListSkeleton({ rows = 7, avatar = true, rank = false, trailing = true, shape = 'circle' }) {
+  const styles = useThemedStyles(makeStyles);
   const lead =
     shape === 'thumb'
       ? { width: 76, height: 72, radius: layout.radiusInput }
@@ -93,6 +99,8 @@ export function ListSkeleton({ rows = 7, avatar = true, rank = false, trailing =
 
 /** Stacked cards: assignments, contests, the review screen. */
 export function CardsSkeleton({ count = 3, lines = 2, bar = true }) {
+  const styles = useThemedStyles(makeStyles);
+  const { elevation } = useTheme();
   return (
     <View style={styles.cardsStack}>
       {Array.from({ length: count }).map((_, i) => (
@@ -116,6 +124,7 @@ export function CardsSkeleton({ count = 3, lines = 2, bar = true }) {
  * screen, so this is only the stat card and the sections beneath it.
  */
 export function ProfileBodySkeleton() {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.profile}>
       <View style={styles.section}>
@@ -146,6 +155,8 @@ export function ProfileBodySkeleton() {
 
 /** The topic screen: cover, the overlapping mastery card, then a board. */
 export function TopicSkeleton() {
+  const styles = useThemedStyles(makeStyles);
+  const { elevation } = useTheme();
   return (
     <View style={{ flex: 1 }}>
       <Skeleton width="100%" height={240} radius={0} />
@@ -164,7 +175,8 @@ export function TopicSkeleton() {
   );
 }
 
-const styles = StyleSheet.create({
+/** Built once per palette — see `useThemedStyles`. */
+const makeStyles = (colors, elevation) => ({
   feed: { paddingBottom: space.xxl },
   /** Night, like the card it stands in for — it stopped being accent-filled. */
   banner: {

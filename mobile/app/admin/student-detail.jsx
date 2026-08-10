@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useAdminSpace, useAdminPermissions } from '../../src/lib/admin.js';
@@ -19,7 +19,8 @@ import {
   Loading,
   useScrollBottom,
 } from '../../src/components/ui.jsx';
-import { colors, consoleLayout, consoleType, elevation, layout, space } from '../../src/theme/index.js';
+import Icon from '../../src/components/Icon.jsx';
+import { colors, consoleLayout, consoleType, elevation, layout, space } from '../../src/theme/console.js';
 
 /**
  * One student, in full.
@@ -39,9 +40,10 @@ import { colors, consoleLayout, consoleType, elevation, layout, space } from '..
 export default function AdminStudentDetail() {
   const scrollBottom = useScrollBottom();
   const goBack = useConsoleBack();
+  const router = useRouter();
   const params = useLocalSearchParams();
   const adminSpace = useAdminSpace();
-  const { canManageStudents } = useAdminPermissions(adminSpace);
+  const { canManageStudents, canManageContests } = useAdminPermissions(adminSpace);
 
   const userId = typeof params.userId === 'string' ? params.userId : null;
   const membershipId = typeof params.membershipId === 'string' ? params.membershipId : null;
@@ -112,7 +114,7 @@ export default function AdminStudentDetail() {
   const weakest = report?.weakest ?? [];
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header
         title={student?.displayName ?? 'Student'}
         subtitle={adminSpace?.name}
@@ -120,6 +122,7 @@ export default function AdminStudentDetail() {
         right={
           canManageStudents && membershipId ? (
             <RowMenu
+              tone="onColor"
               title={student?.displayName ?? 'Student'}
               label="Student actions"
               actions={[
@@ -204,27 +207,72 @@ export default function AdminStudentDetail() {
             </View>
           ) : null}
 
-          {/* ── What they are stuck on. The reason this screen gets opened. */}
+          {/**
+           * ── What they are stuck on. The reason this screen gets opened.
+           *
+           * And now the reason has somewhere to go. This block diagnosed a
+           * problem in red and then stopped: an admin who has just learned
+           * that a student is at 41% in Thermodynamics wants to DO something
+           * about it, and the thing this console can do about it is set them
+           * practice. That was five screens away — Assignments, Set an
+           * assignment, find the topic again in a chip row, choose a
+           * requirement — and nothing here suggested it existed.
+           */}
           {weakest.length > 0 ? (
             <View style={styles.block}>
               <Text variant="label" color={colors.inkMuted} style={styles.blockLabel}>
                 Weakest topics
               </Text>
               <View style={[styles.card, elevation.raised]}>
-                {weakest.map((topic, i) => (
-                  <View
-                    key={topic.topicId}
-                    style={[styles.weakRow, i === weakest.length - 1 && styles.lastRow]}
-                  >
-                    <Text variant="body" style={{ flex: 1 }} numberOfLines={1}>
-                      {topic.name}
-                    </Text>
-                    <Text style={styles.figure} color={colors.wrong}>
-                      {topic.accuracy}%
-                    </Text>
-                  </View>
-                ))}
+                {weakest.map((topic, i) => {
+                  const last = i === weakest.length - 1;
+                  const row = (
+                    <>
+                      <Text variant="body" style={{ flex: 1 }} numberOfLines={1}>
+                        {topic.name}
+                      </Text>
+                      <Text style={styles.figure} color={colors.wrong}>
+                        {topic.accuracy}%
+                      </Text>
+                      {canManageContests ? (
+                        <Icon name="chevronRight" size={14} color={colors.inkFaint} />
+                      ) : null}
+                    </>
+                  );
+                  if (!canManageContests) {
+                    return (
+                      <View key={topic.topicId} style={[styles.weakRow, last && styles.lastRow]}>
+                        {row}
+                      </View>
+                    );
+                  }
+                  return (
+                    <Pressable
+                      key={topic.topicId}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Set an assignment on ${topic.name}`}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/admin/assignment-new',
+                          params: { topicId: topic.topicId },
+                        })
+                      }
+                      style={({ pressed }) => [
+                        styles.weakRow,
+                        last && styles.lastRow,
+                        pressed && { opacity: 0.6 },
+                      ]}
+                    >
+                      {row}
+                    </Pressable>
+                  );
+                })}
               </View>
+              {canManageContests ? (
+                <Text variant="meta" color={colors.inkFaint} style={styles.weakHint}>
+                  Tap one to set practice on it.
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
@@ -371,5 +419,6 @@ const styles = StyleSheet.create({
   },
   topicHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   lastRow: { borderBottomWidth: 0 },
+  weakHint: { marginTop: space.sm },
   figure: { ...consoleType.figure },
 });

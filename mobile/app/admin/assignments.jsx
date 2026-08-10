@@ -15,7 +15,7 @@ import {
   CountRow,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, consoleLayout, elevation, layout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.5.5 — assignments from the admin's side: what was set, when it is
@@ -45,7 +45,7 @@ export default function AdminAssignments() {
   }, [load]);
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Assignments" subtitle={adminSpace?.name} />
 
       <ErrorNotice error={error} onRetry={load} />
@@ -72,6 +72,7 @@ export default function AdminAssignments() {
 
           {items.length === 0 ? (
             <EmptyState
+              tone="learning"
               icon="flag"
               title="Nothing set"
               body="Set work with a topic, a requirement and a due date — progress tracks itself."
@@ -102,7 +103,7 @@ export default function AdminAssignments() {
                   style={({ pressed }) => [
                     styles.card,
                     elevation.raised,
-                    pressed && { opacity: 0.75 },
+                    pressed && styles.cardPressed,
                   ]}
                 >
                   <View style={styles.cardHead}>
@@ -162,6 +163,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.hairline,
   },
+  cardPressed: { backgroundColor: colors.canvas },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   meta: { marginTop: space.xs, marginBottom: space.md },
 });

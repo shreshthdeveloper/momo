@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { colors } from '../theme/index.js';
+import { usePalette } from '../theme/palette.jsx';
 
 /**
  * design.md §12 — one icon set, geometric, inheriting the text colour.
@@ -98,7 +98,13 @@ const GLYPHS = {
   server: 'server',
 };
 
-export default function Icon({ name, size = 22, color = colors.ink }) {
+export default function Icon({ name, size = 22, color }) {
+  /**
+   * The default is resolved from the palette rather than baked in: an icon
+   * with no colour of its own is "whatever ink is here", and ink is near-white
+   * in the player app and near-black in the consoles.
+   */
+  const colors = usePalette();
   const glyph = GLYPHS[name] ?? 'help-circle-outline';
-  return <Ionicons name={glyph} size={size} color={color} />;
+  return <Ionicons name={glyph} size={size} color={color ?? colors.ink} />;
 }

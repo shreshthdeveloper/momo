@@ -20,7 +20,7 @@ import {
   useScrollBottom,
 } from '../../src/components/ui.jsx';
 import { CardsSkeleton } from '../../src/components/Skeletons.jsx';
-import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, elevation, layout, space, type } from '../../src/theme/console.js';
 
 /**
  * prd.md §8.6 — reports. Four questions an admin actually asks, one tab each:
@@ -356,9 +356,10 @@ export default function AdminReports() {
     const list = data.items ?? [];
     if (list.length === 0) {
       return itemsMode === 'flagged' ? (
-        <EmptyState icon="check" title="No flagged questions" body="The bank looks healthy." />
+        <EmptyState tone="oversight" icon="check" title="No flagged questions" body="The bank looks healthy." />
       ) : (
         <EmptyState
+          tone="oversight"
           icon="target"
           title="Nothing to analyse yet"
           body="Item analysis needs at least 10 servings per question."
@@ -431,6 +432,7 @@ export default function AdminReports() {
     if (topics.length === 0) {
       return (
         <EmptyState
+          tone="oversight"
           icon="book"
           title="No topics yet"
           body="Create a topic and it will report here once it is played."
@@ -521,6 +523,7 @@ export default function AdminReports() {
     if (batches.length === 0) {
       return (
         <EmptyState
+          tone="oversight"
           icon="friends"
           title="No batches yet"
           body="A batch is a class or a year group. Create one, then file students into it."
@@ -576,6 +579,7 @@ export default function AdminReports() {
     if ((current.matches ?? 0) === 0 && (previous.matches ?? 0) === 0) {
       return (
         <EmptyState
+          tone="oversight"
           icon="clock"
           title="Nothing to compare"
           body="Nothing played in either period yet."
@@ -632,7 +636,7 @@ export default function AdminReports() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Reports" subtitle={adminSpace?.name} />
 
       <Tabs options={TABS} value={tab} onChange={setTab} />

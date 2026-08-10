@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../../src/lib/api.js';
 import { useAdminSpace, useAdminPermissions } from '../../src/lib/admin.js';
@@ -17,7 +17,7 @@ import {
 } from '../../src/components/ui.jsx';
 import { ListSkeleton } from '../../src/components/Skeletons.jsx';
 import QuestionArt from '../../src/components/QuestionArt.jsx';
-import { colors, consoleLayout, space } from '../../src/theme/index.js';
+import { colors, consoleLayout, space } from '../../src/theme/console.js';
 
 /**
  * prd.md §8.6 — what players reported, and what to do about it.
@@ -73,8 +73,17 @@ export default function AdminModeration() {
 
   useEffect(() => {
     setRows(null);
-    load();
-  }, [load]);
+  }, [status]);
+
+  /**
+   * On FOCUS: a report card opens the question editor, and a card still
+   * quoting the text you have just corrected reads as a save that failed.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   const resolve = async (report, resolution) => {
     setBusyId(report.id);
@@ -96,7 +105,7 @@ export default function AdminModeration() {
   const shown = rows ?? [];
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Reports" subtitle={adminSpace?.name} />
 
       <Tabs options={TABS} value={status} onChange={setStatus} />
@@ -107,6 +116,7 @@ export default function AdminModeration() {
         <ListSkeleton rows={4} />
       ) : shown.length === 0 ? (
         <EmptyState
+          tone="oversight"
           icon="check"
           title={status === 'open' ? 'Nothing reported' : 'Nothing here'}
           body={

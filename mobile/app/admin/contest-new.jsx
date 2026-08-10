@@ -5,7 +5,7 @@ import { api } from '../../src/lib/api.js';
 import { useConsoleBack } from '../../src/lib/consoleBack.js';
 import { useAdminSpace } from '../../src/lib/admin.js';
 import { ConsoleFooter, Text, Button, Chip, ErrorNotice, Header } from '../../src/components/ui.jsx';
-import { colors, consoleLayout, layout, space, type } from '../../src/theme/index.js';
+import { colors, consoleLayout, layout, space, type } from '../../src/theme/console.js';
 
 /**
  * prd.md F8.5.1 — scheduling a contest, sized for a phone: a name, a topic,
@@ -97,7 +97,7 @@ export default function AdminContestNew() {
         : null;
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView style={styles.screen} edges={[]}>
       <Header title="Schedule a contest" subtitle={adminSpace?.name} onBack={goBack} />
 
       <ScrollView
@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
   input: {
     ...type.option,
     color: colors.ink,
-    backgroundColor: colors.nightRaised,
+    backgroundColor: colors.control,
     borderRadius: layout.radiusInput,
     borderWidth: 1.5,
     borderColor: colors.transparent,
