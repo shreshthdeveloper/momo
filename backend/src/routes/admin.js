@@ -977,6 +977,13 @@ export default async function adminRoutes(app) {
         joinCode: space.joinCode,
         settings: space.settings,
         status: space.status,
+        /**
+         * When the organization was set up. Its own console shows it nowhere,
+         * but the platform's tenant screen leads with it, and serving it here
+         * is what lets that screen read one space instead of listing all two
+         * hundred to find one date.
+         */
+        createdAt: space.createdAt,
       },
       plan: { ...space.plan, seatsUsed },
       accents: SPACE_ACCENTS,

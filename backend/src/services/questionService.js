@@ -438,6 +438,16 @@ export function shapeQuestionRow(row) {
   const content = row.content?.[language] ?? Object.values(row.content ?? {})[0] ?? {};
   return {
     id: String(row._id),
+    /**
+     * Which bank this question belongs to.
+     *
+     * The platform's moderation queue shows reports from every tenant, and
+     * whether the operator can open a reported question depends entirely on
+     * this: a Central Bank question is theirs to edit, an organization's is
+     * that organization's. Without the origin on the row the client could only
+     * guess from a space NAME, so it offered no way to fix anything at all.
+     */
+    origin: row.origin ? String(row.origin) : null,
     text: content.text ?? '',
     options: content.options ?? [],
     explanation: content.explanation ?? null,
